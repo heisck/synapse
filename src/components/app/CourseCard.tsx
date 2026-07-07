@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { FileText, Layers, Clock } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FileText, Layers, Clock, Bookmark, BookmarkCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/appStore';
 import { CATEGORY_CONFIG } from './UploadView';
@@ -30,7 +30,8 @@ function getRelativeTime(dateStr: string): string {
 
 export function CourseCard({ course, onClick }: CourseCardProps) {
   const slideCount = course._count?.slides ?? course.slides?.length ?? 0;
-  const { courseCategories } = useAppStore();
+  const { courseCategories, bookmarkedCourses, toggleBookmark } = useAppStore();
+  const isBookmarked = bookmarkedCourses.includes(course.id);
   const category = courseCategories[course.id] || course.subject;
   const config = CATEGORY_CONFIG[category];
   const stripeColor = config?.stripeColor || 'bg-gray-400';
@@ -81,9 +82,28 @@ export function CourseCard({ course, onClick }: CourseCardProps) {
         {/* Thumbnail */}
         <div className="relative h-32 bg-gradient-to-br from-emerald-500/20 via-teal-500/15 to-emerald-600/10 flex items-center justify-center overflow-hidden">
           <FileText className="h-10 w-10 text-primary/40 group-hover:text-primary/60 transition-colors relative z-10" />
-          <Badge className="absolute top-3 right-3 text-[10px] z-10" variant="secondary">
+          <Badge className="absolute top-3 left-3 text-[10px] z-10" variant="secondary">
             {course.subject}
           </Badge>
+          {/* Bookmark toggle */}
+          <motion.button
+            whileTap={{ scale: 0.85 }}
+            onClick={(e) => { e.stopPropagation(); toggleBookmark(course.id); }}
+            className={`absolute top-3 right-3 z-20 h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 ${isBookmarked ? 'bg-emerald-500/20 text-emerald-500 glow-badge' : 'bg-background/60 text-muted-foreground hover:text-primary hover:bg-background/80'}`}
+            aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this course'}
+          >
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={isBookmarked ? 'bookmarked' : 'not-bookmarked'}
+                initial={{ scale: 0, rotate: -90 }}
+                animate={{ scale: 1, rotate: 0 }}
+                exit={{ scale: 0, rotate: 90 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+              >
+                {isBookmarked ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+              </motion.div>
+            </AnimatePresence>
+          </motion.button>
 
           {/* Hover gradient overlay with "Open" text */}
           <motion.div

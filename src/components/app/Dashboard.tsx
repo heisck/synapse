@@ -55,6 +55,7 @@ import {
   Search,
   Trophy,
   ArrowUpDown,
+  Bookmark,
 } from 'lucide-react';
 import {
   BarChart,
@@ -1186,6 +1187,8 @@ export function Dashboard() {
     updateStudyGoal,
     deleteStudyGoal: removeStudyGoal,
     completedCourses,
+    bookmarkedCourses,
+    toggleBookmark,
   } = useAppStore();
 
   const { current: currentStreak, best: bestStreak } = useStudyStreak();
@@ -1702,7 +1705,7 @@ export function Dashboard() {
 
       {/* Quick Start Hero Card */}
       <motion.div variants={fadeUp}>
-        <div className="glass mesh-gradient gradient-border rounded-xl p-6 cursor-pointer group relative overflow-hidden animated-border-gradient hover-lift glass-card-shine"
+        <div className="glass mesh-gradient gradient-border rounded-xl p-6 cursor-pointer group relative overflow-hidden animated-border-gradient hover-lift glass-card-shine glass-card-3d spotlight-card"
           onClick={() => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic")}
           role="button"
           tabIndex={0}
@@ -1756,7 +1759,7 @@ export function Dashboard() {
 
           return (
             <div
-              className="glass rounded-xl p-6 cursor-pointer group relative overflow-hidden"
+              className="glass rounded-xl p-6 cursor-pointer group relative overflow-hidden neon-border magnetic-hover"
               onClick={() => navigate('quiz')}
               role="button"
               tabIndex={0}
@@ -2104,7 +2107,7 @@ export function Dashboard() {
 
       {/* Stats Row - with floating animation */}
       <motion.div variants={fadeUp}>
-        <div className="glass rounded-xl p-4 card-hover-lift card-hover-shadow-lift stat-card-gradient">
+        <div className="glass rounded-xl p-4 card-hover-lift card-hover-shadow-lift stat-card-gradient aurora-bg">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               { icon: BookOpen, label: 'Active Courses', value: animatedCourses, trend: 'up' as const, change: studySessions.length > 0 ? `${studySessions.length} sessions` : 'No sessions yet', idx: 0 },
@@ -2133,6 +2136,52 @@ export function Dashboard() {
           </div>
         </div>
       </motion.div>
+
+      {/* Bookmarked Courses - horizontal scrollable pills */}
+      {bookmarkedCourses.length > 0 && (() => {
+        const bookmarked = courses.filter(c => bookmarkedCourses.includes(c.id));
+        if (bookmarked.length === 0) return null;
+        return (
+          <motion.div variants={fadeUp} initial="initial" animate="animate">
+            <div className="glass rounded-xl p-4 space-y-3 inset-glow">
+              <div className="flex items-center gap-2">
+                <Bookmark className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">Bookmarked Courses</h3>
+                <Badge variant="secondary" className="text-[10px]">{bookmarked.length}</Badge>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+                <AnimatePresence mode="popLayout">
+                  {bookmarked.map((course) => (
+                    <motion.div
+                      key={course.id}
+                      layout
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                      className="flex items-center gap-2 shrink-0 px-3 py-2 rounded-full bg-primary/10 border border-primary/20 cursor-pointer hover:bg-primary/20 transition-colors magnetic-hover"
+                      onClick={() => handleCourseClick(course)}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open bookmarked course: ${course.title}`}
+                    >
+                      <div className="w-2 h-2 rounded-full bg-primary" />
+                      <span className="text-xs font-medium text-primary max-w-[120px] truncate">{course.title}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleBookmark(course.id); }}
+                        className="ml-1 h-4 w-4 rounded-full flex items-center justify-center hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
+                        aria-label="Remove bookmark"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            </div>
+          </motion.div>
+        );
+      })()}
 
       <GradientDivider />
 

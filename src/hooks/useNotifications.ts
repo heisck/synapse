@@ -31,8 +31,19 @@ function isDuplicate(
   );
 }
 
+function isDuplicateByKey(
+  existing: StudyNotification[],
+  key: string,
+  windowMs: number = DEDUPE_WINDOW_MS,
+): boolean {
+  const cutoff = Date.now() - windowMs;
+  return existing.some(
+    (n) => n.title.includes(key) && new Date(n.createdAt).getTime() > cutoff,
+  );
+}
+
 export function useNotifications(): void {
-  const { addNotification, notifications, dailyChallenge, studyGoals, studySessions } = useAppStore();
+  const { addNotification, notifications, dailyChallenge, studyGoals, studySessions, achievements, quizScore, quizTotal, completedCourses, courses } = useAppStore();
   const { overdueCount } = useSpacedRepetition();
   const generatedRef = useRef(false);
 
@@ -41,9 +52,9 @@ export function useNotifications(): void {
     generatedRef.current = true;
 
     const toAdd: Array<Omit<StudyNotification, 'id' | 'read' | 'createdAt'>> = [];
-    const MAX_NOTIFICATIONS = 5;
+    const MAX_NOTIFICATIONS = 8;
 
-    // 1. Streak Alert
+    // 1. Streak Alert with milestone notifications
     if (!isDuplicate(notifications, 'streak') && dailyChallenge.streak > 0) {
       toAdd.push({
         type: 'streak',
@@ -51,7 +62,27 @@ export function useNotifications(): void {
         message: `You're on a ${dailyChallenge.streak}-day streak! Keep it going!`,
         actionLabel: 'Take Daily Challenge',
         actionView: 'quiz',
+        priority: dailyChallenge.streak >= 7 ? 'high' : 'medium',
       });
+    }
+
+    // Streak milestone notifications
+    const streak = dailyChallenge.streak;
+    const streakMilestones = [
+      { days: 3, title: '3-Day Streak Milestone', message: 'Three days in a row! Your consistency is building.' },
+      { days: 7, title: '7-Day Streak Milestone', message: 'A full week streak! You are developing a strong learning habit.' },
+      { days: 14, title: '14-Day Streak Milestone', message: 'Two weeks of daily study! Your dedication is remarkable.' },
+      { days: 30, title: '30-Day Streak Milestone', message: 'A full month streak! You are an unstoppable learner.' },
+    ];
+    for (const milestone of streakMilestones) {
+      if (streak >= milestone.days && !isDuplicateByKey(notifications, `${milestone.days}-Day`)) {
+        toAdd.push({
+          type: 'milestone',
+          title: milestone.title,
+          message: milestone.message,
+          priority: milestone.days >= 30 ? 'high' : 'medium',
+        });
+      }
     }
 
     // 2. Review Due
@@ -62,6 +93,7 @@ export function useNotifications(): void {
         message: `${overdueCount} concept${overdueCount > 1 ? 's are' : ' is'} due for review. Spaced repetition helps retention.`,
         actionLabel: 'Start Review',
         actionView: 'quiz',
+        priority: overdueCount > 5 ? 'high' : 'medium',
       });
     }
 
@@ -81,6 +113,7 @@ export function useNotifications(): void {
           message: `Almost there! Your "${nearCompleteGoal.label}" goal is at ${pct}%.`,
           actionLabel: 'View Goals',
           actionView: 'dashboard',
+          priority: 'low',
         });
       }
     }
@@ -99,7 +132,6 @@ export function useNotifications(): void {
         const daysSince = (Date.now() - lastSession) / (1000 * 60 * 60 * 24);
         isIdle = daysSince >= 2;
       } else {
-        // No sessions at all - could be new user, skip idle reminder
         isIdle = false;
       }
       if (isIdle) {
@@ -109,6 +141,7 @@ export function useNotifications(): void {
           message: "It's been a while. Ready to study?",
           actionLabel: 'Start Session',
           actionView: 'tutor',
+          priority: 'medium',
         });
       }
     }
@@ -120,13 +153,59 @@ export function useNotifications(): void {
         type: 'tip',
         title: tip.title,
         message: tip.message,
+        priority: 'low',
       });
     }
 
-    // Generate max 5 notifications
+    // 6. Course completion milestone
+    if (completedCourses.length > 0 && !isDuplicate(notifications, 'milestone', 7 * DEDUPE_WINDOW_MS)) {
+      const latestCompleted = completedCourses[completedCourses.length - 1];
+      const course = courses.find((c) => c.id === latestCompleted);
+      if (course) {
+        toAdd.push({
+          type: 'milestone',
+          title: 'Course Completed!',
+          message: `Congratulations! You completed "${course.title}".`,
+          priority: 'high',
+          actionLabel: 'View Courses',
+          actionView: 'upload',
+        });
+      }
+    }
+
+    // 7. Quiz score above 90%
+    if (quizScore !== null && quizTotal !== null && quizTotal > 0) {
+      const pct = (quizScore / quizTotal) * 100;
+      if (pct >= 90 && !isDuplicateByKey(notifications, 'Quiz Score')) {
+        toAdd.push({
+          type: 'achievement',
+          title: 'Excellent Quiz Score!',
+          message: `You scored ${quizScore}/${quizTotal} (${Math.round(pct)}%) on your latest quiz. Outstanding performance!`,
+          priority: 'high',
+          actionView: 'quiz',
+        });
+      }
+    }
+
+    // 8. Achievement unlock notifications
+    const recentUnlocks = achievements.filter(
+      (a) => a.unlockedAt && new Date(a.unlockedAt).getTime() > Date.now() - DEDUPE_WINDOW_MS,
+    );
+    for (const achievement of recentUnlocks) {
+      if (!isDuplicateByKey(notifications, achievement.title)) {
+        toAdd.push({
+          type: 'achievement',
+          title: `Achievement Unlocked: ${achievement.title}`,
+          message: achievement.description,
+          priority: achievement.rarity === 'legendary' || achievement.rarity === 'epic' ? 'high' : 'medium',
+        });
+      }
+    }
+
+    // Generate max notifications
     const batch = toAdd.slice(0, MAX_NOTIFICATIONS);
     for (const n of batch) {
       addNotification(n);
     }
-  }, [addNotification, notifications, dailyChallenge.streak, overdueCount, studyGoals, studySessions]);
+  }, [addNotification, notifications, dailyChallenge.streak, overdueCount, studyGoals, studySessions, achievements, quizScore, quizTotal, completedCourses, courses]);
 }

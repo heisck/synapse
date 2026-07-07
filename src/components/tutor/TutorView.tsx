@@ -47,6 +47,9 @@ import {
   Clock,
   CheckCircle2,
   Download,
+  Star,
+  StickyNote,
+  Tag,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -102,6 +105,16 @@ import { TipInput } from './TipInput'
 import { FeedbackBar } from './FeedbackBar'
 import { CourseContextPanel } from './CourseContextPanel'
 import { PersonaSelector } from './PersonaSelector'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 // ---------- Pomodoro Timer ----------
 const POMODORO_MODES = [
@@ -166,6 +179,8 @@ const CONTEXTUAL_SUGGESTIONS = [
 
 const MAX_INPUT_CHARS = 500
 
+const AVAILABLE_NOTE_TAGS = ['biology', 'cs', 'math', 'chemistry', 'physics', 'history', 'general', 'review', 'exam-prep', 'research']
+
 type InputSize = 'small' | 'medium' | 'large'
 
 const INPUT_SIZES: Record<InputSize, { minH: number; maxH: number; rows: number; label: string }> = {
@@ -221,6 +236,10 @@ export function TutorView() {
     currentSlideIndex,
     setCurrentSlideIndex,
     navigate,
+    starredMessages,
+    unstarMessage,
+    clearAllStarredMessages,
+    addNote,
   } = useAppStore()
 
   const [input, setInput] = useState('')
@@ -243,6 +262,15 @@ export function TutorView() {
   const [pomodoroTimeLeft, setPomodoroTimeLeft] = useState(POMODORO_MODES[0].duration)
   const [pomodoroSessions, setPomodoroSessions] = useState(0)
   const pomodoroRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Save as Note dialog state
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false)
+  const [noteDialogContent, setNoteDialogContent] = useState('')
+  const [noteDialogTitle, setNoteDialogTitle] = useState('')
+  const [noteDialogTags, setNoteDialogTags] = useState<string[]>([])
+
+  // Starred messages filter state
+  const [showStarredOnly, setShowStarredOnly] = useState(false)
 
   const currentPomodoroMode = POMODORO_MODES[pomodoroModeIndex]
   const pomodoroProgress = 1 - pomodoroTimeLeft / currentPomodoroMode.duration
@@ -705,6 +733,42 @@ export function TutorView() {
     navigate('dashboard')
   }, [navigate])
 
+  // Save as Note handler
+  const handleSaveAsNote = useCallback((message: ChatMessage) => {
+    setNoteDialogContent(message.content)
+    setNoteDialogTitle(message.content.length > 50 ? message.content.slice(0, 50) : message.content)
+    setNoteDialogTags([])
+    setNoteDialogOpen(true)
+  }, [])
+
+  const handleSaveNoteDialog = useCallback(() => {
+    if (!noteDialogTitle.trim()) return
+    addNote({
+      id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      title: noteDialogTitle.trim(),
+      content: noteDialogContent,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tags: noteDialogTags,
+    })
+    setNoteDialogOpen(false)
+    toast.success('Note saved!')
+  }, [noteDialogTitle, noteDialogContent, noteDialogTags, addNote])
+
+  const handleToggleNoteTag = useCallback((tag: string) => {
+    setNoteDialogTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    )
+  }, [])
+
+  // Scroll to starred message handler
+  const handleScrollToMessage = useCallback((messageId: string) => {
+    const el = document.querySelector(`[data-message-id="${messageId}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [])
+
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header - Frosted glass */}
@@ -1157,6 +1221,8 @@ export function TutorView() {
                     message={msg}
                     isStreaming={false}
                     onRegenerate={msg.role === 'assistant' ? handleRegenerate : undefined}
+                    onSaveAsNote={msg.role === 'assistant' ? handleSaveAsNote : undefined}
+                    scrollToMessage={handleScrollToMessage}
                   />
                 ))
             }
@@ -1518,6 +1584,93 @@ export function TutorView() {
 
               {/* Conversation Insights */}
               <ConversationInsights messages={messages} masteryMap={masteryMap} />
+
+              <Separator />
+
+              {/* Starred Messages Section */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <motion.div
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      <button
+                        onClick={() => setShowStarredOnly(!showStarredOnly)}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-foreground hover:text-primary transition-colors"
+                      >
+                        <Star className="w-3.5 h-3.5 text-amber-500" />
+                        Starred
+                        {starredMessages.length > 0 && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5">
+                            {starredMessages.length}
+                          </Badge>
+                        )}
+                      </button>
+                    </motion.div>
+                  </div>
+                  {starredMessages.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 text-[10px] text-muted-foreground hover:text-red-500 px-1.5"
+                      onClick={clearAllStarredMessages}
+                    >
+                      Clear all
+                    </Button>
+                  )}
+                </div>
+
+                {starredMessages.length > 0 ? (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
+                    {starredMessages.map((sm) => {
+                      const originalMsg = messages.find((m) => m.id === sm.messageId)
+                      if (!originalMsg) return null
+                      return (
+                        <motion.div
+                          key={sm.messageId}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className="group rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50/50 dark:bg-amber-950/20 p-2 cursor-pointer hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors"
+                          onClick={() => handleScrollToMessage(sm.messageId)}
+                        >
+                          <p className="text-[11px] text-foreground/80 line-clamp-2 leading-relaxed">
+                            {originalMsg.content.length > 100
+                              ? originalMsg.content.slice(0, 100) + '...'
+                              : originalMsg.content}
+                          </p>
+                          {sm.reason && (
+                            <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 flex items-center gap-1">
+                              <StickyNote className="w-2.5 h-2.5" />
+                              {sm.reason}
+                            </p>
+                          )}
+                          <div className="flex items-center justify-between mt-1">
+                            <span className="text-[9px] text-muted-foreground">
+                              {new Date(sm.starredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                unstarMessage(sm.messageId)
+                                toast.info('Message unstarred')
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-amber-200/50 dark:hover:bg-amber-800/50"
+                              aria-label="Unstar"
+                            >
+                              <X className="w-3 h-3 text-muted-foreground" />
+                            </button>
+                          </div>
+                        </motion.div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground text-center py-2">
+                    Star important messages to bookmark them
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1708,6 +1861,76 @@ export function TutorView() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Save as Note Dialog */}
+      <Dialog open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BookMarked className="w-5 h-5 text-primary" />
+              Save as Note
+            </DialogTitle>
+            <DialogDescription>
+              Capture this AI response as a study note for later review.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="note-title">Title</Label>
+              <Input
+                id="note-title"
+                value={noteDialogTitle}
+                onChange={(e) => setNoteDialogTitle(e.target.value)}
+                placeholder="Note title..."
+                className="text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="note-content">Content</Label>
+              <Textarea
+                id="note-content"
+                value={noteDialogContent}
+                onChange={(e) => setNoteDialogContent(e.target.value)}
+                placeholder="Note content..."
+                className="text-sm min-h-[120px] max-h-[200px] resize-y"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Tags</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {AVAILABLE_NOTE_TAGS.map((tag) => (
+                  <motion.button
+                    key={tag}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => handleToggleNoteTag(tag)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                      noteDialogTags.includes(tag)
+                        ? 'bg-primary/10 border-primary/30 text-primary'
+                        : 'bg-muted/50 border-border/40 text-muted-foreground hover:border-primary/20 hover:text-foreground'
+                    }`}
+                  >
+                    {tag}
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNoteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveNoteDialog}
+              disabled={!noteDialogTitle.trim()}
+              className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+            >
+              <CheckCircle2 className="w-4 h-4 mr-1.5" />
+              Save Note
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

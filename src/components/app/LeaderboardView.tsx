@@ -551,7 +551,7 @@ export function LeaderboardView() {
           transition={{ delay: 0.3 }}
           className="flex items-center gap-2 pl-14 lg:pl-0"
         >
-          <Button variant="outline" size="sm" onClick={handleShareStats}>
+          <Button variant="outline" size="sm" onClick={handleShareStats} className="neon-border magnetic-hover">
             <Share2 className="h-4 w-4 mr-2" />
             Share My Stats
           </Button>
@@ -629,7 +629,7 @@ export function LeaderboardView() {
       )}
 
       {/* Top 3 Podium */}
-      <motion.div variants={fadeUp} className="glass rounded-2xl p-4 sm:p-6">
+      <motion.div variants={fadeUp} className="glass rounded-2xl p-4 sm:p-6 neon-border">
         <div className="flex items-center gap-2 mb-2">
           <Star className="h-4 w-4 text-amber-500" />
           <h3 className="font-semibold text-sm">Top Learners</h3>

@@ -19,6 +19,7 @@ import {
   Flame,
   Timer,
   Clock,
+  Bell,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -33,6 +34,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
+import { NotificationCenter } from './NotificationCenter';
+import { cn } from '@/lib/utils';
 import type { AppView } from '@/types';
 
 interface NavItem {
@@ -140,8 +143,9 @@ function GlassNavTooltip({ children, label, shortcut }: { children: React.ReactN
 }
 
 function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => void; isMobile?: boolean }) {
-  const { currentView, navigate, userName, recentViews, notes, courses, completedCourses, dailyChallenge } = useAppStore();
+  const { currentView, navigate, userName, recentViews, notes, courses, completedCourses, dailyChallenge, notifications } = useAppStore();
   const [studyStreak] = useState(() => getStudyStreak());
+  const [notifCenterOpen, setNotifCenterOpen] = useState(false);
   const countdown = useDailyChallengeCountdown();
   const isChallengeCompletedToday = dailyChallenge?.lastCompletedDate === new Date().toISOString().split('T')[0];
 
@@ -158,6 +162,11 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
   }, [navigate, onNavigate]);
 
   const notesCount = notes.length;
+
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !n.read).length,
+    [notifications],
+  );
 
   return (
     <div className="flex h-full flex-col relative">
@@ -380,6 +389,37 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
               </p>
             </div>
             <div className="flex items-center gap-1">
+              {/* Notification Center Bell */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <motion.button
+                    onClick={() => setNotifCenterOpen(true)}
+                    className="relative h-8 w-8 rounded-lg flex items-center justify-center hover:bg-accent/50 transition-colors"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
+                  >
+                    <Bell className="h-4 w-4 text-muted-foreground" />
+                    {unreadCount > 0 && (
+                      <motion.span
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                        className={cn(
+                          'absolute -top-0.5 -right-0.5 flex items-center justify-center h-4 min-w-4 rounded-full text-[9px] font-bold px-1 text-white',
+                          unreadCount > 0 && 'glow-badge',
+                          unreadCount > 5 ? 'bg-red-500' : 'bg-emerald-500',
+                        )}
+                      >
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </motion.span>
+                    )}
+                  </motion.button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  Notifications{unreadCount > 0 ? ` (${unreadCount})` : ''}
+                </TooltipContent>
+              </Tooltip>
               <kbd className="pointer-events-none hidden h-5 select-none items-center gap-0.5 rounded border bg-muted/50 px-1 font-mono text-[9px] font-medium text-muted-foreground lg:flex">
                 K
               </kbd>
@@ -388,6 +428,9 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
           </div>
         </div>
       </div>
+
+      {/* Notification Center Dialog */}
+      <NotificationCenter open={notifCenterOpen} onOpenChange={setNotifCenterOpen} />
     </div>
   );
 }

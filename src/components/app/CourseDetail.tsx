@@ -350,7 +350,7 @@ export function CourseDetail() {
 
       {/* Course Progress Section */}
       <motion.div variants={fadeUp}>
-        <div className="glass rounded-xl p-5 space-y-4">
+        <div className="glass rounded-xl p-5 space-y-4 glass-card-3d inset-glow">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-foreground">Course Progress</h3>
             <span className="text-xs font-medium text-primary bg-primary/10 px-2.5 py-1 rounded-full">
@@ -542,7 +542,7 @@ export function CourseDetail() {
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: slideDirection * -40, scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 250, damping: 25 }}
-              className="glass rounded-xl p-6 space-y-4 glow-emerald"
+              className="glass rounded-xl p-6 space-y-4 glow-emerald wave-divider"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1">

@@ -1,0 +1,670 @@
+     1→'use client';
+     2→
+     3→import { useMemo, useState } from 'react';
+     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→import {
+     6→  Trophy,
+     7→  Medal,
+     8→  Flame,
+     9→  Copy,
+    10→  Share2,
+    11→  Crown,
+    12→  Users,
+    13→  TrendingUp,
+    14→  Target,
+    15→  Star,
+    16→  X,
+    17→  ExternalLink,
+    18→} from 'lucide-react';
+    19→import { Button } from '@/components/ui/button';
+    20→import { Badge } from '@/components/ui/badge';
+    21→import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+    22→import { useAppStore } from '@/stores/appStore';
+    23→import { useCountUp } from '@/hooks/useCountUp';
+    24→import { useStudyStreak, useTotalStudyTime } from '@/hooks/useStudyTracker';
+    25→import { toast } from 'sonner';
+    26→import type { StudyBuddy } from '@/types';
+    27→
+    28→/* ── XP → Level calculator (1-50) ── */
+    29→function xpToLevel(totalXP: number): number {
+    30→  // Level thresholds: each level requires progressively more XP
+    31→  const thresholds = Array.from({ length: 50 }, (_, i) => {
+    32→    const level = i + 1;
+    33→    return Math.round(100 * Math.pow(1.18, level - 1));
+    34→  });
+    35→  let accumulated = 0;
+    36→  for (let i = 0; i < thresholds.length; i++) {
+    37→    accumulated += thresholds[i];
+    38→    if (totalXP < accumulated) return i + 1;
+    39→  }
+    40→  return 50;
+    41→}
+    42→
+    43→/* ── Build user's own StudyBuddy entry from store data ── */
+    44→function useUserBuddy(): StudyBuddy {
+    45→  const { userName, studySessions, completedCourses, adaptiveResults, dailyChallenge } = useAppStore();
+    46→  const { current: streak } = useStudyStreak();
+    47→
+    48→  return useMemo(() => {
+    49→    // Calculate XP from study sessions (10 XP per minute)
+    50→    const sessionXP = studySessions.reduce((sum, s) => sum + s.duration * 10, 0);
+    51→    // XP from quiz accuracy
+    52→    const totalAdaptive = adaptiveResults.length;
+    53→    const correctAdaptive = adaptiveResults.filter((r) => r.correct).length;
+    54→    const quizAccuracy = totalAdaptive > 0 ? Math.round((correctAdaptive / totalAdaptive) * 100) : 0;
+    55→    const quizXP = Math.round(quizAccuracy * 5);
+    56→    // XP from daily challenges
+    57→    const challengeXP = (dailyChallenge.totalCompleted || 0) * 50;
+    58→    const totalXP = sessionXP + quizXP + challengeXP;
+    59→    const level = xpToLevel(totalXP);
+    60→
+    61→    return {
+    62→      id: 'user-self',
+    63→      name: userName || 'You',
+    64→      avatarGradient: 'from-primary to-teal-500',
+    65→      totalXP,
+    66→      level,
+    67→      streak,
+    68→      coursesCompleted: completedCourses.length,
+    69→      quizAccuracy,
+    70→      currentTopic: 'Currently studying',
+    71→      isOnline: true,
+    72→    };
+    73→  }, [userName, studySessions, completedCourses, adaptiveResults, dailyChallenge, streak]);
+    74→}
+    75→
+    76→/* ── Simulated weekly XP for buddies (randomly varies from total) ── */
+    77→function getWeeklyXP(totalXP: number): number {
+    78→  // Simulate 30-60% of total XP as "this week" contribution
+    79→  const factor = 0.3 + (Math.abs(Math.sin(totalXP * 0.001)) * 0.3);
+    80→  return Math.round(totalXP * factor);
+    81→}
+    82→
+    83→/* ── Rank Medal Colors ── */
+    84→const rankStyles: Record<number, { bg: string; border: string; icon: typeof Trophy; gradient: string; label: string }> = {
+    85→  1: { bg: 'bg-amber-500/10', border: 'border-amber-400/50', icon: Crown, gradient: 'from-amber-400 to-yellow-500', label: '1st' },
+    86→  2: { bg: 'bg-slate-400/10', border: 'border-slate-400/50', icon: Medal, gradient: 'from-slate-300 to-slate-500', label: '2nd' },
+    87→  3: { bg: 'bg-orange-700/10', border: 'border-orange-600/50', icon: Medal, gradient: 'from-orange-600 to-amber-700', label: '3rd' },
+    88→};
+    89→
+    90→/* ── Animated Variants ── */
+    91→const stagger = {
+    92→  animate: { transition: { staggerChildren: 0.05 } },
+    93→};
+    94→const fadeUp = {
+    95→  initial: { opacity: 0, y: 20 },
+    96→  animate: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+    97→};
+    98→const listItem = {
+    99→  initial: { opacity: 0, x: -20 },
+   100→  animate: { opacity: 1, x: 0, transition: { type: 'spring', stiffness: 300, damping: 22 } },
+   101→};
+   102→
+   103→/* ── Gradient Divider ── */
+   104→function GradientDivider() {
+   105→  return (
+   106→    <motion.div
+   107→      initial={{ scaleX: 0, opacity: 0 }}
+   108→      animate={{ scaleX: 1, opacity: 1 }}
+   109→      transition={{ duration: 0.8, ease: 'easeOut' }}
+   110→      className="h-[2px] w-full origin-left overflow-hidden rounded-full"
+   111→    >
+   112→      <div className="h-full w-full bg-gradient-to-r from-transparent via-primary/40 to-transparent animate-gradient-sweep" />
+   113→    </motion.div>
+   114→  );
+   115→}
+   116→
+   117→/* ── Buddy Avatar with gradient initials ── */
+   118→function BuddyAvatar({ name, gradient, size = 'md' }: { name: string; gradient: string; size?: 'sm' | 'md' | 'lg' }) {
+   119→  const initials = name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+   120→  const sizeClass = size === 'sm' ? 'h-8 w-8 text-xs' : size === 'lg' ? 'h-14 w-14 text-lg' : 'h-10 w-10 text-sm';
+   121→
+   122→  return (
+   123→    <Avatar className={`${sizeClass} shrink-0`}>
+   124→      <AvatarFallback className={`bg-gradient-to-br ${gradient} text-white font-bold shadow-sm`}>
+   125→        {initials}
+   126→      </AvatarFallback>
+   127→    </Avatar>
+   128→  );
+   129→}
+   130→
+   131→/* ── Share Stats Modal ── */
+   132→function ShareStatsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+   133→  const userBuddy = useUserBuddy();
+   134→  const totalStudyMinutes = useTotalStudyTime();
+   135→  const hours = Math.floor(totalStudyMinutes / 60);
+   136→
+   137→  const statsText = useMemo(() => {
+   138→    const card = [
+   139→      '╔══════════════════════════════════════╗',
+   140→      '║      🧠 SynapseLearn Stats 🧠        ║',
+   141→      '╠══════════════════════════════════════╣',
+   142→      `║  📊 Level:    ${String(userBuddy.level).padEnd(24)}║`,
+   143→      `║  ⭐ XP:       ${String(userBuddy.totalXP.toLocaleString()).padEnd(24)}║`,
+   144→      `║  🔥 Streak:   ${String(`${userBuddy.streak} days`).padEnd(24)}║`,
+   145→      `║  📚 Courses:  ${String(userBuddy.coursesCompleted.toString()).padEnd(24)}║`,
+   146→      `║  🎯 Accuracy: ${String(`${userBuddy.quizAccuracy}%`).padEnd(24)}║`,
+   147→      `║  ⏱️ Study:    ${String(`${hours}+ hours`).padEnd(24)}║`,
+   148→      '╠══════════════════════════════════════╣',
+   149→      '║   Join me on SynapseLearn! 🚀       ║',
+   150→      '╚══════════════════════════════════════╝',
+   151→    ].join('\n');
+   152→    return card;
+   153→  }, [userBuddy, hours]);
+   154→
+   155→  const handleCopy = async () => {
+   156→    try {
+   157→      await navigator.clipboard.writeText(statsText);
+   158→      toast.success('Stats copied to clipboard!');
+   159→    } catch {
+   160→      toast.error('Failed to copy to clipboard');
+   161→    }
+   162→  };
+   163→
+   164→  const handleTwitter = () => {
+   165→    const tweetText = `🧠 SynapseLearn Stats:\nLevel ${userBuddy.level} | ${userBuddy.totalXP.toLocaleString()} XP | ${userBuddy.streak}-day streak | ${userBuddy.quizAccuracy}% quiz accuracy\n\nJoin me on SynapseLearn! 🚀`;
+   166→    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+   167→    window.open(url, '_blank', 'noopener,noreferrer');
+   168→    toast.success('Opening Twitter share dialog...');
+   169→  };
+   170→
+   171→  return (
+   172→    <AnimatePresence>
+   173→      {open && (
+   174→        <motion.div
+   175→          initial={{ opacity: 0 }}
+   176→          animate={{ opacity: 1 }}
+   177→          exit={{ opacity: 0 }}
+   178→          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+   179→          onClick={onClose}
+   180→        >
+   181→          <motion.div
+   182→            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+   183→            animate={{ opacity: 1, scale: 1, y: 0 }}
+   184→            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+   185→            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+   186→            onClick={(e) => e.stopPropagation()}
+   187→            className="glass rounded-2xl p-6 w-full max-w-md border border-border/50"
+   188→          >
+   189→            <div className="flex items-center justify-between mb-4">
+   190→              <h3 className="font-semibold text-lg gradient-text">Share Your Stats</h3>
+   191→              <motion.button
+   192→                whileHover={{ rotate: 90, scale: 1.1 }}
+   193→                whileTap={{ scale: 0.9 }}
+   194→                onClick={onClose}
+   195→                className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-accent transition-colors"
+   196→              >
+   197→                <X className="h-4 w-4" />
+   198→              </motion.button>
+   199→            </div>
+   200→
+   201→            <div className="bg-muted/50 rounded-xl p-4 mb-4 overflow-x-auto">
+   202→              <pre className="text-xs font-mono text-foreground/80 whitespace-pre leading-relaxed">
+   203→                {statsText}
+   204→              </pre>
+   205→            </div>
+   206→
+   207→            <div className="flex gap-2">
+   208→              <Button onClick={handleCopy} className="flex-1">
+   209→                <Copy className="h-4 w-4 mr-2" />
+   210→                Copy to Clipboard
+   211→              </Button>
+   212→              <Button variant="outline" onClick={handleTwitter} className="flex-1">
+   213→                <ExternalLink className="h-4 w-4 mr-2" />
+   214→                Share on Twitter
+   215→              </Button>
+   216→            </div>
+   217→          </motion.div>
+   218→        </motion.div>
+   219→      )}
+   220→    </AnimatePresence>
+   221→  );
+   222→}
+   223→
+   224→/* ── Leaderboard Entry Row ── */
+   225→function LeaderboardRow({
+   226→  rank,
+   227→  buddy,
+   228→  isCurrentUser,
+   229→  weeklyXP,
+   230→}: {
+   231→  rank: number;
+   232→  buddy: StudyBuddy;
+   233→  isCurrentUser: boolean;
+   234→  weeklyXP: number;
+   235→}) {
+   236→  const displayXP = useCountUp(weeklyXP);
+   237→  const style = rankStyles[rank];
+   238→  const RankIcon = style?.icon || null;
+   239→
+   240→  return (
+   241→    <motion.div
+   242→      variants={listItem}
+   243→      whileHover={{ scale: 1.01, x: 4 }}
+   244→      whileTap={{ scale: 0.99 }}
+   245→      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+   246→      className={`
+   247→        relative flex items-center gap-3 sm:gap-4 rounded-xl p-3 sm:p-4 transition-all
+   248→        ${isCurrentUser
+   249→          ? 'glass border-2 border-primary/30 shadow-[0_0_20px_rgba(16,185,129,0.15)] bg-primary/5'
+   250→          : 'hover:bg-accent/30 border border-transparent'}
+   251→      `}
+   252→    >
+   253→      {/* Rank Number / Medal */}
+   254→      <div className="w-8 sm:w-10 shrink-0 flex items-center justify-center">
+   255→        {style ? (
+   256→          <motion.div
+   257→            initial={{ scale: 0, rotate: -180 }}
+   258→            animate={{ scale: 1, rotate: 0 }}
+   259→            transition={{ type: 'spring', stiffness: 400, damping: 20, delay: rank * 0.05 }}
+   260→            className={`
+   261→              flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full
+   262→              bg-gradient-to-br ${style.gradient} text-white font-bold text-sm shadow-md
+   263→            `}
+   264→          >
+   265→            {rank === 1 ? <Crown className="h-4 w-4 sm:h-5 sm:w-5" /> : <Medal className="h-4 w-4 sm:h-5 sm:w-5" />}
+   266→          </motion.div>
+   267→        ) : (
+   268→          <span className="text-sm font-semibold text-muted-foreground w-full text-center">
+   269→            #{rank}
+   270→          </span>
+   271→        )}
+   272→      </div>
+   273→
+   274→      {/* Avatar */}
+   275→      <div className="relative">
+   276→        <BuddyAvatar name={buddy.name} gradient={buddy.avatarGradient} />
+   277→        {buddy.isOnline && (
+   278→          <motion.span
+   279→            className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-background"
+   280→            animate={{
+   281→              boxShadow: [
+   282→                '0 0 0 0 rgba(16, 185, 129, 0.4)',
+   283→                '0 0 0 4px rgba(16, 185, 129, 0)',
+   284→              ],
+   285→            }}
+   286→            transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+   287→          />
+   288→        )}
+   289→      </div>
+   290→
+   291→      {/* Info */}
+   292→      <div className="flex-1 min-w-0">
+   293→        <div className="flex items-center gap-2">
+   294→          <span className="font-semibold text-sm truncate">{buddy.name}</span>
+   295→          {isCurrentUser && (
+   296→            <Badge variant="outline" className="text-[10px] text-primary border-primary/30 bg-primary/5 shrink-0">
+   297→              You
+   298→            </Badge>
+   299→          )}
+   300→          {buddy.streak >= 7 && (
+   301→            <span className="flex items-center gap-0.5 text-[10px] text-orange-500 shrink-0">
+   302→              <Flame className="h-3 w-3" />
+   303→              {buddy.streak}
+   304→            </span>
+   305→          )}
+   306→        </div>
+   307→        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+   308→          <span>Lv.{buddy.level}</span>
+   309→          <span className="text-border">·</span>
+   310→          <span>{buddy.coursesCompleted} courses</span>
+   311→          <span className="text-border hidden sm:inline">·</span>
+   312→          <span className="hidden sm:inline">{buddy.quizAccuracy}% accuracy</span>
+   313→        </div>
+   314→      </div>
+   315→
+   316→      {/* XP */}
+   317→      <div className="text-right shrink-0">
+   318→        <div className={`font-bold text-sm ${style ? `bg-gradient-to-r ${style.gradient} bg-clip-text text-transparent` : 'text-foreground'}`}>
+   319→          {displayXP}
+   320→        </div>
+   321→        <div className="text-[10px] text-muted-foreground">XP</div>
+   322→      </div>
+   323→    </motion.div>
+   324→  );
+   325→}
+   326→
+   327→/* ── Top 3 Podium ── */
+   328→function TopPodium({ entries }: { entries: Array<{ rank: number; buddy: StudyBuddy; isCurrentUser: boolean; weeklyXP: number }> }) {
+   329→  const [first, second, third] = entries;
+   330→
+   331→  return (
+   332→    <div className="flex items-end justify-center gap-3 sm:gap-4 mb-6 pt-4">
+   333→      {/* 2nd Place */}
+   334→      {second && (
+   335→        <motion.div
+   336→          initial={{ opacity: 0, y: 30 }}
+   337→          animate={{ opacity: 1, y: 0 }}
+   338→          transition={{ delay: 0.2, type: 'spring', stiffness: 300, damping: 25 }}
+   339→          className="flex flex-col items-center"
+   340→        >
+   341→          <div className="relative mb-2">
+   342→            <BuddyAvatar name={second.buddy.name} gradient={second.buddy.avatarGradient} size="lg" />
+   343→            {second.buddy.isOnline && (
+   344→              <motion.span
+   345→                className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-background"
+   346→                animate={{ boxShadow: ['0 0 0 0 rgba(16,185,129,0.4)', '0 0 0 5px rgba(16,185,129,0)'] }}
+   347→                transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+   348→              />
+   349→            )}
+   350→          </div>
+   351→          <span className="text-xs font-semibold truncate max-w-[80px]">{second.buddy.name}</span>
+   352→          <div className="flex items-center gap-1 mt-1">
+   353→            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-slate-300 to-slate-500 text-white">
+   354→              <Medal className="h-4 w-4" />
+   355→            </div>
+   356→            <span className="text-xs font-bold text-muted-foreground">{second.weeklyXP.toLocaleString()}</span>
+   357→          </div>
+   358→          <motion.div
+   359→            className="mt-2 w-20 sm:w-24 rounded-t-xl bg-gradient-to-t from-slate-400/20 to-slate-300/10 border border-b-0 border-slate-400/30"
+   360→            initial={{ height: 0 }}
+   361→            animate={{ height: 80 }}
+   362→            transition={{ delay: 0.4, type: 'spring', stiffness: 200, damping: 20 }}
+   363→          >
+   364→            <div className="flex items-center justify-center h-full pb-2">
+   365→              <span className="text-2xl font-black text-slate-400/60">2</span>
+   366→            </div>
+   367→          </motion.div>
+   368→        </motion.div>
+   369→      )}
+   370→
+   371→      {/* 1st Place */}
+   372→      {first && (
+   373→        <motion.div
+   374→          initial={{ opacity: 0, y: 40, scale: 0.8 }}
+   375→          animate={{ opacity: 1, y: 0, scale: 1 }}
+   376→          transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 25 }}
+   377→          className="flex flex-col items-center"
+   378→        >
+   379→          <motion.div
+   380→            animate={{ y: [0, -4, 0] }}
+   381→            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+   382→            className="relative mb-2"
+   383→          >
+   384→            <motion.div
+   385→              animate={{ boxShadow: ['0 0 15px rgba(245,158,11,0.2)', '0 0 30px rgba(245,158,11,0.4)', '0 0 15px rgba(245,158,11,0.2)'] }}
+   386→              transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+   387→              className="absolute -inset-1 rounded-full"
+   388→            />
+   389→            <BuddyAvatar name={first.buddy.name} gradient={first.buddy.avatarGradient} size="lg" />
+   390→            {first.buddy.isOnline && (
+   391→              <motion.span
+   392→                className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-background"
+   393→                animate={{ boxShadow: ['0 0 0 0 rgba(16,185,129,0.4)', '0 0 0 5px rgba(16,185,129,0)'] }}
+   394→                transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+   395→              />
+   396→            )}
+   397→            <motion.div
+   398→              className="absolute -top-3 left-1/2 -translate-x-1/2"
+   399→              initial={{ scale: 0 }}
+   400→              animate={{ scale: 1 }}
+   401→              transition={{ delay: 0.5, type: 'spring', stiffness: 500, damping: 20 }}
+   402→            >
+   403→              <Crown className="h-5 w-5 text-amber-500 drop-shadow-md" />
+   404→            </motion.div>
+   405→          </motion.div>
+   406→          <span className="text-sm font-bold truncate max-w-[90px]">{first.buddy.name}</span>
+   407→          <div className="flex items-center gap-1 mt-1">
+   408→            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 text-white shadow-lg shadow-amber-500/30">
+   409→              <Crown className="h-4 w-4" />
+   410→            </div>
+   411→            <span className="text-xs font-bold text-amber-600 dark:text-amber-400">{first.weeklyXP.toLocaleString()}</span>
+   412→          </div>
+   413→          <motion.div
+   414→            className="mt-2 w-24 sm:w-28 rounded-t-xl bg-gradient-to-t from-amber-400/20 to-amber-300/10 border border-b-0 border-amber-400/30"
+   415→            initial={{ height: 0 }}
+   416→            animate={{ height: 120 }}
+   417→            transition={{ delay: 0.4, type: 'spring', stiffness: 200, damping: 20 }}
+   418→          >
+   419→            <div className="flex items-center justify-center h-full pb-2">
+   420→              <span className="text-3xl font-black text-amber-400/70">1</span>
+   421→            </div>
+   422→          </motion.div>
+   423→        </motion.div>
+   424→      )}
+   425→
+   426→      {/* 3rd Place */}
+   427→      {third && (
+   428→        <motion.div
+   429→          initial={{ opacity: 0, y: 30 }}
+   430→          animate={{ opacity: 1, y: 0 }}
+   431→          transition={{ delay: 0.3, type: 'spring', stiffness: 300, damping: 25 }}
+   432→          className="flex flex-col items-center"
+   433→        >
+   434→          <div className="relative mb-2">
+   435→            <BuddyAvatar name={third.buddy.name} gradient={third.buddy.avatarGradient} size="lg" />
+   436→            {third.buddy.isOnline && (
+   437→              <motion.span
+   438→                className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-background"
+   439→                animate={{ boxShadow: ['0 0 0 0 rgba(16,185,129,0.4)', '0 0 0 5px rgba(16,185,129,0)'] }}
+   440→                transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+   441→              />
+   442→            )}
+   443→          </div>
+   444→          <span className="text-xs font-semibold truncate max-w-[80px]">{third.buddy.name}</span>
+   445→          <div className="flex items-center gap-1 mt-1">
+   446→            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-orange-600 to-amber-700 text-white">
+   447→              <Medal className="h-4 w-4" />
+   448→            </div>
+   449→            <span className="text-xs font-bold text-muted-foreground">{third.weeklyXP.toLocaleString()}</span>
+   450→          </div>
+   451→          <motion.div
+   452→            className="mt-2 w-20 sm:w-24 rounded-t-xl bg-gradient-to-t from-orange-600/20 to-orange-500/10 border border-b-0 border-orange-600/30"
+   453→            initial={{ height: 0 }}
+   454→            animate={{ height: 60 }}
+   455→            transition={{ delay: 0.4, type: 'spring', stiffness: 200, damping: 20 }}
+   456→          >
+   457→            <div className="flex items-center justify-center h-full pb-2">
+   458→              <span className="text-2xl font-black text-orange-500/60">3</span>
+   459→            </div>
+   460→          </motion.div>
+   461→        </motion.div>
+   462→      )}
+   463→    </div>
+   464→  );
+   465→}
+   466→
+   467→/* ── Main LeaderboardView ── */
+   468→export function LeaderboardView() {
+   469→  const { studyBuddies, leaderboardPeriod, setLeaderboardPeriod, userName } = useAppStore();
+   470→  const userBuddy = useUserBuddy();
+   471→  const [shareModalOpen, setShareModalOpen] = useState(false);
+   472→
+   473→  // Combine user + buddies and sort
+   474→  const rankedEntries = useMemo(() => {
+   475→    const all: Array<{ buddy: StudyBuddy; isCurrentUser: boolean; weeklyXP: number; allTimeXP: number }> = [];
+   476→
+   477→    // Add user
+   478→    all.push({
+   479→      buddy: userBuddy,
+   480→      isCurrentUser: true,
+   481→      weeklyXP: getWeeklyXP(userBuddy.totalXP),
+   482→      allTimeXP: userBuddy.totalXP,
+   483→    });
+   484→
+   485→    // Add buddies with simulated weekly XP
+   486→    studyBuddies.forEach((b) => {
+   487→      all.push({
+   488→        buddy: b,
+   489→        isCurrentUser: false,
+   490→        weeklyXP: getWeeklyXP(b.totalXP),
+   491→        allTimeXP: b.totalXP,
+   492→      });
+   493→    });
+   494→
+   495→    // Sort by appropriate XP
+   496→    const sorted = [...all].sort((a, b) => {
+   497→      if (leaderboardPeriod === 'weekly') return b.weeklyXP - a.weeklyXP;
+   498→      if (leaderboardPeriod === 'category') {
+   499→        // Group by topic category and rank within
+   500→        return b.buddy.quizAccuracy - a.buddy.quizAccuracy;
+   501→      }
+   502→      return b.allTimeXP - a.allTimeXP;
+   503→    });
+   504→
+   505→    return sorted.map((entry, idx) => ({
+   506→      rank: idx + 1,
+   507→      ...entry,
+   508→    }));
+   509→  }, [studyBuddies, userBuddy, leaderboardPeriod]);
+   510→
+   511→  const userRank = rankedEntries.find((e) => e.isCurrentUser)?.rank ?? rankedEntries.length;
+   512→  const userEntry = rankedEntries.find((e) => e.isCurrentUser);
+   513→  const userCountUpRank = useCountUp(userRank);
+   514→
+   515→  const top3 = rankedEntries.slice(0, 3);
+   516→  const rest = rankedEntries.slice(3);
+   517→
+   518→  const tabs: Array<{ key: 'weekly' | 'allTime' | 'category'; label: string; icon: typeof Trophy }> = [
+   519→    { key: 'weekly', label: 'Weekly', icon: TrendingUp },
+   520→    { key: 'allTime', label: 'All-Time', icon: Trophy },
+   521→    { key: 'category', label: 'By Category', icon: Target },
+   522→  ];
+   523→
+   524→  const handleShareStats = async () => {
+   525→    setShareModalOpen(true);
+   526→  };
+   527→
+   528→  return (
+   529→    <motion.div
+   530→      variants={stagger}
+   531→      initial="initial"
+   532→      animate="animate"
+   533→      className="space-y-6 pt-2 lg:pt-4"
+   534→    >
+   535→      {/* Header */}
+   536→      <motion.div variants={fadeUp} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+   537→        <div className="space-y-1 pl-14 lg:pl-0">
+   538→          <motion.h1
+   539→            initial={{ opacity: 0, y: 10 }}
+   540→            animate={{ opacity: 1, y: 0 }}
+   541→            transition={{ duration: 0.6, delay: 0.1, ease: 'easeOut' }}
+   542→            className="text-2xl lg:text-3xl font-bold"
+   543→          >
+   544→            <span className="gradient-text-animated">Leaderboard</span>
+   545→          </motion.h1>
+   546→          <p className="text-muted-foreground text-sm">Compete with fellow learners and climb the ranks</p>
+   547→        </div>
+   548→        <motion.div
+   549→          initial={{ opacity: 0, y: 10 }}
+   550→          animate={{ opacity: 1, y: 0 }}
+   551→          transition={{ delay: 0.3 }}
+   552→          className="flex items-center gap-2 pl-14 lg:pl-0"
+   553→        >
+   554→          <Button variant="outline" size="sm" onClick={handleShareStats}>
+   555→            <Share2 className="h-4 w-4 mr-2" />
+   556→            Share My Stats
+   557→          </Button>
+   558→        </motion.div>
+   559→      </motion.div>
+   560→
+   561→      <GradientDivider />
+   562→
+   563→      {/* Period Tabs */}
+   564→      <motion.div variants={fadeUp}>
+   565→        <div className="glass rounded-xl p-1.5 inline-flex gap-1">
+   566→          {tabs.map((tab) => {
+   567→            const Icon = tab.icon;
+   568→            const isActive = leaderboardPeriod === tab.key;
+   569→            return (
+   570→              <motion.button
+   571→                key={tab.key}
+   572→                onClick={() => setLeaderboardPeriod(tab.key)}
+   573→                whileHover={{ scale: 1.02 }}
+   574→                whileTap={{ scale: 0.98 }}
+   575→                className={`
+   576→                  relative flex items-center gap-1.5 rounded-lg px-3 sm:px-4 py-2 text-sm font-medium transition-colors
+   577→                  ${isActive ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}
+   578→                `}
+   579→              >
+   580→                {isActive && (
+   581→                  <motion.div
+   582→                    layoutId="leaderboard-tab-active"
+   583→                    className="absolute inset-0 rounded-lg bg-primary"
+   584→                    transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+   585→                  />
+   586→                )}
+   587→                <span className="relative z-10 flex items-center gap-1.5">
+   588→                  <Icon className="h-4 w-4" />
+   589→                  <span className="hidden sm:inline">{tab.label}</span>
+   590→                </span>
+   591→              </motion.button>
+   592→            );
+   593→          })}
+   594→        </div>
+   595→      </motion.div>
+   596→
+   597→      {/* User Rank Card */}
+   598→      {userEntry && (
+   599→        <motion.div
+   600→          variants={fadeUp}
+   601→          className="glass rounded-xl p-4 border-2 border-primary/20 shadow-[0_0_25px_rgba(16,185,129,0.1)]"
+   602→        >
+   603→          <div className="flex items-center justify-between">
+   604→            <div className="flex items-center gap-3">
+   605→              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+   606→                <span className="text-lg font-black gradient-text">#{userCountUpRank}</span>
+   607→              </div>
+   608→              <div>
+   609→                <p className="text-sm font-semibold">Your Ranking</p>
+   610→                <p className="text-xs text-muted-foreground">
+   611→                  {leaderboardPeriod === 'weekly' ? 'This week' : leaderboardPeriod === 'allTime' ? 'All time' : 'By accuracy'}
+   612→                  {' · '}
+   613→                  {userEntry.weeklyXP.toLocaleString()} XP
+   614→                </p>
+   615→              </div>
+   616→            </div>
+   617→            <div className="flex items-center gap-3">
+   618→              <div className="text-right">
+   619→                <p className="text-xs text-muted-foreground">Level</p>
+   620→                <p className="text-lg font-bold gradient-text">{userBuddy.level}</p>
+   621→              </div>
+   622→              <div className="text-right">
+   623→                <p className="text-xs text-muted-foreground">Total XP</p>
+   624→                <p className="text-lg font-bold">{userBuddy.totalXP.toLocaleString()}</p>
+   625→              </div>
+   626→            </div>
+   627→          </div>
+   628→        </motion.div>
+   629→      )}
+   630→
+   631→      {/* Top 3 Podium */}
+   632→      <motion.div variants={fadeUp} className="glass rounded-2xl p-4 sm:p-6">
+   633→        <div className="flex items-center gap-2 mb-2">
+   634→          <Star className="h-4 w-4 text-amber-500" />
+   635→          <h3 className="font-semibold text-sm">Top Learners</h3>
+   636→          <Badge variant="secondary" className="text-[10px]">{rankedEntries.length} learners</Badge>
+   637→        </div>
+   638→        <TopPodium entries={top3} />
+   639→      </motion.div>
+   640→
+   641→      {/* Full Rankings List */}
+   642→      <motion.div variants={stagger} className="space-y-2">
+   643→        <AnimatePresence>
+   644→          {rest.map((entry) => (
+   645→            <LeaderboardRow
+   646→              key={entry.buddy.id}
+   647→              rank={entry.rank}
+   648→              buddy={entry.buddy}
+   649→              isCurrentUser={entry.isCurrentUser}
+   650→              weeklyXP={leaderboardPeriod === 'allTime' ? entry.allTimeXP : entry.weeklyXP}
+   651→            />
+   652→          ))}
+   653→        </AnimatePresence>
+   654→      </motion.div>
+   655→
+   656→      {/* Footer hint */}
+   657→      <motion.div variants={fadeUp} className="flex items-center justify-center gap-1.5 pb-8">
+   658→        <Users className="h-3.5 w-3.5 text-muted-foreground/50" />
+   659→        <p className="text-xs text-muted-foreground/50">
+   660→          Rankings update based on your study activity
+   661→        </p>
+   662→      </motion.div>
+   663→
+   664→      {/* Share Modal */}
+   665→      <ShareStatsModal open={shareModalOpen} onClose={() => setShareModalOpen(false)} />
+   666→    </motion.div>
+   667→  );
+   668→}
+   669→
+   670→export default LeaderboardView;

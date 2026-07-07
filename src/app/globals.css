@@ -2470,3 +2470,236 @@ html.lenis, html.lenis body {
 .dark .scroll-fade-bottom::after {
   background: linear-gradient(to bottom, transparent, oklch(0.15 0.02 260 / 0.9));
 }
+
+/* ═══════════════════════════════════════════════════════
+   Round 15 — 12 New CSS Animation Utilities
+   ═══════════════════════════════════════════════════════ */
+
+/* 26. aurora-bg — Animated aurora/northern lights background */
+@utility aurora-bg {
+  background: linear-gradient(
+    135deg,
+    oklch(0.627 0.194 149.214 / 0.15),
+    oklch(0.707 0.165 162.48 / 0.10),
+    oklch(0.623 0.178 238.99 / 0.12),
+    oklch(0.765 0.177 164.22 / 0.10),
+    oklch(0.627 0.194 149.214 / 0.15)
+  );
+  background-size: 400% 400%;
+  animation: auroraShift 15s ease infinite;
+}
+@keyframes auroraShift {
+  0% { background-position: 0% 50%; }
+  25% { background-position: 100% 0%; }
+  50% { background-position: 100% 100%; }
+  75% { background-position: 0% 100%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* 27. glass-card-3d — Glass card with perspective 3D transform on hover */
+@utility glass-card-3d {
+  transform-style: preserve-3d;
+  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+              box-shadow 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  will-change: transform;
+}
+.glass-card-3d:hover {
+  transform: perspective(800px) rotateX(2deg) rotateY(-2deg) translateY(-4px);
+  box-shadow: 0 20px 40px oklch(0 0 0 / 0.1), 0 8px 16px oklch(0 0 0 / 0.06);
+}
+
+/* 28. text-reveal — Text clip-reveal animation from bottom to top */
+@utility text-reveal {
+  overflow: hidden;
+  clip-path: inset(0 0 100% 0);
+  animation: textReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes textReveal {
+  to { clip-path: inset(0 0 0% 0); }
+}
+
+/* 29. magnetic-hover — Subtle magnetic attract effect on hover */
+@utility magnetic-hover {
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+              box-shadow 0.3s ease;
+}
+.magnetic-hover:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 20px oklch(0.627 0.194 149.214 / 0.15), 0 2px 8px oklch(0 0 0 / 0.06);
+}
+
+/* 30. wave-divider — Wave-shaped section divider */
+@utility wave-divider {
+  position: relative;
+}
+.wave-divider::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: -5%;
+  width: 110%;
+  height: 40px;
+  background: oklch(1 0 0);
+  clip-path: ellipse(55% 100% at 50% 100%);
+  pointer-events: none;
+}
+.dark .wave-divider::after {
+  background: oklch(0.15 0.02 260);
+}
+
+/* 31. neon-border — Neon glow border with intensified hover */
+@utility neon-border {
+  border: 1px solid oklch(0.627 0.194 149.214 / 0.4);
+  box-shadow: 0 0 5px oklch(0.627 0.194 149.214 / 0.15),
+              0 0 10px oklch(0.627 0.194 149.214 / 0.08);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.neon-border:hover {
+  border-color: oklch(0.627 0.194 149.214 / 0.7);
+  box-shadow: 0 0 8px oklch(0.627 0.194 149.214 / 0.3),
+              0 0 20px oklch(0.627 0.194 149.214 / 0.15),
+              0 0 40px oklch(0.627 0.194 149.214 / 0.08);
+}
+
+/* 32. particle-trail — Animated particle trail effect via box-shadow */
+@utility particle-trail {
+  animation: particleTrail 3s ease-in-out infinite;
+}
+@keyframes particleTrail {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.627 0.194 149.214 / 0.3); }
+  20% { box-shadow: 2px -4px 0 0 oklch(0.627 0.194 149.214 / 0.2), -2px 2px 0 0 oklch(0.707 0.165 162.48 / 0.15); }
+  40% { box-shadow: 4px -8px 0 0 oklch(0.627 0.194 149.214 / 0.15), -4px 4px 0 0 oklch(0.707 0.165 162.48 / 0.1), 0 -12px 0 0 oklch(0.765 0.177 164.22 / 0.1); }
+  60% { box-shadow: 6px -6px 0 0 oklch(0.627 0.194 149.214 / 0.1), -6px 2px 0 0 oklch(0.707 0.165 162.48 / 0.08), 2px -10px 0 0 oklch(0.765 0.177 164.22 / 0.08), -2px -14px 0 0 oklch(0.623 0.178 238.99 / 0.06); }
+  80% { box-shadow: 4px -4px 0 0 oklch(0.627 0.194 149.214 / 0.08), -4px 4px 0 0 oklch(0.707 0.165 162.48 / 0.05), 0 -8px 0 0 oklch(0.765 0.177 164.22 / 0.05); }
+}
+
+/* 33. morphing-blob — Organic blob shape with animated border-radius */
+@utility morphing-blob {
+  border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+  animation: morphBlob 30s ease-in-out infinite;
+}
+@keyframes morphBlob {
+  0% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+  25% { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; }
+  50% { border-radius: 50% 60% 30% 70% / 40% 50% 60% 50%; }
+  75% { border-radius: 40% 30% 60% 50% / 70% 40% 50% 60%; }
+  100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+}
+
+/* 34. scroll-reveal — Fade-up reveal animation for scroll-triggered elements */
+@utility scroll-reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  animation: scrollReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes scrollReveal {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 35. gradient-text-flow — Animated flowing diagonal gradient text */
+@utility gradient-text-flow {
+  background: linear-gradient(
+    135deg,
+    oklch(0.627 0.194 149.214),
+    oklch(0.707 0.165 162.48),
+    oklch(0.702 0.183 194.77),
+    oklch(0.627 0.194 149.214)
+  );
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradientTextFlow 4s ease infinite;
+}
+@keyframes gradientTextFlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* 36. spotlight-card — Card with radial gradient spotlight on hover */
+@utility spotlight-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.spotlight-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(
+    600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    oklch(0.627 0.194 149.214 / 0.08),
+    transparent 40%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: inherit;
+}
+.spotlight-card:hover::before {
+  opacity: 1;
+}
+.spotlight-card:hover {
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.08);
+}
+
+/* 37. breathing-border — Border that pulses in opacity/color */
+@utility breathing-border {
+  border: 1px solid oklch(0.627 0.194 149.214 / 0.3);
+  animation: breatheBorder 4s ease-in-out infinite;
+}
+@keyframes breatheBorder {
+  0%, 100% { border-color: oklch(0.627 0.194 149.214 / 0.3); }
+  50% { border-color: oklch(0.627 0.194 149.214 / 0.6); box-shadow: 0 0 8px oklch(0.627 0.194 149.214 / 0.15); }
+}
+
+/* 38. gradient-divider-animated — Animated gradient horizontal line */
+@utility gradient-divider-animated {
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(0.627 0.194 149.214 / 0.6),
+    oklch(0.707 0.165 162.48 / 0.6),
+    oklch(0.627 0.194 149.214 / 0.6),
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: gradientDividerSweep 3s linear infinite;
+  border: none;
+  border-radius: 1px;
+}
+@keyframes gradientDividerSweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 39. inset-glow — Inset glow effect for cards */
+@utility inset-glow {
+  box-shadow: inset 0 1px 0 0 oklch(0.627 0.194 149.214 / 0.15),
+              inset 0 -1px 0 0 oklch(0.627 0.194 149.214 / 0.05);
+}
+.dark .inset-glow {
+  box-shadow: inset 0 1px 0 0 oklch(0.627 0.194 149.214 / 0.1),
+              inset 0 -1px 0 0 oklch(0.627 0.194 149.214 / 0.03);
+}
+
+/* 40. frosted-glass-strong — Extra-strong frosted glass with backdrop blur */
+@utility frosted-glass-strong {
+  background: oklch(1 0 0 / 0.6);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid oklch(1 0 0 / 0.3);
+}
+.dark .frosted-glass-strong {
+  background: oklch(0.15 0.02 260 / 0.7);
+  border-color: oklch(1 0 0 / 0.08);
+}

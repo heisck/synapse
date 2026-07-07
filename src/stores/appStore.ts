@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings, Achievement, StudySession, StudyGoal, StudyNotification, AdaptiveResult, StudyBuddy } from '@/types';
+import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings, Achievement, StudySession, StudyGoal, StudyNotification, AdaptiveResult, StudyBuddy, StarredMessage } from '@/types';
 
 interface AppState {
   // Navigation
@@ -143,7 +143,20 @@ interface AppState {
   notifications: StudyNotification[];
   addNotification: (n: Omit<StudyNotification, 'id' | 'read' | 'createdAt'>) => void;
   markNotificationRead: (id: string) => void;
+  markAllNotificationsRead: () => void;
+  clearNotification: (id: string) => void;
   clearAllNotifications: () => void;
+
+  // Starred Messages
+  starredMessages: StarredMessage[];
+  toggleStarMessage: (messageId: string, reason?: string) => void;
+  unstarMessage: (messageId: string) => void;
+  clearAllStarredMessages: () => void;
+
+  // Bookmarked Courses
+  bookmarkedCourses: string[];
+  toggleBookmark: (courseId: string) => void;
+  isBookmarked: (courseId: string) => boolean;
 
   // Adaptive Results
   adaptiveResults: AdaptiveResult[];
@@ -844,7 +857,72 @@ export const useAppStore = create<AppState>((set) => ({
   markNotificationRead: (id) => set((s) => ({
     notifications: s.notifications.map((n) => n.id === id ? { ...n, read: true } : n),
   })),
+  markAllNotificationsRead: () => set((s) => ({
+    notifications: s.notifications.map((n) => ({ ...n, read: true })),
+  })),
+  clearNotification: (id) => set((s) => ({
+    notifications: s.notifications.filter((n) => n.id !== id),
+  })),
   clearAllNotifications: () => set({ notifications: [] }),
+
+  // Starred Messages
+  starredMessages: (() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem('synapse-starred-messages');
+      return safeArray(stored ? JSON.parse(stored) : []);
+    } catch {
+      return [];
+    }
+  })(),
+  toggleStarMessage: (messageId, reason) => set((s) => {
+    const exists = s.starredMessages.find((m) => m.messageId === messageId);
+    let updated: StarredMessage[];
+    if (exists) {
+      updated = s.starredMessages.filter((m) => m.messageId !== messageId);
+    } else {
+      updated = [...s.starredMessages, { messageId, reason: reason || '', starredAt: Date.now() }];
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-starred-messages', JSON.stringify(updated));
+    }
+    return { starredMessages: updated };
+  }),
+  unstarMessage: (messageId) => set((s) => {
+    const updated = s.starredMessages.filter((m) => m.messageId !== messageId);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-starred-messages', JSON.stringify(updated));
+    }
+    return { starredMessages: updated };
+  }),
+  clearAllStarredMessages: () => set(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-starred-messages', JSON.stringify([]));
+    }
+    return { starredMessages: [] };
+  }),
+
+  // Bookmarked Courses
+  bookmarkedCourses: (() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem('synapse-bookmarks');
+      return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+  })(),
+  toggleBookmark: (courseId: string) => set((s) => {
+    const updated = s.bookmarkedCourses.includes(courseId)
+      ? s.bookmarkedCourses.filter((id) => id !== courseId)
+      : [...s.bookmarkedCourses, courseId];
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-bookmarks', JSON.stringify(updated));
+    }
+    return { bookmarkedCourses: updated };
+  }),
+  isBookmarked: (courseId: string) => {
+    const state = get();
+    return state.bookmarkedCourses.includes(courseId);
+  },
 
   // Adaptive Results
   adaptiveResults: [],

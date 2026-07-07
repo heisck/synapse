@@ -1139,7 +1139,7 @@ export function FocusTimerView() {
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ type: 'spring', stiffness: 350, damping: 22, delay: 0.05 }}
-                  className="glass rounded-2xl p-5 flex flex-col items-center justify-center"
+                  className="glass rounded-2xl p-5 flex flex-col items-center justify-center neon-border"
                 >
                   <div className="relative">
                     <svg width="110" height="110" viewBox="0 0 100 100" className="transform -rotate-90">
@@ -1186,7 +1186,7 @@ export function FocusTimerView() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ type: 'spring', stiffness: 350, damping: 22, delay: 0.1 }}
-                  className="glass rounded-2xl p-5 flex flex-col items-center justify-center"
+                  className="glass rounded-2xl p-5 flex flex-col items-center justify-center glass-card-3d"
                 >
                   <div className="h-8 w-8 rounded-lg bg-emerald-500/10 flex items-center justify-center mb-2">
                     <Clock className="h-4 w-4 text-emerald-500" />
@@ -1204,7 +1204,7 @@ export function FocusTimerView() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ type: 'spring', stiffness: 350, damping: 22, delay: 0.15 }}
-                  className="glass rounded-2xl p-5 flex flex-col items-center justify-center"
+                  className="glass rounded-2xl p-5 flex flex-col items-center justify-center glass-card-3d"
                 >
                   <div className="h-8 w-8 rounded-lg bg-teal-500/10 flex items-center justify-center mb-2">
                     <Target className="h-4 w-4 text-teal-500" />
@@ -1260,7 +1260,7 @@ export function FocusTimerView() {
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ type: 'spring', stiffness: 300, damping: 22, delay: 0.1 }}
-                className="glass rounded-2xl p-5 hidden sm:block"
+                className="glass rounded-2xl p-5 hidden sm:block breathing-border"
               >
                 <div className="flex items-center gap-2 mb-4">
                   <TrendingUp className="h-4 w-4 text-emerald-500" />

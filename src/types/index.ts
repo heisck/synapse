@@ -169,13 +169,21 @@ export interface StudyGoal {
 
 export interface StudyNotification {
   id: string;
-  type: 'reminder' | 'achievement' | 'streak' | 'goal' | 'review' | 'tip';
+  type: 'reminder' | 'achievement' | 'streak' | 'goal' | 'review' | 'tip' | 'milestone' | 'social';
   title: string;
   message: string;
   read: boolean;
   createdAt: string;
   actionLabel?: string;
   actionView?: AppView;
+  priority?: 'low' | 'medium' | 'high';
+  actionUrl?: string;
+}
+
+export interface StarredMessage {
+  messageId: string;
+  reason: string;
+  starredAt: number;
 }
 
 export interface AdaptiveResult {

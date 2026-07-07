@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Brain, Copy, Check, RefreshCw, Volume2, VolumeX, Loader2 } from 'lucide-react'
+import { Brain, Copy, Check, RefreshCw, Volume2, VolumeX, Loader2, Star, BookMarked } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -13,6 +13,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useAppStore } from '@/stores/appStore'
 import type { ChatMessage } from '@/types'
 
 // Reaction options for assistant messages
@@ -39,6 +40,8 @@ interface ChatBubbleProps {
   message: ChatMessage
   isStreaming?: boolean
   onRegenerate?: (messageId: string) => void
+  onSaveAsNote?: (message: ChatMessage) => void
+  scrollToMessage?: (messageId: string) => void
 }
 
 function CopyCodeButton({ code }: { code: string }) {
@@ -325,12 +328,18 @@ function MessageActions({
   onTTS,
   isTTSLoading,
   isTTSPlaying,
+  isStarred,
+  onToggleStar,
+  onSaveAsNote,
 }: {
   message: ChatMessage
   onRegenerate: () => void
   onTTS: () => void
   isTTSLoading: boolean
   isTTSPlaying: boolean
+  isStarred: boolean
+  onToggleStar: () => void
+  onSaveAsNote?: () => void
 }) {
   const [copied, setCopied] = useState(false)
 
@@ -443,12 +452,55 @@ function MessageActions({
             {isTTSPlaying ? 'Stop' : 'Read aloud'}
           </TooltipContent>
         </Tooltip>
+
+        {/* Star / Bookmark */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-6 w-6 rounded-md ${isStarred ? 'text-amber-500 hover:text-amber-600' : 'text-muted-foreground hover:text-foreground'} hover:bg-accent/50`}
+              onClick={onToggleStar}
+              aria-label={isStarred ? 'Unstar message' : 'Star message'}
+            >
+              <motion.div
+                animate={isStarred ? { scale: [0, 1.2, 1], rotate: [0, -15, 0] } : { scale: 1 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+              >
+                <Star className={`h-3 w-3 ${isStarred ? 'fill-amber-500' : ''}`} />
+              </motion.div>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            {isStarred ? 'Unstar' : 'Star message'}
+          </TooltipContent>
+        </Tooltip>
+
+        {/* Save as Note */}
+        {onSaveAsNote && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                onClick={onSaveAsNote}
+                aria-label="Save as note"
+              >
+                <BookMarked className="h-3 w-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              Save as Note
+            </TooltipContent>
+          </Tooltip>
+        )}
       </motion.div>
     </TooltipProvider>
   )
 }
 
-export function ChatBubble({ message, isStreaming = false, onRegenerate }: ChatBubbleProps) {
+export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveAsNote, scrollToMessage }: ChatBubbleProps) {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
   const isAssistant = message.role === 'assistant'
@@ -458,6 +510,8 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate }: ChatB
   const [isHovered, setIsHovered] = useState(false)
   const [glowVisible, setGlowVisible] = useState(isAssistant && isStreaming)
   const [reactions, setReactions] = useState<Record<string, number>>({})
+  const { starredMessages, toggleStarMessage } = useAppStore()
+  const isStarred = starredMessages.some((sm) => sm.messageId === message.id)
 
   // Toggle a reaction on this message
   const handleReaction = useCallback((emoji: string) => {
@@ -622,6 +676,14 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate }: ChatB
                 transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
               />
             )}
+            {/* Starred emerald left border glow for assistant messages */}
+            {isAssistant && isStarred && (
+              <motion.div
+                className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-gradient-to-b from-emerald-400 via-teal-300 to-emerald-400"
+                animate={{ opacity: [0.6, 1, 0.6], boxShadow: ['0 0 4px oklch(0.7 0.15 160)', '0 0 10px oklch(0.7 0.15 160)', '0 0 4px oklch(0.7 0.15 160)'] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            )}
             {/* Gradient glow on new assistant messages */}
             {isAssistant && glowVisible && (
               <motion.div
@@ -674,6 +736,9 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate }: ChatB
                 onTTS={handleTTS}
                 isTTSLoading={isTTSLoading}
                 isTTSPlaying={isTTSPlaying}
+                isStarred={isStarred}
+                onToggleStar={() => toggleStarMessage(message.id)}
+                onSaveAsNote={onSaveAsNote ? () => onSaveAsNote(message) : undefined}
               />
             </div>
           )}
