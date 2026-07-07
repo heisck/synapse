@@ -2,7 +2,7 @@
 
 import { Suspense, lazy, useState, useRef, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Keyboard, Timer, Bell, Flame, Target, Lightbulb, Clock, CheckCheck, Trophy } from 'lucide-react';
+import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Keyboard, Timer, Bell, Flame, Target, Lightbulb, Clock, CheckCheck, Trophy, BookOpen } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { AppSidebar } from './AppSidebar';
 import { StoreInitializer } from './StoreInitializer';
@@ -15,17 +15,19 @@ import type { StudyNotification, AppView } from '@/types';
 const LandingPage = lazy(() =>
   import('@/components/landing/LandingPage').then((m) => ({ default: m.LandingPage }))
 );
-const Dashboard = lazy(() => import('./Dashboard'));
+const Dashboard = lazy(() => import('./Dashboard').then((m) => ({ default: m.Dashboard })));
 const TutorView = lazy(() =>
   import('@/components/tutor/TutorView').then((m) => ({ default: m.TutorView }))
 );
-const UploadView = lazy(() => import('./UploadView'));
-const QuizView = lazy(() => import('./QuizView'));
-const OnboardingFlow = lazy(() => import('./OnboardingFlow'));
-const ProfileView = lazy(() => import('./ProfileView'));
-const CourseDetail = lazy(() => import('./CourseDetail'));
-const NotesView = lazy(() => import('./NotesView'));
-const SettingsView = lazy(() => import('./SettingsView'));
+const UploadView = lazy(() => import('./UploadView').then((m) => ({ default: m.UploadView })));
+const CoursesView = lazy(() => import('./CoursesView').then((m) => ({ default: m.CoursesView })));
+const QuizView = lazy(() => import('./QuizView').then((m) => ({ default: m.QuizView })));
+const OnboardingFlow = lazy(() => import('./OnboardingFlow').then((m) => ({ default: m.OnboardingFlow })));
+const ProfileView = lazy(() => import('./ProfileView').then((m) => ({ default: m.ProfileView })));
+const CourseDetail = lazy(() => import('./CourseDetail').then((m) => ({ default: m.CourseDetail })));
+const CardStudyView = lazy(() => import('./CardStudyView').then((m) => ({ default: m.CardStudyView })));
+const NotesView = lazy(() => import('./NotesView').then((m) => ({ default: m.NotesView })));
+const SettingsView = lazy(() => import('./SettingsView').then((m) => ({ default: m.SettingsView })));
 const FocusTimerView = lazy(() => import('./FocusTimerView').then((m) => ({ default: m.FocusTimerView })));
 const LeaderboardView = lazy(() => import('./LeaderboardView').then((m) => ({ default: m.LeaderboardView })));
 
@@ -37,46 +39,15 @@ function ViewLoader() {
       transition={{ type: 'spring', stiffness: 200, damping: 22, mass: 0.8 }}
       className="flex h-full min-h-[60vh] items-center justify-center"
     >
-      <div className="glass rounded-2xl p-8 flex flex-col items-center gap-5 max-w-xs w-full">
-        {/* Brain icon with pulsing glow */}
+      <div className="flex flex-col items-center gap-4">
+        {/* The brain IS the logo — no container box */}
         <motion.div
-          animate={{
-            boxShadow: [
-              '0 0 8px rgba(16, 185, 129, 0.15)',
-              '0 0 28px rgba(16, 185, 129, 0.35)',
-              '0 0 8px rgba(16, 185, 129, 0.15)',
-            ],
-            scale: [1, 1.06, 1],
-          }}
-          transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-          className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10"
+          animate={{ opacity: [0.5, 1, 0.5] }}
+          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
         >
-          <Brain className="h-8 w-8 text-primary" />
+          <Brain className="h-10 w-10 text-primary" />
         </motion.div>
-
-        {/* Animated gradient text */}
-        <p className="gradient-text-animated text-lg font-semibold">Loading...</p>
-
-        {/* Three bouncing dots */}
-        <div className="flex items-center gap-2">
-          {[0, 1, 2].map((i) => (
-            <motion.span
-              key={i}
-              animate={{
-                y: [0, -10, 0],
-                opacity: [0.4, 1, 0.4],
-                scale: [0.7, 1, 0.7],
-              }}
-              transition={{
-                duration: 1.2,
-                repeat: Infinity,
-                ease: 'easeInOut',
-                delay: i * 0.18,
-              }}
-              className="h-2.5 w-2.5 rounded-full bg-primary"
-            />
-          ))}
-        </div>
+        <p className="text-sm text-muted-foreground">Loading...</p>
       </div>
     </motion.div>
   );
@@ -122,6 +93,11 @@ const viewTransitions: Record<string, { initial: object; animate: object; exit: 
     animate: { opacity: 1, scale: 1 },
     exit: { opacity: 0, scale: 0.92 },
   },
+  courses: {
+    initial: { opacity: 0, x: -40 },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: 40 },
+  },
   quiz: {
     initial: { opacity: 0, y: 40 },
     animate: { opacity: 1, y: 0 },
@@ -146,6 +122,11 @@ const viewTransitions: Record<string, { initial: object; animate: object; exit: 
     initial: { opacity: 0, y: 20, scale: 0.97 },
     animate: { opacity: 1, y: 0, scale: 1 },
     exit: { opacity: 0, y: -20, scale: 0.97 },
+  },
+  'card-study': {
+    initial: { opacity: 0, y: 40 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -40 },
   },
   settings: {
     initial: { opacity: 0, scale: 0.95 },
@@ -175,6 +156,7 @@ function SearchModal() {
     { label: 'Dashboard', view: 'dashboard' as AppView, icon: LayoutDashboard },
     { label: 'AI Tutor', view: 'tutor' as AppView, icon: MessageSquare },
     { label: 'Upload Slides', view: 'upload' as AppView, icon: Upload },
+    { label: 'My Courses', view: 'courses' as AppView, icon: BookOpen },
     { label: 'Quiz Mode', view: 'quiz' as AppView, icon: ClipboardCheck },
     { label: 'Leaderboard', view: 'leaderboard' as AppView, icon: Trophy },
     { label: 'Notes', view: 'notes' as AppView, icon: BookMarked },
@@ -573,12 +555,12 @@ function KeyboardShortcuts() {
       {/* Floating ? button */}
       <motion.button
         onClick={() => setOpen(true)}
-        whileHover={{ scale: 1.1 }}
+        whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
-        className="fixed bottom-6 right-6 z-50 flex h-10 w-10 items-center justify-center rounded-full glass pulse-glow border border-border/50 text-sm font-bold text-primary shadow-lg cursor-pointer"
+        className="fixed bottom-6 right-6 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background shadow-md cursor-pointer"
         aria-label="Keyboard shortcuts"
       >
-        ?
+        <span className="text-sm font-bold">?</span>
       </motion.button>
 
       {/* Shortcuts Dialog */}
@@ -704,10 +686,10 @@ function NotificationBell() {
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
         onClick={() => setOpen((v) => !v)}
-        className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border/60 bg-background/60 hover:bg-accent/50 transition-colors"
+        className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background/95 hover:bg-accent/50 transition-colors backdrop-blur-md"
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
       >
-        <Bell className="h-4 w-4 text-muted-foreground" />
+        <Bell className="h-4 w-4 text-foreground/80" />
         <AnimatePresence>
           {unreadCount > 0 && (
             <motion.span
@@ -855,12 +837,16 @@ export function AppShell() {
         return <TutorView />;
       case 'upload':
         return <UploadView />;
+      case 'courses':
+        return <CoursesView />;
       case 'quiz':
         return <QuizView />;
       case 'profile':
         return <ProfileView />;
       case 'course-detail':
         return <CourseDetail />;
+      case 'card-study':
+        return <CardStudyView />;
       case 'notes':
         return <NotesView />;
       case 'focus-timer':
@@ -902,31 +888,31 @@ export function AppShell() {
           </motion.div>
         ) : (
           <motion.div
-            key={`app-${currentView}`}
-            variants={viewVariant}
-            initial={false}
+            key="app-shell"
+            variants={defaultTransition}
+            initial="initial"
             animate="animate"
             exit="exit"
             transition={viewTransitionConfig}
-            className="flex min-h-screen"
+            className="flex h-screen overflow-hidden"
           >
             <AppSidebar />
-            <main className={`relative flex-1 min-h-screen overflow-y-auto overflow-x-hidden ${currentView === 'tutor' ? '!p-0 !max-w-none' : ''}`}>
-              {/* Notification bell - top right */}
-              <div className="fixed top-4 right-4 z-40">
-                <NotificationBell />
-              </div>
+            <main className={`relative flex-1 h-screen min-w-0 overflow-y-auto overflow-x-hidden ${currentView === 'tutor' ? '!p-0 !max-w-none' : ''}`}>
               {/* Animated mesh-gradient background */}
               <div
-                className="pointer-events-none fixed inset-0 -z-10 opacity-40 dark:opacity-20"
+                className="pointer-events-none fixed inset-0 -z-10 opacity-40 dark:opacity-20 overflow-hidden"
                 aria-hidden="true"
               >
                 <div
-                  className="absolute inset-0 blur-3xl"
+                  className="absolute blur-3xl"
                   style={{
+                    top: '-15%',
+                    left: '-15%',
+                    right: '-15%',
+                    bottom: '-15%',
                     background: 'linear-gradient(135deg, oklch(0.627 0.194 149.214 / 0.15) 0%, oklch(0.687 0.159 177.89 / 0.1) 25%, oklch(0.565 0.194 149.214 / 0.08) 50%, oklch(0.627 0.194 149.214 / 0.12) 75%, oklch(0.687 0.159 177.89 / 0.15) 100%)',
-                    backgroundSize: '400% 400%',
                     animation: 'meshBgShift 20s ease-in-out infinite',
+                    willChange: 'transform',
                   }}
                 />
               </div>
@@ -935,18 +921,29 @@ export function AppShell() {
                 className="pointer-events-none fixed inset-0 -z-[9] opacity-[0.015] dark:opacity-[0.03]"
                 aria-hidden="true"
                 style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E")`,
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E")`,
                   backgroundRepeat: 'repeat',
                   backgroundSize: '128px 128px',
                 }}
               />
               <TransitionIndicator show={transitioning} />
               <div className={`mx-auto max-w-6xl p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] lg:p-8 ${currentView === 'tutor' ? '!max-w-none !p-0' : ''}`}>
-                <Suspense fallback={<ViewLoader />}>
-                  <ErrorBoundary onGoDashboard={handleGoDashboard}>
-                    {renderView()}
-                  </ErrorBoundary>
-                </Suspense>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={currentView}
+                    variants={viewVariant}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={viewTransitionConfig}
+                  >
+                    <Suspense fallback={<ViewLoader />}>
+                      <ErrorBoundary onGoDashboard={handleGoDashboard}>
+                        {renderView()}
+                      </ErrorBoundary>
+                    </Suspense>
+                  </motion.div>
+                </AnimatePresence>
               </div>
             </main>
           </motion.div>

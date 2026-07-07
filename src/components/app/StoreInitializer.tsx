@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Trophy } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { useSessionPersistence } from '@/hooks/useSessionPersistence';
+import { usePresence } from '@/hooks/usePresence';
 import type { Course } from '@/types';
 
 export function StoreInitializer() {
@@ -13,6 +14,9 @@ export function StoreInitializer() {
 
   // Restore persisted session state from localStorage
   useSessionPersistence();
+
+  // Report this instance to the presence backend + pull live peers
+  usePresence();
 
   // Track previous achievements to detect unlocks
   useEffect(() => {
@@ -63,8 +67,8 @@ export function StoreInitializer() {
       try {
         const res = await fetch('/api/courses');
         if (res.ok) {
-          const data: Course[] = await res.json();
-          setCourses(data);
+          const data: { success: boolean; courses: Course[] } = await res.json();
+          setCourses(data.courses || []);
         }
       } catch {
         // silently fail — dashboard handles empty state

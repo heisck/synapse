@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { useAppStore } from '@/stores/appStore'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -50,6 +50,8 @@ import {
   Star,
   StickyNote,
   Tag,
+  Layers,
+  ClipboardCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -98,6 +100,12 @@ function getSpeechRecognition(): (new () => SpeechRecognitionInstance) | null {
 }
 
 import { ChatBubble, stopAllTTS } from './ChatBubble'
+import { InteractiveQuizCard, parseQuizPayload } from './InteractiveQuizCard'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { TypingIndicator } from './TypingIndicator'
 import { MasteryTracker } from './MasteryTracker'
 import { SessionControls } from './SessionControls'
@@ -115,6 +123,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import type { ChatMessage } from '@/types'
 
 // ---------- Pomodoro Timer ----------
 const POMODORO_MODES = [
@@ -153,8 +162,6 @@ function playBeep() {
     // Audio not available
   }
 }
-
-const QUICK_TOPICS = ['Cell Biology', 'Data Structures', 'World History', 'Calculus', 'Creative Writing']
 
 const QUICK_ACTIONS = [
   { label: 'Give hint', icon: Lightbulb, prompt: 'Give me a hint about what we were just discussing.' },
@@ -195,7 +202,40 @@ const TUTOR_MODES = [
   { id: 'text' as const, label: 'Chat', icon: MessageCircle, desc: 'Text-only conversation' },
   { id: 'slide' as const, label: 'Slides', icon: BookOpen, desc: 'Slide-focused learning' },
   { id: 'hybrid' as const, label: 'Hybrid', icon: Columns, desc: 'Chat + slides together' },
+  { id: 'cards' as const, label: 'Cards', icon: Layers, desc: 'Flashcards first — text the AI below' },
 ]
+
+/** Slim collapsible section for the right panel — keeps it compact */
+function PanelSection({
+  title,
+  icon: Icon,
+  defaultOpen = false,
+  badge,
+  children,
+}: {
+  title: string
+  icon?: typeof Star
+  defaultOpen?: boolean
+  badge?: number
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="flex w-full items-center justify-between py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors">
+        <span className="flex items-center gap-1.5">
+          {Icon && <Icon className="h-3.5 w-3.5" />}
+          {title}
+          {typeof badge === 'number' && badge > 0 && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{badge}</Badge>
+          )}
+        </span>
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pb-2">{children}</CollapsibleContent>
+    </Collapsible>
+  )
+}
 
 function formatTimer(seconds: number): string {
   const h = Math.floor(seconds / 3600)
@@ -209,6 +249,7 @@ function getPhaseColor(phase: string): string {
     case 'discovery': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
     case 'starter': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
     case 'teaching': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+    case 'review': return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400'
     default: return 'bg-muted text-muted-foreground'
   }
 }
@@ -235,11 +276,21 @@ export function TutorView() {
     activeSlides,
     currentSlideIndex,
     setCurrentSlideIndex,
+    activeSlideContent,
     navigate,
     starredMessages,
     unstarMessage,
     clearAllStarredMessages,
     addNote,
+    courses,
+    activeCourse,
+    addStudySession,
+    tips,
+    feedbackItems,
+    settings,
+    hardSubjects,
+    alwaysConfuses,
+    bestTeachingStyle,
   } = useAppStore()
 
   const [input, setInput] = useState('')
@@ -446,9 +497,34 @@ export function TutorView() {
 
   const showSlidePanel = (tutorMode === 'slide' || tutorMode === 'hybrid') && activeSlides.length > 0
 
+  // Quick topic suggestions derived from the user's real courses
+  // Dedupe: users can have multiple courses with the same title
+  const quickTopics = useMemo(() => [...new Set(courses.map((c) => c.title))].slice(0, 5), [courses])
+
+  // Most recent quiz/flashcard deck the AI produced — powers the Practice
+  // panel and the cards-first tutor mode
+  const latestQuiz = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.role === 'assistant') {
+        const q = parseQuizPayload(m.content)
+        if (q) return { payload: q.payload, messageId: m.id }
+      }
+    }
+    return null
+  }, [messages])
+
+  // When a deck exists and the right panel is open, it answers on the side
+  const quizShownAside = latestQuiz !== null && rightPanelOpen && tutorMode !== 'cards'
+
   // Initialize session on mount
   useEffect(() => {
     if (!activeSessionId) {
+      const state = useAppStore.getState()
+      // A fresh session starts with the user's chosen default persona
+      if (state.settings.defaultPersona && state.settings.defaultPersona !== state.activePersona) {
+        state.setActivePersona(state.settings.defaultPersona)
+      }
       const sessionId = crypto.randomUUID()
       setActiveSession(sessionId)
       addMessage({
@@ -663,12 +739,35 @@ export function TutorView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: content,
-          phase: sessionPhase,
+          // Read fresh from the store: revision/quiz controls may have just changed the phase
+          phase: useAppStore.getState().sessionPhase,
+          topic: activeTopic || activeCourse?.title || undefined,
           learnerProfile,
           masteryMap,
           history,
           persona: activePersona,
           moodSettings,
+          // Learning context so the tutor actually adapts
+          userName,
+          tips: tips.slice(-5).map((t) => t.content),
+          feedbackItems: feedbackItems.slice(-5).map((f) => ({ type: f.type, createdAt: f.createdAt })),
+          responseSpeed: settings.responseSpeed,
+          language: settings.language,
+          hardSubjects,
+          alwaysConfuses,
+          bestTeachingStyle,
+          // The tutor always knows what the learner is looking at
+          slideContext: activeSlides.length > 0
+            ? {
+                courseTitle: activeCourse?.title,
+                index: currentSlideIndex + 1,
+                total: activeSlides.length,
+                title: activeSlides[currentSlideIndex]?.title,
+                content: (activeSlides[currentSlideIndex]?.content || '').slice(0, 1800),
+              }
+            : activeSlideContent
+              ? { courseTitle: activeCourse?.title, content: activeSlideContent.slice(0, 1800) }
+              : undefined,
         }),
       })
 
@@ -685,7 +784,8 @@ export function TutorView() {
         createdAt: new Date().toISOString(),
       })
 
-      if (sessionPhase === 'discovery' || sessionPhase === 'starter') {
+      const phaseNow = useAppStore.getState().sessionPhase
+      if (phaseNow === 'discovery' || phaseNow === 'starter') {
         setSessionPhase('teaching')
       }
     } catch {
@@ -700,7 +800,27 @@ export function TutorView() {
     } finally {
       setLoading(false)
     }
-  }, [input, activeSessionId, messages, sessionPhase, learnerProfile, masteryMap, addMessage, setActiveSession, setLoading, setSessionPhase, activePersona])
+  }, [input, activeSessionId, messages, learnerProfile, masteryMap, addMessage, setActiveSession, setLoading, setSessionPhase, activePersona, moodSettings, activeTopic, activeCourse, userName, tips, feedbackItems, settings.responseSpeed, settings.language, hardSubjects, alwaysConfuses, bestTeachingStyle, activeSlides, currentSlideIndex, activeSlideContent])
+
+  // Revision mode: SessionControls sets the phase to 'review', then this sends
+  // a visible revision request through the normal chat path
+  const handleRevisionRequest = useCallback(() => {
+    handleSend("Let's revise what we've covered so far")
+  }, [handleSend])
+
+  // Record the session as a real StudySession (feeds heatmaps, streaks, achievements)
+  const recordStudySession = useCallback(() => {
+    const hasExchange = messages.some((m) => m.role === 'user')
+    if (!hasExchange) return
+    addStudySession({
+      id: crypto.randomUUID(),
+      topic: activeTopic || activeCourse?.title || 'Tutor Session',
+      date: new Date().toISOString(),
+      duration: Math.max(1, Math.round(timerSeconds / 60)),
+      messagesCount: messages.length,
+      masteryGained: sessionStats.avgMastery,
+    })
+  }, [messages, activeTopic, activeCourse, timerSeconds, sessionStats.avgMastery, addStudySession])
 
   const handleRegenerate = useCallback((messageId: string) => {
     // Find the user message that preceded this assistant message
@@ -730,8 +850,10 @@ export function TutorView() {
   }
 
   const handleSaveAndClose = useCallback(() => {
+    recordStudySession()
+    toast.success('Session saved!')
     navigate('dashboard')
-  }, [navigate])
+  }, [recordStudySession, navigate])
 
   // Save as Note handler
   const handleSaveAsNote = useCallback((message: ChatMessage) => {
@@ -795,44 +917,32 @@ export function TutorView() {
           <Badge variant="secondary" className={getPhaseColor(sessionPhase)}>
             {sessionPhase}
           </Badge>
-          {/* Mode Selector - Pill toggle with sliding indicator */}
-          <div className="hidden sm:flex items-center rounded-lg border border-border bg-background/50 p-0.5 relative">
-            <AnimatePresence>
-              {tutorMode && (
-                <motion.div
-                  layoutId="tutor-mode-indicator"
-                  className="absolute inset-y-0.5 rounded-md bg-primary shadow-sm"
-                  style={{
-                    left: TUTOR_MODES.findIndex((m) => m.id === tutorMode) === 0
-                      ? '2px'
-                      : TUTOR_MODES.findIndex((m) => m.id === tutorMode) === 1
-                        ? `${100 / 3}%`
-                        : `${(200 / 3)}%`,
-                    width: `${100 / 3}%`,
-                  }}
-                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                />
-              )}
-            </AnimatePresence>
+          {/* Mode Selector — pill sizes itself to the active button */}
+          <div className="hidden sm:flex items-center rounded-lg border border-border bg-background/50 p-0.5">
             {TUTOR_MODES.map((mode) => {
               const Icon = mode.icon
               const isActive = tutorMode === mode.id
               return (
-                <motion.button
+                <button
                   key={mode.id}
                   onClick={() => setTutorMode(mode.id)}
-                  whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.96 }}
-                  className={`relative z-10 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                  className={`relative flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                     isActive
                       ? 'text-primary-foreground'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                   title={mode.desc}
                 >
-                  <Icon className="w-3.5 h-3.5" />
-                  {mode.label}
-                </motion.button>
+                  {isActive && (
+                    <motion.div
+                      layoutId="tutor-mode-indicator"
+                      className="absolute inset-0 rounded-md bg-primary shadow-sm"
+                      transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                    />
+                  )}
+                  <Icon className="relative z-10 w-3.5 h-3.5" />
+                  <span className="relative z-10">{mode.label}</span>
+                </button>
               )
             })}
           </div>
@@ -1040,11 +1150,15 @@ export function TutorView() {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Slide Panel - visible in slide or hybrid mode when slides exist */}
+        <AnimatePresence initial={false}>
         {showSlidePanel && (
           <motion.div
+            key="slide-panel"
             initial={{ width: 0, opacity: 0 }}
             animate={{ width: tutorMode === 'slide' ? '50%' : '40%', opacity: 1 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ width: { type: 'spring', stiffness: 260, damping: 32 }, opacity: { duration: 0.2 } }}
+            style={{ willChange: 'width' }}
             className="border-r glass overflow-hidden flex flex-col card-shadow"
           >
             <div className="p-3 border-b">
@@ -1058,7 +1172,7 @@ export function TutorView() {
                 </Badge>
               </div>
             </div>
-            <ScrollArea className="flex-1">
+            <ScrollArea className="flex-1 min-h-0">
               <div className="p-4">
                 {/* Slide navigation dots */}
                 <div className="flex gap-1 mb-3 flex-wrap">
@@ -1108,9 +1222,10 @@ export function TutorView() {
             </ScrollArea>
           </motion.div>
         )}
+        </AnimatePresence>
 
         {/* Chat Panel */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {/* Course Context Panel - fallback when no dedicated slide panel */}
           {!showSlidePanel && <CourseContextPanel />}
 
@@ -1167,21 +1282,33 @@ export function TutorView() {
             )}
           </AnimatePresence>
 
-          <ScrollArea className="flex-1 p-4 tutor-chat-glass" ref={scrollRef}>
-            {/* Quick topic chips when no topic is set */}
+          <ScrollArea className="flex-1 min-h-0 p-4 tutor-chat-glass" ref={scrollRef}>
+            {/* Quick topic chips from the user's real courses */}
             {!activeTopic && messages.length <= 1 && (
               <div className="flex flex-wrap gap-2 mb-4 justify-center">
-                {QUICK_TOPICS.map((topic) => (
+                {quickTopics.length > 0 ? (
+                  quickTopics.map((topic) => (
+                    <Button
+                      key={topic}
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full text-xs"
+                      onClick={() => handleTopicClick(topic)}
+                    >
+                      {topic}
+                    </Button>
+                  ))
+                ) : (
                   <Button
-                    key={topic}
                     variant="outline"
                     size="sm"
-                    className="rounded-full text-xs"
-                    onClick={() => handleTopicClick(topic)}
+                    className="rounded-full text-xs gap-1.5"
+                    onClick={() => navigate('upload')}
                   >
-                    {topic}
+                    <BookOpen className="w-3.5 h-3.5" />
+                    Upload slides to get topic suggestions
                   </Button>
-                ))}
+                )}
               </div>
             )}
 
@@ -1215,6 +1342,37 @@ export function TutorView() {
                       <p className="text-sm">No messages match "{searchQuery}"</p>
                     </div>
                   )
+              : tutorMode === 'cards' ? (
+                  /* Cards-first mode: the deck is the teaching surface; text the AI below */
+                  <div className="mx-auto max-w-xl py-4 space-y-4">
+                    {latestQuiz ? (
+                      <InteractiveQuizCard key={latestQuiz.messageId} payload={latestQuiz.payload} />
+                    ) : (
+                      <div className="flex flex-col items-center gap-3 py-12 text-center">
+                        <Layers className="h-8 w-8 text-primary/60" />
+                        <p className="text-sm text-muted-foreground max-w-xs">
+                          Card mode — your tutor teaches through flashcards you answer.
+                        </p>
+                        <Button
+                          size="sm"
+                          disabled={isLoading}
+                          onClick={() => handleSend('Give me flashcards on what we are studying')}
+                        >
+                          Create flashcards
+                        </Button>
+                      </div>
+                    )}
+                    {/* Last piece of tutor text, compact, for context */}
+                    {(() => {
+                      const lastText = [...messages].reverse().find((m) => m.role === 'assistant' && !parseQuizPayload(m.content))
+                      return lastText ? (
+                        <p className="text-xs text-muted-foreground leading-relaxed border-l-2 border-border pl-3 line-clamp-4">
+                          {lastText.content}
+                        </p>
+                      ) : null
+                    })()}
+                  </div>
+                )
               : messages.map((msg) => (
                   <ChatBubble
                     key={msg.id}
@@ -1223,6 +1381,7 @@ export function TutorView() {
                     onRegenerate={msg.role === 'assistant' ? handleRegenerate : undefined}
                     onSaveAsNote={msg.role === 'assistant' ? handleSaveAsNote : undefined}
                     scrollToMessage={handleScrollToMessage}
+                    quizAside={quizShownAside && latestQuiz?.messageId === msg.id}
                   />
                 ))
             }
@@ -1504,88 +1663,54 @@ export function TutorView() {
           </div>
         </div>
 
-        {/* Right Panel */}
+        {/* Right Panel — compact: Practice first, everything else collapsible */}
         {rightPanelOpen && (
-          <div className="w-72 border-l glass overflow-y-auto hidden md:block card-shadow">
-            <div className="p-4 space-y-5">
-              {/* Session Phase */}
-              <div className="space-y-2">
-                <h4 className="text-sm font-semibold text-foreground">Session Phase</h4>
-                <Badge className={getPhaseColor(sessionPhase)}>
-                  {sessionPhase.charAt(0).toUpperCase() + sessionPhase.slice(1)}
-                </Badge>
-              </div>
-
-              <Separator />
-
-              {/* Learner Profile */}
-              {learnerProfile && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-semibold text-foreground">Learner Profile</h4>
-                  <div className="text-xs text-muted-foreground space-y-1">
-                    <p><span className="font-medium text-foreground">Style:</span> {learnerProfile.learningStyle}</p>
-                    <p><span className="font-medium text-foreground">Pace:</span> {learnerProfile.pace}</p>
+          <div className="w-72 border-l glass overflow-y-auto hidden md:block">
+            <div className="p-3">
+              {/* Practice: the latest quiz/flashcards answer here, chat stays central */}
+              {latestQuiz && tutorMode !== 'cards' && (
+                <div className="pb-2">
+                  <div className="flex items-center gap-1.5 py-2 text-xs font-semibold text-muted-foreground">
+                    <ClipboardCheck className="h-3.5 w-3.5" />
+                    Practice
                   </div>
+                  <InteractiveQuizCard key={latestQuiz.messageId} payload={latestQuiz.payload} />
+                  <Separator className="mt-3" />
                 </div>
               )}
 
-              <Separator />
+              {/* Session controls (phase stepper + quiz/revision/export/end) */}
+              <SessionControls onRevision={handleRevisionRequest} onEndSession={recordStudySession} />
 
-              {/* Mastery Tracker */}
-              <div className="glass-blur-strong rounded-lg p-2 -mx-1">
+              <Separator className="my-2" />
+
+              <PanelSection title="Persona & Mood" icon={Brain}>
+                <PersonaSelector />
+              </PanelSection>
+
+              <PanelSection title="Concept Mastery" icon={Target}>
                 <MasteryTracker />
-              </div>
+              </PanelSection>
 
-              <Separator />
+              <PanelSection title="Insights" icon={Sparkles}>
+                <ConversationInsights messages={messages} masteryMap={masteryMap} />
+              </PanelSection>
 
-              {/* Session Controls */}
-              <SessionControls />
+              <PanelSection title="Teach me better" icon={Lightbulb}>
+                <div className="space-y-4">
+                  <TipInput />
+                  <FeedbackBar />
+                </div>
+              </PanelSection>
 
-              {/* End Session Button */}
-              <div className="flex gap-2">
-                <motion.div whileTap={{ scale: 0.95 }} className="flex-1">
-                  <Button
-                    variant="outline"
-                    className="w-full gap-2 text-sm border-emerald-200 dark:border-emerald-900/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors glass"
-                    onClick={handleExportChat}
-                  >
-                    <Download className="w-4 h-4" />
-                    Export Chat
-                  </Button>
-                </motion.div>
-                <motion.div whileTap={{ scale: 0.95 }} className="flex-1">
-                  <Button
-                    variant="outline"
-                    className="w-full gap-2 text-sm border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-700 dark:hover:text-red-300 transition-colors"
-                    onClick={() => setShowEndSession(true)}
-                  >
-                    <LogOut className="w-4 h-4" />
-                    End Session
-                  </Button>
-                </motion.div>
-              </div>
+              {learnerProfile && (
+                <p className="py-2 text-[11px] text-muted-foreground">
+                  Learning style: <span className="text-foreground">{learnerProfile.learningStyle}</span>
+                  {' · '}pace: <span className="text-foreground">{learnerProfile.pace}</span>
+                </p>
+              )}
 
-              <Separator />
-
-              {/* Tip Input */}
-              <TipInput />
-
-              <Separator />
-
-              {/* Persona Selector */}
-              <PersonaSelector />
-
-              <Separator />
-
-              {/* Feedback Bar */}
-              <FeedbackBar />
-
-              <Separator />
-
-              {/* Conversation Insights */}
-              <ConversationInsights messages={messages} masteryMap={masteryMap} />
-
-              <Separator />
+              <Separator className="my-2" />
 
               {/* Starred Messages Section */}
               <div className="space-y-2">

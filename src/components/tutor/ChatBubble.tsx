@@ -14,6 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useAppStore } from '@/stores/appStore'
+import { InteractiveQuizCard, parseQuizPayload } from './InteractiveQuizCard'
 import type { ChatMessage } from '@/types'
 
 // Reaction options for assistant messages
@@ -24,15 +25,12 @@ const REACTIONS = [
   { emoji: '🤔', label: 'Thought-provoking' },
 ]
 
-// Module-level audio instance for cross-component control
-let activeAudio: HTMLAudioElement | null = null
-
+// Browser-native speech synthesis (Web Speech API) — free, no server round trip,
+// no external API/config dependency, and pairs with the browser's native
+// SpeechRecognition already used for voice input.
 export function stopAllTTS() {
-  if (activeAudio) {
-    activeAudio.pause()
-    activeAudio.currentTime = 0
-    URL.revokeObjectURL(activeAudio.src)
-    activeAudio = null
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel()
   }
 }
 
@@ -42,6 +40,8 @@ interface ChatBubbleProps {
   onRegenerate?: (messageId: string) => void
   onSaveAsNote?: (message: ChatMessage) => void
   scrollToMessage?: (messageId: string) => void
+  /** The quiz in this message is being answered in the side panel — show a chip instead */
+  quizAside?: boolean
 }
 
 function CopyCodeButton({ code }: { code: string }) {
@@ -465,7 +465,7 @@ function MessageActions({
             >
               <motion.div
                 animate={isStarred ? { scale: [0, 1.2, 1], rotate: [0, -15, 0] } : { scale: 1 }}
-                transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
               >
                 <Star className={`h-3 w-3 ${isStarred ? 'fill-amber-500' : ''}`} />
               </motion.div>
@@ -500,7 +500,7 @@ function MessageActions({
   )
 }
 
-export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveAsNote, scrollToMessage }: ChatBubbleProps) {
+export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveAsNote, scrollToMessage, quizAside = false }: ChatBubbleProps) {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
   const isAssistant = message.role === 'assistant'
@@ -527,10 +527,14 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
     })
   }, [])
 
-  // Typewriter effect for assistant messages
+  // Interactive quiz/flashcards: assistant messages can carry a ```quiz JSON
+  // block — render it as a selectable card instead of text with answers
+  const quizData = isAssistant ? parseQuizPayload(message.content) : null
+
+  // Typewriter effect for assistant messages (skipped for quiz cards)
   const { displayedText, isComplete, complete: completeTypewriter } = useTypewriter(
     message.content,
-    isAssistant && isStreaming,
+    isAssistant && isStreaming && !quizData,
     18
   )
 
@@ -542,19 +546,16 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
     }
   }, [glowVisible])
 
-  // Stop audio when component unmounts
+  // Stop speech when component unmounts
   useEffect(() => {
     return () => {
-      if (playingMessageIdRef.current === message.id && activeAudio) {
-        activeAudio.pause()
-        activeAudio.currentTime = 0
-        URL.revokeObjectURL(activeAudio.src)
-        activeAudio = null
+      if (playingMessageIdRef.current === message.id) {
+        stopAllTTS()
       }
     }
   }, [message.id])
 
-  const handleTTS = useCallback(async () => {
+  const handleTTS = useCallback(() => {
     // If currently playing this message, stop it
     if (isTTSPlaying && playingMessageIdRef.current === message.id) {
       stopAllTTS()
@@ -563,49 +564,35 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
       return
     }
 
-    // Stop any other playing audio first
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      return
+    }
+
+    // Stop any other utterance first
     stopAllTTS()
     playingMessageIdRef.current = null
 
-    setIsTTSLoading(true)
-    try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: message.content }),
-      })
+    // Strip markdown syntax so it isn't read aloud literally
+    const plainText = message.content
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/[`*_#>~]/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
 
-      if (!res.ok) throw new Error('TTS generation failed')
+    const utterance = new SpeechSynthesisUtterance(plainText)
+    playingMessageIdRef.current = message.id
+    setIsTTSPlaying(true)
 
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-
-      activeAudio = audio
-      playingMessageIdRef.current = message.id
-      setIsTTSLoading(false)
-      setIsTTSPlaying(true)
-
-      audio.onended = () => {
-        setIsTTSPlaying(false)
-        playingMessageIdRef.current = null
-        URL.revokeObjectURL(url)
-        activeAudio = null
-      }
-
-      audio.onerror = () => {
-        setIsTTSPlaying(false)
-        playingMessageIdRef.current = null
-        URL.revokeObjectURL(url)
-        activeAudio = null
-      }
-
-      await audio.play()
-    } catch {
-      setIsTTSLoading(false)
+    utterance.onend = () => {
       setIsTTSPlaying(false)
       playingMessageIdRef.current = null
     }
+
+    utterance.onerror = () => {
+      setIsTTSPlaying(false)
+      playingMessageIdRef.current = null
+    }
+
+    window.speechSynthesis.speak(utterance)
   }, [message.content, message.id, isTTSPlaying])
 
   const handleRegenerate = useCallback(() => {
@@ -630,15 +617,14 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
   }
 
   // Determine which text to render
-  const renderContent = isAssistant && isStreaming && !isComplete ? displayedText : message.content
-  const showCursor = isAssistant && isStreaming && !isComplete
+  const renderContent = isAssistant && isStreaming && !isComplete && !quizData ? displayedText : message.content
+  const showCursor = isAssistant && isStreaming && !isComplete && !quizData
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 24 }}
-      whileHover={{ scale: 1.005 }}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}
     >
       <div className={`flex items-end gap-2 max-w-[80%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -700,6 +686,17 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
 
             {isUser ? (
               <p className="whitespace-pre-wrap">{message.content}</p>
+            ) : quizData && quizAside ? (
+              <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px]">?</span>
+                {quizData.payload.mode === 'flashcards' ? 'Flashcards' : 'Quiz'} ready — answer it in the Practice panel →
+              </span>
+            ) : quizData ? (
+              <>
+                {quizData.before && <MarkdownContent content={quizData.before} />}
+                <InteractiveQuizCard payload={quizData.payload} />
+                {quizData.after && <MarkdownContent content={quizData.after} />}
+              </>
             ) : (
               <>
                 <MarkdownContent content={renderContent} />

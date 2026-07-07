@@ -114,6 +114,24 @@ model Session {
   course Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
 }
 
+// Ephemeral presence of a client instance. Personal learning data lives in the
+// user's browser; this table only lets live instances discover each other.
+// Rows are pruned once an instance goes quiet.
+model Presence {
+  instanceId     String   @id
+  displayName    String   @default("")
+  avatarGradient String   @default("from-emerald-400 to-teal-500")
+  totalXP        Int      @default(0)
+  weeklyXP       Int      @default(0)
+  level          Int      @default(1)
+  streak         Int      @default(0)
+  coursesCompleted Int    @default(0)
+  quizAccuracy   Int      @default(0)
+  currentTopic   String   @default("")
+  lastSeen       DateTime @default(now())
+  createdAt      DateTime @default(now())
+}
+
 model LearnerProfile {
   id                 String   @id @default(cuid())
   learningStyle      String   @default("reading")

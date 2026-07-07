@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Palette,
@@ -16,6 +16,10 @@ import {
   Monitor,
   LayoutGrid,
   AlertTriangle,
+  Smartphone,
+  Copy,
+  ClipboardPaste,
+  Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -38,9 +42,19 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { useAppStore } from '@/stores/appStore';
 import { useTheme } from 'next-themes';
+import { exportProfileCode, importProfileCode, resetAllData } from '@/lib/transfer';
+
+/** Personas must match the tutor's PersonaSelector so the default applies. */
+const PERSONA_OPTIONS = [
+  { id: 'professor', label: 'Professor', quote: '"Let us examine the underlying principles..."' },
+  { id: 'coach', label: 'Coach', quote: '"You\'re doing amazing! Let\'s push further!"' },
+  { id: 'storyteller', label: 'Storyteller', quote: '"Picture this: once upon a time..."' },
+  { id: 'friend', label: 'Friend', quote: '"Ok so basically, here\'s the deal..."' },
+];
 
 const stagger = {
   animate: { transition: { staggerChildren: 0.07 } },
@@ -50,71 +64,29 @@ const fadeUp = {
   animate: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 };
 
-function AnimatedIcon({ children }: { children: React.ReactNode }) {
-  return (
-    <motion.div
-      animate={{ y: [0, -2, 0] }}
-      transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
 function SectionCard({
   icon: Icon,
   title,
-  gradientFrom,
-  gradientTo,
   children,
-  index,
   isDanger = false,
 }: {
   icon: typeof Palette;
   title: string;
-  gradientFrom: string;
-  gradientTo: string;
+  gradientFrom?: string;
+  gradientTo?: string;
   children: React.ReactNode;
-  index: number;
+  index?: number;
   isDanger?: boolean;
 }) {
   return (
-    <motion.div
-      variants={fadeUp}
-      className={`glass rounded-xl overflow-hidden gradient-border card-shadow card-hover-lift ${
-        isDanger
-          ? '[&_::before]:from-red-500/50 [&_::before]:via-red-500/20 [&_::before]:to-orange-500/50'
-          : ''
-      }`}
-    >
-      <div className={`${isDanger ? 'bg-gradient-to-r from-red-600 to-orange-600' : `bg-gradient-to-r ${gradientFrom} ${gradientTo}`} px-5 py-3 flex items-center gap-2.5 relative overflow-hidden`}>
-        {/* Subtle shimmer on header */}
-        <motion.div
-          className="absolute inset-0 -translate-x-full"
-          animate={{ translateX: ['-100%', '100%', '200%'] }}
-          transition={{ duration: 4, repeat: Infinity, ease: 'linear', delay: index * 0.5 }}
-          style={{
-            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent)',
-          }}
-        />
-        <div className="relative z-10 flex items-center gap-2.5">
-          {isDanger ? (
-            <motion.div
-              animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] }}
-              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-              className="pulse-soft"
-            >
-              <Icon className="h-4 w-4 text-white" />
-            </motion.div>
-          ) : (
-            <AnimatedIcon>
-              <Icon className="h-4 w-4 text-white" />
-            </AnimatedIcon>
-          )}
-          <h3 className="text-sm font-semibold text-white">{title}</h3>
+    <motion.div variants={fadeUp} className="glass rounded-xl overflow-hidden border border-border/60">
+      <div className="px-5 py-3 flex items-center gap-2.5 border-b border-border/40">
+        <div className={`flex h-6 w-6 items-center justify-center rounded-md ${isDanger ? 'bg-red-500/10' : 'bg-muted'}`}>
+          <Icon className={`h-3.5 w-3.5 ${isDanger ? 'text-red-500' : 'text-muted-foreground'}`} />
         </div>
+        <h3 className={`text-sm font-semibold ${isDanger ? 'text-red-600 dark:text-red-400' : ''}`}>{title}</h3>
       </div>
-      <div className={`p-5 space-y-4 ${isDanger ? 'bg-red-500/[0.02] dark:bg-red-500/[0.03]' : ''}`}>
+      <div className="p-5 space-y-4">
         {children}
       </div>
     </motion.div>
@@ -143,7 +115,7 @@ function SettingRow({
   );
 }
 
-function AnimatedSwitch({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (checked: boolean) => void }) {
+function AnimatedSwitch({ checked, onCheckedChange, ariaLabel }: { checked: boolean; onCheckedChange: (checked: boolean) => void; ariaLabel: string }) {
   return (
     <motion.div whileTap={{ scale: 0.9 }} className="relative">
       <AnimatePresence mode="wait">
@@ -157,6 +129,7 @@ function AnimatedSwitch({ checked, onCheckedChange }: { checked: boolean; onChec
           <Switch
             checked={checked}
             onCheckedChange={onCheckedChange}
+            aria-label={ariaLabel}
           />
         </motion.div>
       </AnimatePresence>
@@ -210,13 +183,74 @@ function ExportButton({ onClick, children, icon }: { onClick: () => void; childr
 }
 
 export function SettingsView() {
-  const { settings, updateSettings, notes } = useAppStore();
+  const { settings, updateSettings, notes, studySessions, masteryMap, achievements, adaptiveResults, quizScore, quizTotal } = useAppStore();
   const { setTheme, theme } = useTheme();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [transferCode, setTransferCode] = useState('');
+  const [importCode, setImportCode] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  // Compact mode: apply/remove a root class the stylesheet reacts to
+  useEffect(() => {
+    document.documentElement.classList.toggle('compact', settings.compactMode);
+  }, [settings.compactMode]);
+
+  // Migrate persona ids from older builds to the tutor's real persona set
+  useEffect(() => {
+    if (!PERSONA_OPTIONS.some((p) => p.id === settings.defaultPersona)) {
+      const migrations: Record<string, string> = { socratic: 'professor', encyclopedic: 'professor', friendly: 'friend' };
+      updateSettings({ defaultPersona: migrations[settings.defaultPersona] ?? 'storyteller' });
+    }
+  }, [settings.defaultPersona, updateSettings]);
 
   const handleThemeChange = (value: string) => {
     setTheme(value);
     updateSettings({ theme: value as 'light' | 'dark' | 'system' });
+  };
+
+  const handleGenerateTransferCode = () => {
+    try {
+      const code = exportProfileCode();
+      setTransferCode(code);
+      toast.success('Transfer code generated — copy it to your new device');
+    } catch {
+      toast.error('Failed to generate transfer code');
+    }
+  };
+
+  const handleCopyTransferCode = async () => {
+    try {
+      await navigator.clipboard.writeText(transferCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success('Copied to clipboard');
+    } catch {
+      toast.error('Copy failed — select and copy the text manually');
+    }
+  };
+
+  const handleDownloadTransferCode = () => {
+    try {
+      const blob = new Blob([transferCode], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'synapselearn-profile.txt';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Download failed');
+    }
+  };
+
+  const handleImportProfile = () => {
+    try {
+      const count = importProfileCode(importCode);
+      toast.success(`Profile restored (${count} items) — reloading...`);
+      setTimeout(() => window.location.reload(), 900);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Import failed');
+    }
   };
 
   const handleExportNotes = () => {
@@ -240,7 +274,11 @@ export function SettingsView() {
       const data = JSON.stringify(
         {
           exportedAt: new Date().toISOString(),
-          version: '1.0.0',
+          studySessions,
+          masteryMap,
+          lastQuiz: quizScore !== null && quizTotal !== null ? { score: quizScore, total: quizTotal } : null,
+          adaptiveResults,
+          achievements: achievements.filter((a) => a.unlockedAt),
         },
         null,
         2
@@ -260,13 +298,7 @@ export function SettingsView() {
 
   const handleClearAllData = () => {
     try {
-      const keysToClear = [
-        'synapse-notes',
-        'synapse-goals',
-        'synapse-settings',
-        'synapse-last-session',
-      ];
-      keysToClear.forEach((key) => localStorage.removeItem(key));
+      resetAllData();
       window.location.reload();
     } catch {
       toast.error('Failed to clear data');
@@ -331,6 +363,7 @@ export function SettingsView() {
           <AnimatedSwitch
             checked={settings.compactMode}
             onCheckedChange={(checked) => updateSettings({ compactMode: checked })}
+            ariaLabel="Compact Mode"
           />
         </SettingRow>
       </SectionCard>
@@ -348,10 +381,14 @@ export function SettingsView() {
             value={settings.defaultPersona}
             onValueChange={(val) => updateSettings({ defaultPersona: val })}
           >
-            <SelectItem value="storyteller">Storyteller</SelectItem>
-            <SelectItem value="socratic">Socratic</SelectItem>
-            <SelectItem value="encyclopedic">Encyclopedic</SelectItem>
-            <SelectItem value="friendly">Friendly Coach</SelectItem>
+            {PERSONA_OPTIONS.map((p) => (
+              <SelectItem key={p.id} value={p.id} textValue={p.label}>
+                <div className="flex flex-col items-start gap-0.5 py-0.5">
+                  <span className="font-medium">{p.label}</span>
+                  <span className="text-[11px] text-muted-foreground italic">{p.quote}</span>
+                </div>
+              </SelectItem>
+            ))}
           </SelectWithGlow>
         </SettingRow>
         <Separator className="opacity-50" />
@@ -407,6 +444,7 @@ export function SettingsView() {
           <AnimatedSwitch
             checked={settings.autoBreakReminders}
             onCheckedChange={(checked) => updateSettings({ autoBreakReminders: checked })}
+            ariaLabel="Auto-Break Reminders"
           />
         </SettingRow>
         <Separator className="opacity-50" />
@@ -437,6 +475,7 @@ export function SettingsView() {
           <AnimatedSwitch
             checked={settings.sessionReminders}
             onCheckedChange={(checked) => updateSettings({ sessionReminders: checked })}
+            ariaLabel="Session Reminders"
           />
         </SettingRow>
         <Separator className="opacity-50" />
@@ -444,6 +483,7 @@ export function SettingsView() {
           <AnimatedSwitch
             checked={settings.streakAlerts}
             onCheckedChange={(checked) => updateSettings({ streakAlerts: checked })}
+            ariaLabel="Streak Alerts"
           />
         </SettingRow>
       </SectionCard>
@@ -463,37 +503,95 @@ export function SettingsView() {
           <ExportButton onClick={handleExportHistory} icon={<Download className="h-4 w-4" />}>
             Export Session History
           </ExportButton>
-          <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
-            <AlertDialogTrigger asChild>
-              <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
-                <Button variant="outline" size="sm" className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/50 hover:bg-destructive/5 hover:shadow-[0_0_20px_rgba(239,68,68,0.1)] pulse-border-glow transition-all">
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Clear All Data
-                </Button>
-              </motion.div>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle className="flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-destructive" />
-                  Clear all data?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete all your notes, goals, settings, and session history.
-                  This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleClearAllData}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+        </div>
+      </SectionCard>
+
+      {/* Switch Device */}
+      <SectionCard
+        icon={Smartphone}
+        title="Switch Device"
+        gradientFrom="from-indigo-600"
+        gradientTo="to-blue-600"
+        index={5}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Your entire profile lives in this browser — nothing is stored on our servers.
+            Generate a transfer code here and paste it on your new device to carry over your
+            courses, mastery, streaks and settings.
+          </p>
+
+          {/* Export side */}
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <ExportButton onClick={handleGenerateTransferCode} icon={<Smartphone className="h-4 w-4" />}>
+                Generate Transfer Code
+              </ExportButton>
+              {transferCode && (
+                <>
+                  <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                    <Button variant="outline" size="sm" onClick={handleCopyTransferCode} className="hover:glow-emerald transition-shadow duration-300">
+                      {copied ? <Check className="h-4 w-4 mr-2 text-emerald-500" /> : <Copy className="h-4 w-4 mr-2" />}
+                      {copied ? 'Copied' : 'Copy Code'}
+                    </Button>
+                  </motion.div>
+                  <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                    <Button variant="outline" size="sm" onClick={handleDownloadTransferCode} className="hover:glow-emerald transition-shadow duration-300">
+                      <Download className="h-4 w-4 mr-2" />
+                      Download .txt
+                    </Button>
+                  </motion.div>
+                </>
+              )}
+            </div>
+            <AnimatePresence>
+              {transferCode && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
                 >
-                  Yes, clear everything
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+                  <Textarea
+                    readOnly
+                    value={transferCode}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="font-mono text-[10px] h-24 resize-none bg-muted/40"
+                    aria-label="Transfer code"
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <Separator className="opacity-50" />
+
+          {/* Import side */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium flex items-center gap-2">
+              <ClipboardPaste className="h-4 w-4 text-muted-foreground" />
+              Restore on this device
+            </p>
+            <Textarea
+              value={importCode}
+              onChange={(e) => setImportCode(e.target.value)}
+              placeholder="Paste a transfer code from your other device..."
+              className="font-mono text-[10px] h-24 resize-none"
+              aria-label="Paste transfer code"
+            />
+            <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="inline-block">
+              <Button
+                size="sm"
+                disabled={!importCode.trim()}
+                onClick={handleImportProfile}
+                className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white hover:opacity-90"
+              >
+                Import Profile
+              </Button>
+            </motion.div>
+            <p className="text-xs text-muted-foreground">
+              Importing overwrites this device&apos;s profile and reloads the app.
+            </p>
+          </div>
         </div>
       </SectionCard>
 
@@ -503,7 +601,7 @@ export function SettingsView() {
         title="Danger Zone"
         gradientFrom="from-red-700"
         gradientTo="to-red-600"
-        index={5}
+        index={6}
         isDanger
       >
         <div className="space-y-3">
@@ -536,8 +634,9 @@ export function SettingsView() {
                   Are you absolutely sure?
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will permanently delete all your notes, goals, settings, and session history.
-                  This action cannot be undone.
+                  This will permanently delete everything this browser knows about you —
+                  courses, notes, goals, mastery, streaks, achievements, settings and session
+                  history. Consider generating a transfer code first. This cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -560,7 +659,7 @@ export function SettingsView() {
         title="About"
         gradientFrom="from-zinc-600"
         gradientTo="to-stone-600"
-        index={6}
+        index={7}
       >
         <div className="space-y-3">
           <div className="flex items-center justify-between">

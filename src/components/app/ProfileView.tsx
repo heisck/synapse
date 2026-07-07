@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { Fragment, useMemo, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useSpring, useMotionValue, useTransform } from 'framer-motion';
 import {
   Mail,
@@ -1104,8 +1104,8 @@ export function ProfileView() {
 
             {/* Day label rows (Mon-Sun) — each shows 14 columns across 2 weeks */}
             {dayLabels.map((label, rowIdx) => (
-              <>
-                <div key={label} className="flex items-center text-[10px] text-muted-foreground/60 font-medium pr-1">
+              <Fragment key={label}>
+                <div className="flex items-center text-[10px] text-muted-foreground/60 font-medium pr-1">
                   {label}
                 </div>
                 {calendarPlan.slice(0, 14).map((day, colIdx) => {
@@ -1136,7 +1136,7 @@ export function ProfileView() {
                     />
                   );
                 })}
-              </>
+              </Fragment>
             ))}
           </div>
 

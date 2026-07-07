@@ -140,6 +140,9 @@ export function StudySoundscapes() {
       osc.connect(gain);
       osc.start();
       source = osc;
+    } else {
+      console.error(`[StudySoundscapes] Sound "${sound.id}" has neither noiseType nor frequency configured — skipping.`);
+      return;
     }
 
     sourcesRef.current[sound.id] = source;
@@ -150,14 +153,9 @@ export function StudySoundscapes() {
   const stopSound = useCallback((soundId: string) => {
     if (sourcesRef.current[soundId]) {
       try {
-        const source = sourcesRef.current[soundId];
-        if (source instanceof OscillatorNode) {
-          source.stop();
-        } else {
-          source.stop();
-        }
+        sourcesRef.current[soundId].stop();
       } catch { /* ignore */ }
-      delete sourcesRef.current[sound.id];
+      delete sourcesRef.current[soundId];
     }
     if (gainNodesRef.current[soundId]) {
       delete gainNodesRef.current[soundId];

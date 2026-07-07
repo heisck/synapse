@@ -3,10 +3,12 @@ export type AppView =
   | 'dashboard'
   | 'tutor'
   | 'upload'
+  | 'courses'
   | 'quiz'
   | 'onboarding'
   | 'profile'
   | 'course-detail'
+  | 'card-study'
   | 'notes'
   | 'focus-timer'
   | 'settings'
@@ -204,4 +206,6 @@ export interface StudyBuddy {
   quizAccuracy: number;
   currentTopic: string;
   isOnline: boolean;
+  weeklyXP?: number;
+  lastSeen?: string;
 }

@@ -20,6 +20,8 @@ import {
   Timer,
   Clock,
   Bell,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -48,7 +50,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', view: 'dashboard', shortcut: '\u23181' },
   { icon: FileUp, label: 'Upload Slides', view: 'upload', shortcut: '\u23183' },
-  { icon: BookOpen, label: 'My Courses', view: 'upload', shortcut: '' },
+  { icon: BookOpen, label: 'My Courses', view: 'courses', shortcut: '' },
   { icon: MessageSquare, label: 'Tutor', view: 'tutor', shortcut: '\u23182' },
   { icon: ClipboardCheck, label: 'Quiz Mode', view: 'quiz', shortcut: '\u23184' },
   { icon: Trophy, label: 'Leaderboard', view: 'leaderboard', shortcut: '' },
@@ -62,6 +64,7 @@ const viewLabels: Record<string, string> = {
   dashboard: 'Dashboard',
   tutor: 'Tutor',
   upload: 'Upload',
+  courses: 'My Courses',
   quiz: 'Quiz',
   leaderboard: 'Leaderboard',
   profile: 'Profile',
@@ -74,6 +77,7 @@ const viewIcons: Record<string, typeof LayoutDashboard> = {
   dashboard: LayoutDashboard,
   tutor: MessageSquare,
   upload: FileUp,
+  courses: BookOpen,
   quiz: ClipboardCheck,
   leaderboard: Trophy,
   profile: User,
@@ -143,7 +147,7 @@ function GlassNavTooltip({ children, label, shortcut }: { children: React.ReactN
 }
 
 function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => void; isMobile?: boolean }) {
-  const { currentView, navigate, userName, recentViews, notes, courses, completedCourses, dailyChallenge, notifications } = useAppStore();
+  const { currentView, navigate, userName, recentViews, notes, courses, completedCourses, dailyChallenge, notifications, setSidebarCollapsed } = useAppStore();
   const [studyStreak] = useState(() => getStudyStreak());
   const [notifCenterOpen, setNotifCenterOpen] = useState(false);
   const countdown = useDailyChallengeCountdown();
@@ -170,22 +174,21 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
 
   return (
     <div className="flex h-full flex-col relative">
-      {/* Animated gradient line at the very top of the sidebar */}
-      <div className="sidebar-top-gradient-line" />
-      {/* Left gradient line (desktop only) */}
-      {!isMobile && (
-        <motion.div
-          className="gradient-line-vertical absolute left-0 top-0 bottom-0 z-10"
-          layout
-        />
-      )}
 
-      {/* Brand */}
-      <div className="flex items-center gap-3 px-4 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground pulse-glow">
-          <Brain className="h-5 w-5" />
-        </div>
-        <span className="text-lg font-bold tracking-tight gradient-text">SynapseLearn</span>
+      {/* Brand — the brain is the logo, no container box */}
+      <div className="flex items-center gap-2.5 px-4 py-5">
+        <Brain className="h-6 w-6 text-primary shrink-0" />
+        <span className="text-lg font-semibold tracking-tight flex-1 min-w-0 truncate">SynapseLearn</span>
+        {!isMobile && (
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(true)}
+            className="shrink-0 h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+            aria-label="Collapse sidebar"
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       <Separator />
@@ -208,15 +211,14 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
                       stiffness: 250,
                       damping: 25,
                     }}
-                    className={`relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors text-left w-full shimmer-slow
+                    className={`relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors text-left w-full
                       ${isActive
-                        ? 'text-primary-foreground'
+                        ? isMobile ? 'text-primary-foreground' : 'text-primary'
                         : 'text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground'
                       }`}
                     aria-current={isActive ? 'page' : undefined}
-                    whileHover={{ scale: 1.02, x: 2 }}
+                    whileHover={{ scale: 1.02, x: 2, transition: { type: 'spring', stiffness: 400, damping: 30 } }}
                     whileTap={{ scale: 0.98 }}
-                    transitionHover={{ type: 'spring', stiffness: 400, damping: 30 }}
                   >
                     {/* Active indicator - desktop: gradient pill with left glow bar */}
                     {isActive && !isMobile && (
@@ -277,14 +279,6 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
                         <Clock className="h-2.5 w-2.5" />
                         {countdown}
                       </motion.span>
-                    )}
-                    {/* Animated gradient line at bottom of active item */}
-                    {isActive && (
-                      <motion.div
-                        layoutId="active-nav-gradient-line"
-                        className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
-                        transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                      />
                     )}
                   </motion.button>
                 </GlassNavTooltip>
@@ -436,7 +430,7 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
 }
 
 export function AppSidebar() {
-  const { sidebarOpen, setSidebarOpen } = useAppStore();
+  const { sidebarOpen, setSidebarOpen, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
 
   const [hasReminder] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -498,10 +492,30 @@ export function AppSidebar() {
         </Sheet>
       </div>
 
+      {/* Collapsed state: floating button to bring the sidebar back */}
+      {sidebarCollapsed && (
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed(false)}
+          className="hidden lg:flex fixed top-4 left-4 z-50 h-9 w-9 items-center justify-center rounded-full bg-background/95 border border-border shadow-lg backdrop-blur-md hover:bg-accent transition-colors"
+          aria-label="Show sidebar"
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+        </button>
+      )}
+
       {/* Desktop sidebar - glass morphism */}
-      <aside className="hidden lg:flex lg:w-64 lg:shrink-0 lg:flex-col h-screen sticky top-0 glass-sidebar" role="navigation" aria-label="Main navigation">
-        <SidebarContent />
-      </aside>
+      <motion.aside
+        animate={{ width: sidebarCollapsed ? 0 : 256 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        className="hidden lg:block lg:shrink-0 h-screen overflow-hidden glass-sidebar"
+        role="navigation"
+        aria-label="Main navigation"
+      >
+        <div className="w-64 h-full">
+          <SidebarContent />
+        </div>
+      </motion.aside>
     </TooltipProvider>
   );
 }

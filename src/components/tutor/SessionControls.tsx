@@ -23,9 +23,17 @@ const PHASES = [
   { id: 'review', label: 'Review', icon: BarChart3 },
 ] as const
 
-export function SessionControls() {
+interface SessionControlsProps {
+  /** Sends a visible revision request through the tutor chat */
+  onRevision?: () => void
+  /** Records the session as a real StudySession before leaving */
+  onEndSession?: () => void
+}
+
+export function SessionControls({ onRevision, onEndSession }: SessionControlsProps) {
   const navigate = useAppStore((s) => s.navigate)
   const sessionPhase = useAppStore((s) => s.sessionPhase)
+  const setSessionPhase = useAppStore((s) => s.setSessionPhase)
   const messages = useAppStore((s) => s.messages)
   const [showEndConfirm, setShowEndConfirm] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
@@ -33,17 +41,31 @@ export function SessionControls() {
   const currentPhaseIndex = PHASES.findIndex((p) => p.id === sessionPhase)
 
   const handleStartQuiz = () => {
+    // Quizzing what was covered is the review phase of the session loop
+    setSessionPhase('review')
     navigate('quiz')
   }
 
   const handleRevision = () => {
-    toast.info('Revision mode starting...')
+    if (messages.length === 0) {
+      toast.info('Nothing to revise yet — chat with your tutor first.')
+      return
+    }
+    setSessionPhase('review')
+    onRevision?.()
+    toast.success('Revision mode — your tutor will recap what you covered')
   }
 
   const handleEndSession = () => {
+    // Record the session so streaks, XP and analytics reflect real work
+    onEndSession?.()
+    if (messages.some((m) => m.role === 'user')) {
+      toast.success('Session saved. Great work!')
+    } else {
+      toast.success('Session ended.')
+    }
     navigate('dashboard')
     setShowEndConfirm(false)
-    toast.success('Session ended. Great work!')
   }
 
   const handleExportSession = async () => {

@@ -113,109 +113,6 @@ function formatTimer(seconds: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-// ---------- Mock questions for all 6 types ----------
-const MOCK_QUESTIONS: Question[] = [
-  {
-    id: 'mc-1',
-    type: 'multiple_choice',
-    question: 'What is the primary function of mitochondria in a cell?',
-    options: ['Protein synthesis', 'Energy production (ATP)', 'Cell division', 'Waste removal'],
-    answer: 'Energy production (ATP)',
-    explanation: 'Mitochondria are known as the "powerhouse of the cell" because they generate most of the cell\'s supply of ATP, used as a source of chemical energy.',
-    difficulty: 'easy',
-    concept: 'Cell Biology',
-    courseId: 'demo-course',
-  },
-  {
-    id: 'tf-1',
-    type: 'true_false',
-    question: 'Photosynthesis occurs in the mitochondria of plant cells.',
-    answer: 'False',
-    explanation: 'Photosynthesis occurs in the chloroplasts, not the mitochondria. Chloroplasts contain chlorophyll and are the site of the light-dependent and light-independent reactions.',
-    difficulty: 'easy',
-    concept: 'Cell Biology',
-    courseId: 'demo-course',
-  },
-  {
-    id: 'sa-1',
-    type: 'short_answer',
-    question: 'What is the chemical equation for cellular respiration?',
-    answer: 'C6H12O6 + 6O2 → 6CO2 + 6H2O + ATP',
-    explanation: 'Cellular respiration converts glucose and oxygen into carbon dioxide, water, and energy in the form of ATP.',
-    difficulty: 'medium',
-    concept: 'Biochemistry',
-    courseId: 'demo-course',
-  },
-  {
-    id: 'fb-1',
-    type: 'fill_blank',
-    question: 'The ____ is the control center of the cell, containing the genetic material DNA.',
-    answer: 'nucleus',
-    explanation: 'The nucleus is a membrane-bound organelle that contains the cell\'s chromosomes and regulates gene expression.',
-    difficulty: 'easy',
-    concept: 'Cell Biology',
-    courseId: 'demo-course',
-  },
-  {
-    id: 'fb-2',
-    type: 'fill_blank',
-    question: '____ is the process by which cells divide to form two identical daughter cells.',
-    answer: 'mitosis',
-    explanation: 'Mitosis ensures that each daughter cell receives an exact copy of the parent cell\'s DNA.',
-    difficulty: 'medium',
-    concept: 'Cell Biology',
-    courseId: 'demo-course',
-  },
-  {
-    id: 'match-1',
-    type: 'matching',
-    question: 'Match each cell organelle to its primary function.',
-    matchingPairs: [
-      { left: 'Ribosome', right: 'Protein synthesis' },
-      { left: 'Golgi apparatus', right: 'Packaging & shipping' },
-      { left: 'Lysosome', right: 'Digestion & recycling' },
-      { left: 'Endoplasmic reticulum', right: 'Lipid synthesis & transport' },
-    ],
-    answer: 'Ribosome-Protein synthesis, Golgi apparatus-Packaging & shipping, Lysosome-Digestion & recycling, Endoplasmic reticulum-Lipid synthesis & transport',
-    explanation: 'Each organelle has a specialized function that contributes to the overall operation of the cell.',
-    difficulty: 'medium',
-    concept: 'Cell Biology',
-    courseId: 'demo-course',
-  },
-  {
-    id: 'ec-1',
-    type: 'error_correction',
-    question: 'Identify and correct the errors in the following statement:',
-    errorText: 'Mitochondria are found only in animal cells. They are responsible for photosynthesis and converting sunlight into glucose. Plant cells do not have mitochondria.',
-    answer: 'Mitochondria are found in both animal and plant cells. They are responsible for cellular respiration and converting glucose into ATP (energy).',
-    explanation: 'The original text had three errors: (1) mitochondria are in both plant and animal cells, (2) they perform cellular respiration not photosynthesis, and (3) plant cells do have mitochondria.',
-    difficulty: 'hard',
-    concept: 'Cell Biology',
-    courseId: 'demo-course',
-  },
-  {
-    id: 'mc-2',
-    type: 'multiple_choice',
-    question: 'Which data structure uses LIFO (Last In, First Out) ordering?',
-    options: ['Queue', 'Stack', 'Linked List', 'Tree'],
-    answer: 'Stack',
-    explanation: 'A Stack follows LIFO ordering — the last element pushed onto the stack is the first one popped off. Think of a stack of plates.',
-    difficulty: 'easy',
-    concept: 'Data Structures',
-    courseId: 'cs-course',
-  },
-  {
-    id: 'sa-2',
-    type: 'short_answer',
-    question: 'What is the time complexity of binary search?',
-    answer: 'O(log n)',
-    explanation: 'Binary search divides the search space in half each step, giving logarithmic time complexity.',
-    difficulty: 'medium',
-    concept: 'Algorithms',
-    courseId: 'cs-course',
-  },
-];
-
 // ---------- Course filter ----------
 interface DailyChallengeData {
   date: string;
@@ -1180,7 +1077,7 @@ function WeaknessReportDialog({
 export function QuizView() {
   const { navigate, currentQuestions, activeCourse, updateMastery, adaptiveResults, addAdaptiveResult, masteryMap } = useAppStore();
 
-  const allQuestions = currentQuestions.length > 0 ? currentQuestions : MOCK_QUESTIONS;
+  const allQuestions = currentQuestions;
 
   const [studyMode, setStudyMode] = useState<StudyMode>('quiz');
   const [adaptiveOn, setAdaptiveOn] = useState(false);
@@ -1212,7 +1109,6 @@ export function QuizView() {
       return false;
     }
   });
-  const animatedScore = useAnimatedCounter(showResults ? score : 0, 1500);
 
   // Spaced Repetition
   const { dueItems, reviewItem, overdueCount } = useSpacedRepetition();
@@ -1277,52 +1173,6 @@ export function QuizView() {
   const [dailyTimerLeft, setDailyTimerLeft] = useState(DAILY_TIMER_SECONDS);
   const [dailyTimerActive, setDailyTimerActive] = useState(false);
 
-  // Compute wrong answers for error analysis
-  const wrongAnswers = useMemo(() => {
-    return questions
-      .filter((q) => answered[q.id] && !isCorrect(q, answers[q.id] || ''))
-      .map((q) => ({
-        question: q.question,
-        userAnswer: answers[q.id] || '',
-        correctAnswer: q.answer,
-        concept: q.concept || 'General',
-      }));
-  }, [questions, answered, answers, isCorrect]);
-
-  const handleAnalyzeMistakes = useCallback(async () => {
-    if (wrongAnswers.length === 0) return;
-    setWeaknessReportLoading(true);
-    setWeaknessReportOpen(true);
-    setWeaknessReport(null);
-    try {
-      const { learnerProfile } = useAppStore.getState();
-      const res = await fetch('/api/error-analysis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          wrongAnswers,
-          learnerProfile: learnerProfile || undefined,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error('Failed to analyze errors');
-      }
-      const data: ErrorAnalysisResponse = await res.json();
-      setWeaknessReport(data);
-      // Persist to localStorage
-      try {
-        localStorage.setItem(ERROR_REPORT_STORAGE_KEY, JSON.stringify(data));
-      } catch {
-        // ignore storage errors
-      }
-    } catch {
-      toast.error('Failed to analyze mistakes. Please try again.');
-      setWeaknessReportOpen(false);
-    } finally {
-      setWeaknessReportLoading(false);
-    }
-  }, [wrongAnswers]);
-
   const handleViewLastReport = useCallback(() => {
     try {
       const stored = localStorage.getItem(ERROR_REPORT_STORAGE_KEY);
@@ -1341,6 +1191,22 @@ export function QuizView() {
     setActiveTopic(topic);
     nav('tutor');
   }, []);
+
+  const isCorrect = useCallback(
+    (q: Question, userAnswer: string): boolean => {
+      const ua = userAnswer.trim().toLowerCase();
+      const ca = q.answer.trim().toLowerCase();
+      if (q.type === 'short_answer' || q.type === 'error_correction') {
+        return isFuzzyMatch(userAnswer, q.answer, 3);
+      }
+      if (q.type === 'fill_blank') {
+        return userAnswer.trim().toLowerCase() === q.answer.trim().toLowerCase();
+      }
+      return ua === ca;
+    },
+    [],
+  );
+
   const dailyQuestions = useMemo<Question[]>(() => {
     if (dailyChallenge?.questions) {
       return dailyChallenge.questions
@@ -1457,6 +1323,8 @@ export function QuizView() {
     return () => clearTimeout(timeout);
   }, [studyMode, dailyTimerActive, dailyShowResults, dailyTimerLeft, dailyQuestions, answered, answers, isCorrect, storeDailyChallenge.bestScore, storeDailyChallenge.totalCompleted, setStoreDailyChallenge]);
 
+  const [timerStarted, setTimerStarted] = useState(false);
+
   const handleDailyAnswer = useCallback(
     (answer: string) => {
       if (!dailyCurrentQ || answered[dailyCurrentQ.id]) return;
@@ -1534,7 +1402,6 @@ export function QuizView() {
   }, [dailyScore, dailyQuestions.length, dailyStreak.current]);
 
   // Timer state
-  const [timerStarted, setTimerStarted] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(0);
 
   // Flashcard state
@@ -1591,6 +1458,27 @@ export function QuizView() {
     return () => clearInterval(interval);
   }, [timerStarted, showResults]);
 
+  const flashcardQuestions = useMemo(() => {
+    if (selectedCourse === 'all') return allQuestions;
+    return allQuestions.filter((q) => q.courseId === selectedCourse);
+  }, [allQuestions, selectedCourse]);
+
+  const flashcardProgress = flashcardQuestions.length > 0
+    ? (flashcardReviewed.size / flashcardQuestions.length) * 100
+    : 0;
+
+  const handleFlashcardPrev = useCallback(() => {
+    setFlipped(false);
+    setCurrentIndex((prev) => Math.max(0, prev - 1));
+  }, []);
+
+  const handleFlashcardNext = useCallback(() => {
+    setFlipped(false);
+    if (currentIndex < flashcardQuestions.length - 1) {
+      setCurrentIndex((prev) => prev + 1);
+    }
+  }, [currentIndex, flashcardQuestions.length]);
+
   // Keyboard shortcuts for flashcard mode
   useEffect(() => {
     if (studyMode !== 'flashcard' || showFlashcardSummary) return;
@@ -1619,14 +1507,17 @@ export function QuizView() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [studyMode, showFlashcardSummary, handleFlashcardPrev, handleFlashcardNext]);
 
-  const flashcardQuestions = useMemo(() => {
-    if (selectedCourse === 'all') return allQuestions;
-    return allQuestions.filter((q) => q.courseId === selectedCourse);
-  }, [allQuestions, selectedCourse]);
-
-  const flashcardProgress = flashcardQuestions.length > 0
-    ? (flashcardReviewed.size / flashcardQuestions.length) * 100
-    : 0;
+  // Filter questions by selected course and bookmarked
+  const questions = useMemo(() => {
+    if (adaptiveOn && studyMode === 'quiz' && adaptiveQuestions) {
+      return adaptiveQuestions;
+    }
+    let filtered = selectedCourse === 'all' ? allQuestions : allQuestions.filter((q) => q.courseId === selectedCourse);
+    if (showBookmarked) {
+      filtered = filtered.filter((q) => bookmarkedQuestions.has(q.id));
+    }
+    return filtered;
+  }, [allQuestions, selectedCourse, showBookmarked, bookmarkedQuestions, adaptiveOn, studyMode, adaptiveQuestions]);
 
   // Difficulty distribution
   const difficultyCounts = useMemo(() => {
@@ -1679,18 +1570,6 @@ export function QuizView() {
       setShowFlashcardSummary(true);
     }
   }, [currentIndex, flashcardQuestions, flashcardReviewed]);
-
-  const handleFlashcardPrev = useCallback(() => {
-    setFlipped(false);
-    setCurrentIndex((prev) => Math.max(0, prev - 1));
-  }, []);
-
-  const handleFlashcardNext = useCallback(() => {
-    setFlipped(false);
-    if (currentIndex < flashcardQuestions.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-    }
-  }, [currentIndex, flashcardQuestions.length]);
 
   const handleFlashcardReset = useCallback(() => {
     setCurrentIndex(0);
@@ -1773,35 +1652,54 @@ export function QuizView() {
     setFillBlankGrades({});
   };
 
-  // Filter questions by selected course and bookmarked
-  const questions = useMemo(() => {
-    if (adaptiveOn && studyMode === 'quiz' && adaptiveQuestions) {
-      return adaptiveQuestions;
-    }
-    let filtered = selectedCourse === 'all' ? allQuestions : allQuestions.filter((q) => q.courseId === selectedCourse);
-    if (showBookmarked) {
-      filtered = filtered.filter((q) => bookmarkedQuestions.has(q.id));
-    }
-    return filtered;
-  }, [allQuestions, selectedCourse, showBookmarked, bookmarkedQuestions, adaptiveOn, studyMode, adaptiveQuestions]);
-
   const currentQ = questions[currentIndex];
   const progress = questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0;
 
-  const isCorrect = useCallback(
-    (q: Question, userAnswer: string): boolean => {
-      const ua = userAnswer.trim().toLowerCase();
-      const ca = q.answer.trim().toLowerCase();
-      if (q.type === 'short_answer' || q.type === 'error_correction') {
-        return isFuzzyMatch(userAnswer, q.answer, 3);
+  // Compute wrong answers for error analysis
+  const wrongAnswers = useMemo(() => {
+    return questions
+      .filter((q) => answered[q.id] && !isCorrect(q, answers[q.id] || ''))
+      .map((q) => ({
+        question: q.question,
+        userAnswer: answers[q.id] || '',
+        correctAnswer: q.answer,
+        concept: q.concept || 'General',
+      }));
+  }, [questions, answered, answers, isCorrect]);
+
+  const handleAnalyzeMistakes = useCallback(async () => {
+    if (wrongAnswers.length === 0) return;
+    setWeaknessReportLoading(true);
+    setWeaknessReportOpen(true);
+    setWeaknessReport(null);
+    try {
+      const { learnerProfile } = useAppStore.getState();
+      const res = await fetch('/api/error-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wrongAnswers,
+          learnerProfile: learnerProfile || undefined,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error('Failed to analyze errors');
       }
-      if (q.type === 'fill_blank') {
-        return userAnswer.trim().toLowerCase() === q.answer.trim().toLowerCase();
+      const data: ErrorAnalysisResponse = await res.json();
+      setWeaknessReport(data);
+      // Persist to localStorage
+      try {
+        localStorage.setItem(ERROR_REPORT_STORAGE_KEY, JSON.stringify(data));
+      } catch {
+        // ignore storage errors
       }
-      return ua === ca;
-    },
-    [],
-  );
+    } catch {
+      toast.error('Failed to analyze mistakes. Please try again.');
+      setWeaknessReportOpen(false);
+    } finally {
+      setWeaknessReportLoading(false);
+    }
+  }, [wrongAnswers]);
 
   const handleAnswer = useCallback(
     (answer: string) => {
@@ -1948,6 +1846,7 @@ export function QuizView() {
       return total + (isCorrect(q, userAnswer) ? 1 : 0);
     }, 0);
   }, [questions, answered, answers, isCorrect, fillBlankGrades]);
+  const animatedScore = useAnimatedCounter(showResults ? score : 0, 1500);
 
   const circumference = 2 * Math.PI * 62;
   const scorePercent = questions.length > 0 ? score / questions.length : 0;

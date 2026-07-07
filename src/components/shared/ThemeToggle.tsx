@@ -1,32 +1,26 @@
 'use client';
 
-import { useCallback, useSyncExternalStore } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState, useCallback } from 'react';
+import { useTheme } from 'next-themes';
+import { motion } from 'framer-motion';
 import { Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
-function subscribeToDark(cb: () => void) {
-  const observer = new MutationObserver(cb);
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-  return () => observer.disconnect();
-}
-
-function getIsDark() {
-  if (typeof document === 'undefined') return false;
-  return document.documentElement.classList.contains('dark');
-}
-
-function getIsDarkServer() {
-  return false;
-}
+import { useAppStore } from '@/stores/appStore';
 
 export function ThemeToggle({ className }: { className?: string }) {
-  const isDark = useSyncExternalStore(subscribeToDark, getIsDark, getIsDarkServer);
+  const { resolvedTheme, setTheme } = useTheme();
+  const updateSettings = useAppStore((s) => s.updateSettings);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  const isDark = resolvedTheme === 'dark';
 
   const toggle = useCallback(() => {
-    const next = !isDark;
-    document.documentElement.classList.toggle('dark', next);
-  }, [isDark]);
+    const next = isDark ? 'light' : 'dark';
+    setTheme(next);
+    updateSettings({ theme: next });
+  }, [isDark, setTheme, updateSettings]);
 
   return (
     <Button
@@ -36,29 +30,21 @@ export function ThemeToggle({ className }: { className?: string }) {
       className={className}
       aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
     >
-      <AnimatePresence mode="wait" initial={false}>
-        {isDark ? (
-          <motion.div
-            key="moon"
-            initial={{ rotate: -90, scale: 0, opacity: 0 }}
-            animate={{ rotate: 0, scale: 1, opacity: 1 }}
-            exit={{ rotate: 90, scale: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
+      {/* Render a stable icon slot until mounted to avoid hydration mismatch */}
+      {mounted && (
+        <motion.div
+          key={isDark ? 'moon' : 'sun'}
+          initial={{ rotate: -30, scale: 0.6, opacity: 0 }}
+          animate={{ rotate: 0, scale: 1, opacity: 1 }}
+          transition={{ duration: 0.15, ease: 'easeOut' }}
+        >
+          {isDark ? (
             <Moon className="h-5 w-5 text-amber-400" />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="sun"
-            initial={{ rotate: 90, scale: 0, opacity: 0 }}
-            animate={{ rotate: 0, scale: 1, opacity: 1 }}
-            exit={{ rotate: -90, scale: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
+          ) : (
             <Sun className="h-5 w-5 text-emerald-600" />
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </motion.div>
+      )}
     </Button>
   );
 }

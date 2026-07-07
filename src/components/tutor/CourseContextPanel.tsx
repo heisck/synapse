@@ -16,7 +16,6 @@ import {
   ChevronRight,
   BookOpen,
   Upload,
-  FileText,
   Layers,
   Tag,
 } from 'lucide-react'
@@ -60,53 +59,23 @@ export function CourseContextPanel() {
   const currentSlideIndex = useAppStore((s) => s.currentSlideIndex)
   const setCurrentSlideIndex = useAppStore((s) => s.setCurrentSlideIndex)
 
-  const [isOpen, setIsOpen] = useState(true)
+  // Collapsed by default so the chat gets the vertical space
+  const [isOpen, setIsOpen] = useState(false)
 
-  // Empty state: show Load Course CTA
+  // Empty state: one slim row — the chat keeps its height
   if (activeSlides.length === 0) {
     return (
-      <motion.div
-        className="mx-auto max-w-3xl px-4 mb-2"
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-      >
-        <div className="glass rounded-xl p-5 flex flex-col items-center text-center gap-3">
-          {/* Illustration: stacked icons */}
-          <div className="relative w-16 h-16">
-            <motion.div
-              className="absolute inset-0 flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/40 dark:to-teal-900/40"
-              animate={{ y: [0, -3, 0] }}
-              transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
-            >
-              <FileText className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
-            </motion.div>
-            <motion.div
-              className="absolute -bottom-1 -right-1 flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-teal-400 to-emerald-500 shadow-lg shadow-emerald-500/20"
-              animate={{ y: [0, 2, 0] }}
-              transition={{ repeat: Infinity, duration: 3, delay: 0.5, ease: 'easeInOut' }}
-            >
-              <Upload className="w-4 h-4 text-white" />
-            </motion.div>
-          </div>
-          <div className="space-y-1">
-            <h3 className="text-sm font-semibold text-foreground">No course loaded</h3>
-            <p className="text-xs text-muted-foreground max-w-[240px]">
-              Upload your slides to get AI-powered context and explanations during tutoring.
-            </p>
-          </div>
-          <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
-            <Button
-              onClick={() => navigate('upload')}
-              size="sm"
-              className="rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-md shadow-emerald-500/20 gap-2 transition-shadow hover:shadow-lg hover:shadow-emerald-500/30"
-            >
-              <Upload className="w-4 h-4" />
-              Load Course
-            </Button>
-          </motion.div>
-        </div>
-      </motion.div>
+      <div className="mx-auto w-full max-w-3xl px-4 mb-1">
+        <button
+          type="button"
+          onClick={() => navigate('upload')}
+          className="flex w-full items-center gap-2 rounded-lg border border-dashed border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+          aria-label="No course loaded — upload slides"
+        >
+          <Upload className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">No course loaded — tap to upload slides</span>
+        </button>
+      </div>
     )
   }
 

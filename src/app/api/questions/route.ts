@@ -3,6 +3,36 @@ import { LLM } from '@/lib/ai';
 import { buildQuizGenPrompt } from '@/lib/prompts';
 import { db } from '@/lib/db';
 
+function toClientQuestion(q: { options: string | null } & Record<string, unknown>) {
+  return {
+    ...q,
+    options: q.options ? JSON.parse(q.options) : undefined,
+  };
+}
+
+// GET: Fetch previously-generated questions for a course
+export async function GET(request: NextRequest) {
+  try {
+    const courseId = request.nextUrl.searchParams.get('courseId');
+    if (!courseId) {
+      return NextResponse.json({ error: 'courseId is required.' }, { status: 400 });
+    }
+
+    const questions = await db.question.findMany({
+      where: { courseId },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return NextResponse.json({
+      success: true,
+      questions: questions.map(toClientQuestion),
+    });
+  } catch (error) {
+    console.error('[/api/questions GET] Error:', error);
+    return NextResponse.json({ error: 'Failed to fetch questions.' }, { status: 500 });
+  }
+}
+
 function tryParseJSON(text: string): unknown | null {
   try {
     return JSON.parse(text);
@@ -134,7 +164,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      questions: savedQuestions,
+      questions: savedQuestions.map(toClientQuestion),
     });
   } catch (error) {
     console.error('[/api/questions] Error:', error);

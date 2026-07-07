@@ -43,7 +43,7 @@ function isDuplicateByKey(
 }
 
 export function useNotifications(): void {
-  const { addNotification, notifications, dailyChallenge, studyGoals, studySessions, achievements, quizScore, quizTotal, completedCourses, courses } = useAppStore();
+  const { addNotification, notifications, dailyChallenge, studyGoals, studySessions, achievements, quizScore, quizTotal, completedCourses, courses, settings } = useAppStore();
   const { overdueCount } = useSpacedRepetition();
   const generatedRef = useRef(false);
 
@@ -54,8 +54,8 @@ export function useNotifications(): void {
     const toAdd: Array<Omit<StudyNotification, 'id' | 'read' | 'createdAt'>> = [];
     const MAX_NOTIFICATIONS = 8;
 
-    // 1. Streak Alert with milestone notifications
-    if (!isDuplicate(notifications, 'streak') && dailyChallenge.streak > 0) {
+    // 1. Streak Alert with milestone notifications (respects settings.streakAlerts)
+    if (settings.streakAlerts && !isDuplicate(notifications, 'streak') && dailyChallenge.streak > 0) {
       toAdd.push({
         type: 'streak',
         title: 'Study Streak Active',
@@ -75,7 +75,7 @@ export function useNotifications(): void {
       { days: 30, title: '30-Day Streak Milestone', message: 'A full month streak! You are an unstoppable learner.' },
     ];
     for (const milestone of streakMilestones) {
-      if (streak >= milestone.days && !isDuplicateByKey(notifications, `${milestone.days}-Day`)) {
+      if (settings.streakAlerts && streak >= milestone.days && !isDuplicateByKey(notifications, `${milestone.days}-Day`)) {
         toAdd.push({
           type: 'milestone',
           title: milestone.title,
@@ -118,8 +118,8 @@ export function useNotifications(): void {
       }
     }
 
-    // 4. Idle Reminder
-    if (!isDuplicate(notifications, 'reminder')) {
+    // 4. Idle Reminder (respects settings.sessionReminders)
+    if (settings.sessionReminders && !isDuplicate(notifications, 'reminder')) {
       let isIdle = false;
       if (studySessions.length > 0) {
         const lastSession = studySessions.reduce(
@@ -207,5 +207,5 @@ export function useNotifications(): void {
     for (const n of batch) {
       addNotification(n);
     }
-  }, [addNotification, notifications, dailyChallenge.streak, overdueCount, studyGoals, studySessions, achievements, quizScore, quizTotal, completedCourses, courses]);
+  }, [addNotification, notifications, dailyChallenge.streak, overdueCount, studyGoals, studySessions, achievements, quizScore, quizTotal, completedCourses, courses, settings.streakAlerts, settings.sessionReminders]);
 }

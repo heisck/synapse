@@ -22,62 +22,50 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAppStore } from '@/stores/appStore';
 import { useCountUp } from '@/hooks/useCountUp';
 import { useStudyStreak, useTotalStudyTime } from '@/hooks/useStudyTracker';
+import { computeUserStats } from '@/lib/xp';
 import { toast } from 'sonner';
 import type { StudyBuddy } from '@/types';
 
-/* ── XP → Level calculator (1-50) ── */
-function xpToLevel(totalXP: number): number {
-  // Level thresholds: each level requires progressively more XP
-  const thresholds = Array.from({ length: 50 }, (_, i) => {
-    const level = i + 1;
-    return Math.round(100 * Math.pow(1.18, level - 1));
-  });
-  let accumulated = 0;
-  for (let i = 0; i < thresholds.length; i++) {
-    accumulated += thresholds[i];
-    if (totalXP < accumulated) return i + 1;
-  }
-  return 50;
-}
-
-/* ── Build user's own StudyBuddy entry from store data ── */
-function useUserBuddy(): StudyBuddy {
-  const { userName, studySessions, completedCourses, adaptiveResults, dailyChallenge } = useAppStore();
+/* ── Build user's own StudyBuddy entry from real store data ──
+   Uses the shared XP math (lib/xp) so the numbers shown here match what the
+   presence heartbeat reports about this user to other instances. */
+function useUserBuddy(): StudyBuddy & { weeklyXP: number } {
+  const { userName, studySessions, completedCourses, adaptiveResults, dailyChallenge, activeCourse, activeTopic } = useAppStore();
   const { current: streak } = useStudyStreak();
 
   return useMemo(() => {
-    // Calculate XP from study sessions (10 XP per minute)
-    const sessionXP = studySessions.reduce((sum, s) => sum + s.duration * 10, 0);
-    // XP from quiz accuracy
-    const totalAdaptive = adaptiveResults.length;
-    const correctAdaptive = adaptiveResults.filter((r) => r.correct).length;
-    const quizAccuracy = totalAdaptive > 0 ? Math.round((correctAdaptive / totalAdaptive) * 100) : 0;
-    const quizXP = Math.round(quizAccuracy * 5);
-    // XP from daily challenges
-    const challengeXP = (dailyChallenge.totalCompleted || 0) * 50;
-    const totalXP = sessionXP + quizXP + challengeXP;
-    const level = xpToLevel(totalXP);
+    const stats = computeUserStats({
+      studySessions,
+      adaptiveResults,
+      dailyChallengeCompleted: dailyChallenge.totalCompleted || 0,
+    });
 
     return {
       id: 'user-self',
       name: userName || 'You',
       avatarGradient: 'from-primary to-teal-500',
-      totalXP,
-      level,
+      totalXP: stats.totalXP,
+      weeklyXP: stats.weeklyXP,
+      level: stats.level,
       streak,
       coursesCompleted: completedCourses.length,
-      quizAccuracy,
-      currentTopic: 'Currently studying',
+      quizAccuracy: stats.quizAccuracy,
+      currentTopic: activeCourse?.title || activeTopic || '',
       isOnline: true,
     };
-  }, [userName, studySessions, completedCourses, adaptiveResults, dailyChallenge, streak]);
+  }, [userName, studySessions, completedCourses, adaptiveResults, dailyChallenge, streak, activeCourse, activeTopic]);
 }
 
-/* ── Simulated weekly XP for buddies (randomly varies from total) ── */
-function getWeeklyXP(totalXP: number): number {
-  // Simulate 30-60% of total XP as "this week" contribution
-  const factor = 0.3 + (Math.abs(Math.sin(totalXP * 0.001)) * 0.3);
-  return Math.round(totalXP * factor);
+/* ── Relative "last seen" for offline peers ── */
+function formatLastSeen(lastSeen?: string): string | null {
+  if (!lastSeen) return null;
+  const diffMs = Date.now() - new Date(lastSeen).getTime();
+  if (Number.isNaN(diffMs) || diffMs < 0) return null;
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 60) return `seen ${Math.max(1, mins)}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `seen ${hours}h ago`;
+  return `seen ${Math.floor(hours / 24)}d ago`;
 }
 
 /* ── Rank Medal Colors ── */
@@ -310,6 +298,18 @@ function LeaderboardRow({
           <span>{buddy.coursesCompleted} courses</span>
           <span className="text-border hidden sm:inline">·</span>
           <span className="hidden sm:inline">{buddy.quizAccuracy}% accuracy</span>
+          {buddy.isOnline && buddy.currentTopic && (
+            <>
+              <span className="text-border hidden md:inline">·</span>
+              <span className="hidden md:inline text-emerald-600 dark:text-emerald-400 truncate max-w-[140px]">studying {buddy.currentTopic}</span>
+            </>
+          )}
+          {!buddy.isOnline && !isCurrentUser && formatLastSeen(buddy.lastSeen) && (
+            <>
+              <span className="text-border hidden md:inline">·</span>
+              <span className="hidden md:inline">{formatLastSeen(buddy.lastSeen)}</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -470,24 +470,24 @@ export function LeaderboardView() {
   const userBuddy = useUserBuddy();
   const [shareModalOpen, setShareModalOpen] = useState(false);
 
-  // Combine user + buddies and sort
+  // Combine user + live peers and sort — all real numbers
   const rankedEntries = useMemo(() => {
     const all: Array<{ buddy: StudyBuddy; isCurrentUser: boolean; weeklyXP: number; allTimeXP: number }> = [];
 
-    // Add user
+    // Add user (weeklyXP from real last-7-days sessions)
     all.push({
       buddy: userBuddy,
       isCurrentUser: true,
-      weeklyXP: getWeeklyXP(userBuddy.totalXP),
+      weeklyXP: userBuddy.weeklyXP,
       allTimeXP: userBuddy.totalXP,
     });
 
-    // Add buddies with simulated weekly XP
+    // Add live peers reported by the presence backend
     studyBuddies.forEach((b) => {
       all.push({
         buddy: b,
         isCurrentUser: false,
-        weeklyXP: getWeeklyXP(b.totalXP),
+        weeklyXP: b.weeklyXP ?? 0,
         allTimeXP: b.totalXP,
       });
     });
@@ -633,9 +633,24 @@ export function LeaderboardView() {
         <div className="flex items-center gap-2 mb-2">
           <Star className="h-4 w-4 text-amber-500" />
           <h3 className="font-semibold text-sm">Top Learners</h3>
-          <Badge variant="secondary" className="text-[10px]">{rankedEntries.length} learners</Badge>
+          <Badge variant="secondary" className="text-[10px]">{rankedEntries.length} learner{rankedEntries.length === 1 ? '' : 's'}</Badge>
         </div>
-        <TopPodium entries={top3} />
+        {studyBuddies.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
+              <Users className="h-7 w-7 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">You&apos;re the first learner here</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                Other learners appear on the board as their devices come online.
+                Your own progress is already being counted.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <TopPodium entries={top3} />
+        )}
       </motion.div>
 
       {/* Full Rankings List */}
@@ -657,7 +672,7 @@ export function LeaderboardView() {
       <motion.div variants={fadeUp} className="flex items-center justify-center gap-1.5 pb-8">
         <Users className="h-3.5 w-3.5 text-muted-foreground/50" />
         <p className="text-xs text-muted-foreground/50">
-          Rankings update based on your study activity
+          Rankings update live as learners study — everyone&apos;s data stays on their own device
         </p>
       </motion.div>
 

@@ -2,8 +2,19 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, Layers, Clock, Bookmark, BookmarkCheck } from 'lucide-react';
+import { FileText, Layers, Clock, Bookmark, BookmarkCheck, Trash2, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/stores/appStore';
 import { CATEGORY_CONFIG } from './UploadView';
 import type { Course } from '@/types';
@@ -30,54 +41,54 @@ function getRelativeTime(dateStr: string): string {
 
 export function CourseCard({ course, onClick }: CourseCardProps) {
   const slideCount = course._count?.slides ?? course.slides?.length ?? 0;
-  const { courseCategories, bookmarkedCourses, toggleBookmark } = useAppStore();
+  const { courseCategories, bookmarkedCourses, toggleBookmark, removeCourse } = useAppStore();
   const isBookmarked = bookmarkedCourses.includes(course.id);
   const category = courseCategories[course.id] || course.subject;
   const config = CATEGORY_CONFIG[category];
   const stripeColor = config?.stripeColor || 'bg-gray-400';
 
   const [isHovered, setIsHovered] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
-    const rotateX = (0.5 - y) * 8;
-    const rotateY = (x - 0.5) * 8;
-    cardRef.current.style.transform = `perspective(800px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
-  }, []);
+  const handleDelete = useCallback(async () => {
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/courses/${course.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete course');
+      removeCourse(course.id);
+      toast.success(`"${course.title}" deleted.`);
+      setShowDeleteConfirm(false);
+    } catch {
+      toast.error('Failed to delete course. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [course.id, course.title, removeCourse]);
 
   const handleMouseLeave = useCallback(() => {
     setIsHovered(false);
-    if (cardRef.current) {
-      cardRef.current.style.transform = 'perspective(800px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)';
-    }
   }, []);
 
   return (
-    <motion.button
+    <>
+    <motion.div
+      role="button"
+      tabIndex={0}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      className="group text-left w-full tilt-card"
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      className="group text-left w-full cursor-pointer"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={handleMouseLeave}
-      onMouseMove={handleMouseMove}
     >
       <div
         ref={cardRef}
         className="glass-hover card-shadow rounded-xl overflow-hidden border border-border/50 relative transition-all duration-300"
-        style={{ transformStyle: 'preserve-3d', willChange: 'transform' }}
       >
-        {/* Category color stripe on left edge */}
+        {/* Category color stripe on left edge (calm color-coding, no top line) */}
         <div className={`absolute left-0 top-0 bottom-0 w-1 z-20 ${stripeColor}`} />
-
-        {/* Category color top bar */}
-        <div className={`h-1 w-full bg-gradient-to-r ${config ? '' : 'from-primary to-emerald-400'}`} style={config ? { backgroundColor: config.barColor } : undefined} />
-
-        {/* Shimmer overlay on hover */}
-        <div className={`shimmer-overlay ${isHovered ? 'shimmer-overlay-active' : ''}`} />
 
         {/* Thumbnail */}
         <div className="relative h-32 bg-gradient-to-br from-emerald-500/20 via-teal-500/15 to-emerald-600/10 flex items-center justify-center overflow-hidden">
@@ -103,6 +114,16 @@ export function CourseCard({ course, onClick }: CourseCardProps) {
                 {isBookmarked ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
               </motion.div>
             </AnimatePresence>
+          </motion.button>
+
+          {/* Delete course */}
+          <motion.button
+            whileTap={{ scale: 0.85 }}
+            onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }}
+            className="absolute top-3 right-14 z-20 h-8 w-8 rounded-full flex items-center justify-center bg-background/60 text-muted-foreground hover:text-destructive hover:bg-background/80 transition-all duration-200"
+            aria-label="Delete course"
+          >
+            <Trash2 className="h-4 w-4" />
           </motion.button>
 
           {/* Hover gradient overlay with "Open" text */}
@@ -146,6 +167,32 @@ export function CourseCard({ course, onClick }: CourseCardProps) {
           </div>
         </div>
       </div>
-    </motion.button>
+    </motion.div>
+
+    <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            Delete &quot;{course.title}&quot;?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete this course and all {slideCount} of its slides.
+            This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => { e.preventDefault(); handleDelete(); }}
+            disabled={isDeleting}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {isDeleting ? 'Deleting…' : 'Delete'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

@@ -80,7 +80,6 @@ function FeatureCard({
   index: number;
 }) {
   const Icon = feature.icon;
-  const isEven = index % 2 === 0;
   const cardRef = useRef<HTMLDivElement>(null);
   const [tiltStyle, setTiltStyle] = useState({ transform: 'translateY(0px)' });
 
@@ -113,16 +112,6 @@ function FeatureCard({
         className="relative rounded-2xl glass p-6 sm:p-8 h-full transition-all duration-500 overflow-hidden dark:backdrop-blur-[24px] dark:bg-white/[0.04] dark:border-white/[0.12]"
         style={tiltStyle}
       >
-        {/* Gradient accent line at top */}
-        <motion.div
-          className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent"
-          initial={{ scaleX: 0 }}
-          whileInView={{ scaleX: 1 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.8, delay: 0.2 + index * 0.1, ease: 'easeOut' }}
-          style={{ transformOrigin: isEven ? 'left' : 'right' }}
-        />
-
         {/* Subtle background glow on hover */}
         <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-500/0 to-teal-500/0 group-hover:from-emerald-500/[0.03] group-hover:to-teal-500/[0.03] dark:group-hover:from-emerald-400/[0.08] dark:group-hover:to-cyan-400/[0.05] transition-all duration-500" />
 

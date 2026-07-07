@@ -130,8 +130,8 @@ export default function HeroSection() {
       )
         .fromTo(
           headingRef.current,
-          { opacity: 0, y: 40 },
-          { opacity: 1, y: 0, duration: 0.9 },
+          { y: 40 },
+          { y: 0, duration: 0.9 },
           '-=0.4'
         )
         .fromTo(
@@ -305,7 +305,7 @@ export default function HeroSection() {
         {/* Heading with animated gradient text */}
         <h1
           ref={headingRef}
-          className="opacity-0 text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.1] mb-6"
+          className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.1] mb-6"
         >
           Learn Anything.{' '}
           <span className="relative inline-block">

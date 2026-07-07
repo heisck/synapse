@@ -33,6 +33,8 @@ function useParticles(count: number): ParticleData {
   }, [count]);
 }
 
+const MAX_LINES = 500;
+
 function Particles() {
   const PARTICLE_COUNT = 220;
   const CONNECTION_DISTANCE = 2.2;
@@ -42,6 +44,12 @@ function Particles() {
   const linesRef = useRef<THREE.LineSegments>(null);
   const mouseRef = useRef(new THREE.Vector2(0, 0));
   const { viewport } = useThree();
+
+  // Preallocated, reused buffers — written in place every frame instead of
+  // allocating new arrays/BufferAttributes (which forced a full GPU re-upload
+  // every frame and was the main source of jank on the landing page).
+  const linePositionsRef = useRef(new Float32Array(MAX_LINES * 2 * 3));
+  const lineColorsRef = useRef(new Float32Array(MAX_LINES * 2 * 3));
 
   const handlePointerMove = useCallback(
     (e: { clientX: number; clientY: number }) => {
@@ -90,43 +98,52 @@ function Particles() {
 
     posAttr.needsUpdate = true;
 
-    // Update connections
+    // Update connections — write into preallocated buffers in place, then
+    // only draw the portion actually used via setDrawRange (no per-frame
+    // allocation or GPU buffer reallocation).
     if (linesRef.current) {
-      const linePositions: number[] = [];
-      const lineColors: number[] = [];
+      const linePositions = linePositionsRef.current;
+      const lineColors = lineColorsRef.current;
+      let lineCount = 0;
 
+      outer:
       for (let i = 0; i < PARTICLE_COUNT; i++) {
         for (let j = i + 1; j < PARTICLE_COUNT; j++) {
+          if (lineCount >= MAX_LINES) break outer;
+
           const dx = posArray[i * 3] - posArray[j * 3];
           const dy = posArray[i * 3 + 1] - posArray[j * 3 + 1];
           const dz = posArray[i * 3 + 2] - posArray[j * 3 + 2];
           const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
           if (dist < CONNECTION_DISTANCE) {
-            linePositions.push(
-              posArray[i * 3], posArray[i * 3 + 1], posArray[i * 3 + 2],
-              posArray[j * 3], posArray[j * 3 + 1], posArray[j * 3 + 2]
-            );
+            const base = lineCount * 6;
+            linePositions[base] = posArray[i * 3];
+            linePositions[base + 1] = posArray[i * 3 + 1];
+            linePositions[base + 2] = posArray[i * 3 + 2];
+            linePositions[base + 3] = posArray[j * 3];
+            linePositions[base + 4] = posArray[j * 3 + 1];
+            linePositions[base + 5] = posArray[j * 3 + 2];
 
             const alpha = 1 - dist / CONNECTION_DISTANCE;
-            // Emerald to teal colors
-            lineColors.push(0.063 * alpha, 0.725 * alpha, 0.506 * alpha);
-            lineColors.push(0.078 * alpha, 0.722 * alpha, 0.651 * alpha);
+            lineColors[base] = 0.063 * alpha;
+            lineColors[base + 1] = 0.725 * alpha;
+            lineColors[base + 2] = 0.506 * alpha;
+            lineColors[base + 3] = 0.078 * alpha;
+            lineColors[base + 4] = 0.722 * alpha;
+            lineColors[base + 5] = 0.651 * alpha;
+
+            lineCount++;
           }
         }
       }
 
       const lineGeo = linesRef.current.geometry;
-      lineGeo.setAttribute(
-        'position',
-        new THREE.Float32BufferAttribute(linePositions, 3)
-      );
-      lineGeo.setAttribute(
-        'color',
-        new THREE.Float32BufferAttribute(lineColors, 3)
-      );
-      (lineGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-      (lineGeo.attributes.color as THREE.BufferAttribute).needsUpdate = true;
+      lineGeo.setDrawRange(0, lineCount * 2);
+      const posAttrLine = lineGeo.attributes.position as THREE.BufferAttribute;
+      const colorAttrLine = lineGeo.attributes.color as THREE.BufferAttribute;
+      posAttrLine.needsUpdate = true;
+      colorAttrLine.needsUpdate = true;
     }
   });
 
@@ -156,11 +173,11 @@ function Particles() {
         <bufferGeometry>
           <bufferAttribute
             attach="attributes-position"
-            args={[new Float32Array(0), 3]}
+            args={[linePositionsRef.current, 3]}
           />
           <bufferAttribute
             attach="attributes-color"
-            args={[new Float32Array(0), 3]}
+            args={[lineColorsRef.current, 3]}
           />
         </bufferGeometry>
         <lineBasicMaterial

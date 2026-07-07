@@ -50,6 +50,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useAppStore } from '@/stores/appStore';
 import { toast } from 'sonner';
+import type { Question } from '@/types';
 
 type FileStatus = 'pending' | 'uploading' | 'processing' | 'done' | 'error';
 
@@ -63,12 +64,19 @@ interface UploadFile {
 
 const ACCEPTED_TYPES = [
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/vnd.ms-powerpoint',
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/vnd.oasis.opendocument.text',
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  'text/html',
+  'application/rtf',
 ];
 
-const ACCEPTED_EXTENSIONS = ['.pptx', '.ppt', '.pdf', '.docx'];
+// Must match the server's ALLOWED_EXTENSIONS in /api/upload
+const ACCEPTED_EXTENSIONS = ['.pdf', '.pptx', '.docx', '.odp', '.odt', '.txt', '.md', '.csv', '.rtf', '.html'];
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
 
 export const COURSE_CATEGORIES = [
@@ -123,8 +131,14 @@ const fadeUp = {
 const FILE_TYPE_CONFIG: Record<string, { icon: typeof File; color: string; bg: string }> = {
   '.pdf': { icon: FileText, color: 'text-red-500', bg: 'bg-red-500/10' },
   '.pptx': { icon: Presentation, color: 'text-orange-500', bg: 'bg-orange-500/10' },
-  '.ppt': { icon: Presentation, color: 'text-orange-500', bg: 'bg-orange-500/10' },
+  '.odp': { icon: Presentation, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   '.docx': { icon: File, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+  '.odt': { icon: File, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+  '.txt': { icon: FileText, color: 'text-slate-500', bg: 'bg-slate-500/10' },
+  '.md': { icon: FileText, color: 'text-slate-500', bg: 'bg-slate-500/10' },
+  '.csv': { icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-500/10' },
+  '.rtf': { icon: FileText, color: 'text-slate-500', bg: 'bg-slate-500/10' },
+  '.html': { icon: FileText, color: 'text-amber-600', bg: 'bg-amber-500/10' },
 };
 
 // Floating particles for upload zone
@@ -374,8 +388,34 @@ function UploadHistoryPanel({ history, onReupload }: { history: UploadHistoryIte
   );
 }
 
+const UPLOAD_TIMEOUT_MS = 30_000;
+const UPLOAD_MAX_RETRIES = 2;
+
+/** POST with a timeout and automatic retry on network glitches (not on real server error responses). */
+async function fetchWithRetry(url: string, body: FormData): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= UPLOAD_MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { method: 'POST', body, signal: controller.signal });
+      clearTimeout(timeout);
+      return res;
+    } catch (err) {
+      clearTimeout(timeout);
+      lastError = err;
+      if (attempt < UPLOAD_MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError instanceof Error
+    ? new Error(`Network error after ${UPLOAD_MAX_RETRIES + 1} attempts: ${lastError.message}`)
+    : new Error('Network error: could not reach the server.');
+}
+
 export function UploadView() {
-  const { navigate, setActiveCourse, setActiveSlides, setCurrentQuestions, setQuizScore, setCourseCategory } = useAppStore();
+  const { navigate, activeCourse, setActiveCourse, setActiveSlides, setCurrentQuestions, setQuizScore, setCourseCategory, addCourse } = useAppStore();
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -388,7 +428,6 @@ export function UploadView() {
   const [extractedSlides, setExtractedSlides] = useState<ExtractedSlide[]>([]);
   const [selectedSlideIds, setSelectedSlideIds] = useState<Set<string>>(new Set());
   const [slidesOpen, setSlidesOpen] = useState(false);
-  const [uploadedCourseId, setUploadedCourseId] = useState<string | null>(null);
   const [uploadHistory, setUploadHistory] = useState<UploadHistoryItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const abortRef = useRef(false);
@@ -498,7 +537,6 @@ export function UploadView() {
 
     setGeneratedCount(null);
     setExtractedSlides([]);
-    setUploadedCourseId(null);
     setIsUploading(true);
     abortRef.current = false;
 
@@ -535,10 +573,7 @@ export function UploadView() {
           );
         }, 100);
 
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
+        const res = await fetchWithRetry('/api/upload', formData);
 
         clearInterval(progressInterval);
 
@@ -608,9 +643,36 @@ export function UploadView() {
       }
     }
 
-    // Set course category in store
+    // Set course category and populate the global course list immediately —
+    // without this, the Dashboard/CourseDetail never see the new course until
+    // a full page reload re-fetches /api/courses.
     if (courseId) {
       setCourseCategory(courseId, effectiveCategory);
+
+      const now = new Date().toISOString();
+      const newCourse = {
+        id: courseId,
+        title: courseTitle.trim() || 'Uploaded Material',
+        description: `${effectiveCategory || 'General'} course from uploaded files`,
+        subject: effectiveCategory || 'General',
+        _count: { slides: allExtractedSlides.length, enrollments: 0, sessions: 0 },
+        createdAt: now,
+        updatedAt: now,
+      };
+      addCourse(newCourse);
+      setActiveCourse(newCourse);
+      if (allExtractedSlides.length > 0) {
+        setActiveSlides(
+          allExtractedSlides.map((s, idx) => ({
+            id: s.id,
+            courseId,
+            title: s.title,
+            content: s.content,
+            order: s.order || idx + 1,
+            createdAt: now,
+          })),
+        );
+      }
     }
 
     setUploadHistory((prev) => [...newHistory, ...prev]);
@@ -619,7 +681,6 @@ export function UploadView() {
     if (allExtractedSlides.length > 0) {
       setExtractedSlides(allExtractedSlides);
       setSlidesOpen(true);
-      setUploadedCourseId(courseId);
       toast.success(`Uploaded! ${allExtractedSlides.length} slides extracted.`);
     } else if (newHistory.some((h) => h.status === 'done')) {
       toast.success('All files uploaded successfully!');
@@ -642,13 +703,42 @@ export function UploadView() {
       return;
     }
 
+    if (!activeCourse) {
+      toast.error('No course selected to generate questions for.');
+      return;
+    }
+
     setIsGenerating(true);
-    await new Promise((r) => setTimeout(r, 2000));
-    const baseCount = forSelected ? selectedSlideIds.size : extractedSlides.length || doneFiles.length;
-    const count = Math.max(Math.floor(Math.random() * 3) + 2, Math.floor(baseCount * 1.5));
-    setGeneratedCount(count);
-    setIsGenerating(false);
-    toast.success(`Generated ${count} questions from ${forSelected ? selectedSlideIds.size : 'all'} slides!`);
+    try {
+      const body: { courseId?: string; content?: string } = {};
+      if (forSelected) {
+        const selected = extractedSlides.filter((s) => selectedSlideIds.has(s.id));
+        body.content = selected.map((s) => `${s.title}\n${s.content}`).join('\n\n');
+      } else {
+        body.courseId = activeCourse.id;
+      }
+
+      const res = await fetch('/api/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed to generate questions.' }));
+        throw new Error(err.error || 'Failed to generate questions.');
+      }
+
+      const data = await res.json();
+      const questions = data.questions as Question[];
+      setCurrentQuestions(questions);
+      setGeneratedCount(questions.length);
+      toast.success(`Generated ${questions.length} questions from ${forSelected ? selectedSlideIds.size : 'all'} slides!`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate questions. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const toggleSlideSelection = (slideId: string) => {
@@ -823,7 +913,13 @@ export function UploadView() {
               value={courseTitle}
               onChange={(e) => setCourseTitle(e.target.value)}
               onBlur={() => setTitleTouched(true)}
-              className={titleError ? 'border-destructive focus-visible:ring-destructive/50' : ''}
+              className={
+                titleError
+                  ? 'border-destructive focus-visible:ring-destructive/50'
+                  : courseTitle.trim()
+                    ? 'border-primary/50 text-foreground font-medium focus-visible:ring-primary/50 focus-visible:border-primary'
+                    : ''
+              }
             />
             <AnimatePresence>
               {titleError && (
@@ -850,13 +946,14 @@ export function UploadView() {
           onDragLeave={() => setIsDragOver(false)}
           onDrop={handleDrop}
           onClick={() => inputRef.current?.click()}
-          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all overflow-hidden glass upload-glass-focus upload-drag-animated dropzone-particles ${
+          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all overflow-hidden glass upload-glass-focus upload-drag-animated min-h-[280px] flex items-center justify-center ${
             isDragOver
               ? 'dragging border-primary bg-primary/5 scale-[1.01] glow-emerald-strong pulse-glow gradient-border'
               : 'border-border/60 hover:border-primary/40 hover:bg-accent/20'
           }`}
         >
           <FloatingParticles />
+          <div className="dropzone-particles" />
           <input
             ref={inputRef}
             type="file"
@@ -1034,22 +1131,24 @@ export function UploadView() {
             layout
           >
             <Collapsible open={slidesOpen} onOpenChange={setSlidesOpen}>
-              <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-accent/30 transition-colors">
-                <div className="flex items-center gap-2">
-                  <motion.div
-                    animate={{ rotate: slidesOpen ? 0 : 0 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    {slidesOpen ? (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </motion.div>
-                  <span className="font-medium text-sm">
-                    Extracted Slides ({extractedSlides.length})
-                  </span>
-                </div>
+              <div className="flex items-center justify-between w-full p-4 hover:bg-accent/30 transition-colors">
+                <CollapsibleTrigger asChild>
+                  <button type="button" className="flex items-center gap-2 flex-1 text-left">
+                    <motion.div
+                      animate={{ rotate: slidesOpen ? 0 : 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      {slidesOpen ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </motion.div>
+                    <span className="font-medium text-sm">
+                      Extracted Slides ({extractedSlides.length})
+                    </span>
+                  </button>
+                </CollapsibleTrigger>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">
                     {selectedSlideIds.size}/{extractedSlides.length} selected
@@ -1058,15 +1157,12 @@ export function UploadView() {
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleAllSlides();
-                    }}
+                    onClick={() => toggleAllSlides()}
                   >
                     {selectedSlideIds.size === extractedSlides.length ? 'Deselect All' : 'Select All'}
                   </Button>
                 </div>
-              </CollapsibleTrigger>
+              </div>
               <AnimatePresence initial={false}>
                 <CollapsibleContent forceMount>
                   <motion.div
@@ -1151,32 +1247,7 @@ export function UploadView() {
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    const cid = uploadedCourseId || 'uploaded-' + Date.now();
-                    setActiveCourse({
-                      id: cid,
-                      title: courseTitle.trim() || 'Uploaded Material',
-                      description: `${effectiveCategory || 'General'} course from uploaded files`,
-                      subject: effectiveCategory || 'General',
-                      _count: { slides: extractedSlides.length || files.filter((f) => f.status === 'done').length, enrollments: 1, sessions: 0 },
-                      createdAt: new Date().toISOString(),
-                      updatedAt: new Date().toISOString(),
-                    });
-                    setCourseCategory(cid, effectiveCategory || 'General');
-                    if (extractedSlides.length > 0) {
-                      setActiveSlides(
-                        extractedSlides.map((s, idx) => ({
-                          id: s.id,
-                          courseId: cid,
-                          title: s.title,
-                          content: s.content,
-                          order: s.order,
-                          createdAt: new Date().toISOString(),
-                        })),
-                      );
-                    }
-                    navigate('dashboard');
-                  }}
+                  onClick={() => navigate('course-detail')}
                 >
                   <BookOpen className="h-4 w-4 mr-2" />
                   View Course

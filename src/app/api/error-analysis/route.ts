@@ -225,7 +225,6 @@ export async function POST(request: NextRequest) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
       ],
-      model: 'glm-4-flash',
     });
 
     if (!result?.choices?.[0]?.message?.content) {

@@ -103,6 +103,24 @@ function buildMoodInstruction(mood: { energy: number; formality: number; patienc
 const DEFAULT_SYSTEM_PROMPT =
   'You are Synapse, a friendly and adaptive AI tutor. Help the learner understand the topic clearly. Use simple language, stories, and analogies. Be concise but thorough.';
 
+// --- Standing behavior rules appended to every tutor response ---
+const BEHAVIOR_RULES = `
+[RESPONSE STYLE — always]:
+- Default to SHORT responses (2-5 sentences). Learners hate walls of text. Expand only when explicitly asked.
+- Every few exchanges, briefly check understanding of something covered EARLIER in this session with one short question.
+- Never re-ask what the learner is studying if slide context is provided below — you already know.
+- NEVER mention raw file names, upload names, or extensions (e.g. "INTRODUCTION TO PROSE SLIDES NEW.pdf") in your responses. Refer to the material naturally: "your slides", "this chapter", or the actual subject.
+
+[INTERACTIVE QUIZ PROTOCOL — mandatory]:
+When the learner asks to be quizzed, tested, given questions, or flashcards (or you decide a check is due), respond with a fenced code block tagged "quiz" containing ONLY valid JSON in this exact shape:
+\`\`\`quiz
+{"mode":"quiz","title":"Topic name","questions":[{"question":"...","options":["...","...","...","..."],"answerIndex":0,"explanation":"why this is correct","concept":"the concept tested"}]}
+\`\`\`
+- "mode" is "quiz" or "flashcards" (flashcards when they ask for flashcards).
+- 3-5 questions, 3-4 options each, answerIndex is the 0-based correct option.
+- NEVER write the questions, answers, or an answer key as visible text or tables. NEVER reveal which option is correct outside the JSON. You may add ONE short sentence before the block (e.g. "Here you go —").
+- The app renders this as an interactive card where the learner selects answers and gets validated.`;
+
 export async function POST(request: NextRequest) {
   try {
     // Rate limit
@@ -124,7 +142,7 @@ export async function POST(request: NextRequest) {
       }));
       const deduped = dedupeMessages(sanitized);
 
-      const result = await LLM.chat({ messages: deduped });
+      const result = await LLM.chatWithReview({ messages: deduped });
       if (!result?.choices?.[0]?.message?.content) {
         return NextResponse.json(
           { error: 'No response from AI provider.' },
@@ -136,8 +154,9 @@ export async function POST(request: NextRequest) {
         response: result.choices[0].message.content,
         phase: 'teaching',
         messageCount: deduped.length,
-        provider: 'zai',
-        model: result.model || 'glm-4-flash',
+        provider: 'openrouter',
+        model: result.model || 'unknown',
+        corrected: result.corrected || false,
       });
     }
 
@@ -152,6 +171,15 @@ export async function POST(request: NextRequest) {
       history,
       persona,
       moodSettings,
+      userName,
+      tips,
+      feedbackItems,
+      responseSpeed,
+      language,
+      hardSubjects,
+      alwaysConfuses,
+      bestTeachingStyle,
+      slideContext,
     } = body;
 
     const userMessage = sanitize(message || '');
@@ -174,7 +202,13 @@ export async function POST(request: NextRequest) {
       jargonTolerance: 'medium',
       masteryApproach: 'evidence',
     };
-    const mastery: MasteryMap = masteryMap || {};
+    // Keep the prompt lean: only the 12 most recently assessed concepts
+    const fullMastery: MasteryMap = masteryMap || {};
+    const mastery: MasteryMap = Object.fromEntries(
+      Object.entries(fullMastery)
+        .sort((a, b) => (b[1]?.lastAssessed || 0) - (a[1]?.lastAssessed || 0))
+        .slice(0, 12),
+    );
     const decision: DecisionLoopState = decisionState || {
       confusionScore: 0,
       masteryState: 'unknown',
@@ -212,29 +246,85 @@ export async function POST(request: NextRequest) {
     const personaInstruction = PERSONA_INSTRUCTIONS[personaId] || PERSONA_INSTRUCTIONS['storyteller']
     systemPrompt = `[PERSONA INSTRUCTION — adopt this voice/style for ALL responses]: ${personaInstruction}\n\n[MOOD MODIFIERS — adjust your tone/behavior accordingly]: ${moodInstruction}\n\n${systemPrompt}`
 
-    // Trim system prompt to 3000 chars
-    systemPrompt = systemPrompt.slice(0, 3000);
+    // --- Learner context: everything the user's browser knows about them ---
+    const learnerContext: string[] = [];
+    if (typeof userName === 'string' && userName.trim()) {
+      learnerContext.push(`The learner's name is ${sanitize(userName).slice(0, 60)} — address them by name naturally (not in every message).`);
+    }
+    if (Array.isArray(tips) && tips.length > 0) {
+      const tipList = tips
+        .filter((t: unknown) => typeof t === 'string')
+        .map((t: string) => `- ${sanitize(t).slice(0, 200)}`)
+        .slice(0, 5);
+      if (tipList.length > 0) {
+        learnerContext.push(`STANDING INSTRUCTIONS from the learner (always honor these):\n${tipList.join('\n')}`);
+      }
+    }
+    if (Array.isArray(feedbackItems) && feedbackItems.length > 0) {
+      const negatives = feedbackItems.filter((f: { type?: string }) => f?.type === 'negative' || f?.type === 'confusing' || f?.type === 'too_fast').length;
+      if (negatives >= 2) {
+        learnerContext.push('Recent explanations were rated poorly. Slow down: use shorter sentences, simpler words, and check understanding after each idea.');
+      } else if (feedbackItems.every((f: { type?: string }) => f?.type === 'positive' || f?.type === 'helpful')) {
+        learnerContext.push('Recent explanations were rated well — keep this style and depth.');
+      }
+    }
+    if (responseSpeed === 'concise') learnerContext.push('Keep responses SHORT: 2-4 sentences unless asked to elaborate.');
+    if (responseSpeed === 'detailed') learnerContext.push('Give thorough, detailed responses with examples.');
+    if (typeof language === 'string' && language && language !== 'English') {
+      learnerContext.push(`Respond in ${sanitize(language).slice(0, 30)} unless the learner writes in another language.`);
+    }
+    if (Array.isArray(hardSubjects) && hardSubjects.length > 0) {
+      learnerContext.push(`Subjects the learner finds hard: ${hardSubjects.filter((s: unknown) => typeof s === 'string').map((s: string) => sanitize(s)).slice(0, 5).join(', ')}. Take extra care with these.`);
+    }
+    if (typeof alwaysConfuses === 'string' && alwaysConfuses.trim()) {
+      learnerContext.push(`Things that always confuse this learner: ${sanitize(alwaysConfuses).slice(0, 200)}.`);
+    }
+    if (typeof bestTeachingStyle === 'string' && bestTeachingStyle.trim()) {
+      learnerContext.push(`Teaching style that works best for them: ${sanitize(bestTeachingStyle).slice(0, 200)}.`);
+    }
+    if (learnerContext.length > 0) {
+      systemPrompt = `${systemPrompt}\n\n[LEARNER CONTEXT — personalize using this]:\n${learnerContext.join('\n')}`;
+    }
 
-    // Build messages array from history + current message
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: systemPrompt },
-    ];
+    // Trim persona/phase/learner sections to 4000 chars
+    systemPrompt = systemPrompt.slice(0, 4000);
+
+    // --- Slide context: the tutor always knows what the learner is viewing ---
+    if (slideContext && typeof slideContext === 'object') {
+      const sc = slideContext as { index?: number; total?: number; title?: string; content?: string; courseTitle?: string };
+      const parts: string[] = [];
+      if (sc.courseTitle) parts.push(`Course: "${sanitize(String(sc.courseTitle)).slice(0, 120)}".`);
+      if (sc.title || sc.index) {
+        parts.push(`The learner is currently viewing slide ${sc.index ?? '?'}${sc.total ? ` of ${sc.total}` : ''}${sc.title ? `: "${sanitize(String(sc.title)).slice(0, 150)}"` : ''}.`);
+      }
+      if (sc.content) parts.push(`Slide content:\n${sanitize(String(sc.content)).slice(0, 1800)}`);
+      if (parts.length > 0) {
+        systemPrompt = `${systemPrompt}\n\n[CURRENT SLIDE — "this", "this concept", "this slide" refer to this material]:\n${parts.join('\n')}`;
+      }
+    }
+
+    // Standing behavior rules (brevity + interactive quiz protocol)
+    systemPrompt = `${systemPrompt}\n${BEHAVIOR_RULES}`;
+
+    // Build conversation from history + current message. The system prompt is
+    // kept OUT of the windowing so a long chat can never truncate it away.
+    const conversation: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
 
     if (Array.isArray(history)) {
       for (const h of history) {
         if (h.role === 'user' || h.role === 'assistant') {
-          messages.push({ role: h.role, content: sanitize(h.content || '') });
+          conversation.push({ role: h.role, content: sanitize(h.content || '') });
         }
       }
     }
 
-    messages.push({ role: 'user', content: userMessage });
-    const deduped = dedupeMessages(messages) as Array<{
-      role: 'system' | 'user' | 'assistant';
-      content: string;
-    }>;
+    conversation.push({ role: 'user', content: userMessage });
+    const deduped = [
+      { role: 'system' as const, content: systemPrompt },
+      ...(dedupeMessages(conversation) as Array<{ role: 'system' | 'user' | 'assistant'; content: string }>),
+    ];
 
-    const result = await LLM.chat({ messages: deduped });
+    const result = await LLM.chatWithReview({ messages: deduped, contextSummary: topic ? `Study topic: ${topic}` : undefined });
     if (!result?.choices?.[0]?.message?.content) {
       return NextResponse.json(
         { error: 'No response from AI. Please try again.' },
@@ -246,8 +336,9 @@ export async function POST(request: NextRequest) {
       response: result.choices[0].message.content,
       phase: phase || 'default',
       messageCount: deduped.length,
-      provider: 'zai',
-      model: result.model || 'glm-4-flash',
+      provider: 'openrouter',
+      model: result.model || 'unknown',
+      corrected: result.corrected || false,
     });
   } catch (error) {
     console.error('[/api/chat] Error:', error);

@@ -193,7 +193,7 @@ export function PersonaSelector() {
                       : 'bg-muted'
                   }`}
                   animate={isSelected ? { scale: [1, 1.08, 1] } : { scale: 1 }}
-                  transition={{ duration: 0.4, type: 'spring', stiffness: 400, damping: 15 }}
+                  transition={{ duration: 0.4, ease: 'easeInOut' }}
                 >
                   <Icon
                     className={`w-4 h-4 ${

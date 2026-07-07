@@ -17,52 +17,31 @@ import {
   Clock,
   Trophy,
   Target,
+  Trash2,
+  AlertTriangle,
+  Loader2,
+  Layers,
+  X,
+  Maximize2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/stores/appStore';
 import { useCountUp } from '@/hooks/useCountUp';
 import type { Slide } from '@/types';
 
-const MOCK_SLIDES: Slide[] = [
-  {
-    id: 'slide-1',
-    courseId: 'demo',
-    title: 'Introduction to Cell Biology',
-    content:
-      'Cells are the fundamental units of life. All living organisms are composed of one or more cells. The cell theory, developed in the 1830s, states that:\n\n1. All living things are made of cells\n2. Cells are the basic units of structure and function\n3. All cells come from pre-existing cells\n\nThere are two main types of cells: prokaryotic (bacteria, archaea) and eukaryotic (plants, animals, fungi, protists).',
-    order: 1,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'slide-2',
-    courseId: 'demo',
-    title: 'Cell Organelles Overview',
-    content:
-      'Eukaryotic cells contain membrane-bound organelles, each with specialized functions:\n\n• **Nucleus**: Contains DNA, controls cell activities\n• **Mitochondria**: Produces ATP through cellular respiration\n• **Ribosomes**: Synthesize proteins\n• **Endoplasmic Reticulum**: Synthesizes lipids and proteins (Rough ER has ribosomes, Smooth ER does not)\n• **Golgi Apparatus**: Modifies, sorts, and packages proteins\n• **Lysosomes**: Digest cellular waste and pathogens\n• **Chloroplasts** (plants only): Site of photosynthesis',
-    order: 2,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'slide-3',
-    courseId: 'demo',
-    title: 'Cell Membrane Structure',
-    content:
-      'The cell membrane (plasma membrane) is a phospholipid bilayer with embedded proteins. According to the Fluid Mosaic Model:\n\n• **Phospholipids** form a double layer with hydrophilic heads facing outward and hydrophobic tails facing inward\n• **Proteins** are embedded in the membrane (integral) or attached to surfaces (peripheral)\n• **Cholesterol** molecules help maintain membrane fluidity\n• **Carbohydrates** attached to proteins form glycoproteins for cell recognition\n\nThe membrane is selectively permeable, allowing certain molecules to pass while blocking others.',
-    order: 3,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'slide-4',
-    courseId: 'demo',
-    title: 'Cell Division: Mitosis',
-    content:
-      'Mitosis is the process of cell division that produces two genetically identical daughter cells. The phases are:\n\n**PMAT**\n1. **Prophase**: Chromatin condenses into chromosomes, nuclear envelope breaks down\n2. **Metaphase**: Chromosomes align at the cell equator (metaphase plate)\n3. **Anaphase**: Sister chromatids separate and move to opposite poles\n4. **Telophase**: Nuclear envelopes reform, chromosomes decondense\n\nFollowed by **Cytokinesis**: Cytoplasm divides, completing cell division.',
-    order: 4,
-    createdAt: new Date().toISOString(),
-  },
-];
 
 const stagger = {
   animate: { transition: { staggerChildren: 0.06 } },
@@ -135,12 +114,94 @@ export function CourseDetail() {
     quizScore,
     quizTotal,
     studySessions,
+    setActiveSlides,
+    removeCourse,
+    setCurrentQuestions,
   } = useAppStore();
 
-  const slides = activeSlides.length > 0 ? activeSlides : (activeCourse?.slides ?? MOCK_SLIDES);
+  const [showDeleteCourseConfirm, setShowDeleteCourseConfirm] = useState(false);
+  const [isDeletingCourse, setIsDeletingCourse] = useState(false);
+  const [isPreparingQuiz, setIsPreparingQuiz] = useState(false);
+  const [slideQuestionCounts, setSlideQuestionCounts] = useState<Record<string, number>>({});
+  const [generatingSlideId, setGeneratingSlideId] = useState<string | null>(null);
+
+  const handleGenerateSlideQuestions = async (slide: Slide) => {
+    // Toggle the panel closed if it's already showing results for this slide
+    if (activeSlideId === slide.id) {
+      setActiveSlideId(null);
+      return;
+    }
+
+    setActiveSlideId(slide.id);
+    if (slideQuestionCounts[slide.id] !== undefined) return; // already generated
+
+    setGeneratingSlideId(slide.id);
+    try {
+      const res = await fetch('/api/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slideId: slide.id, courseId: activeCourse?.id }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed to generate questions.' }));
+        throw new Error(err.error || 'Failed to generate questions.');
+      }
+      const data = await res.json();
+      setSlideQuestionCounts((prev) => ({ ...prev, [slide.id]: data.questions.length }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate questions. Please try again.');
+      setActiveSlideId(null);
+    } finally {
+      setGeneratingSlideId(null);
+    }
+  };
+
+  const handleDeleteCourse = async () => {
+    if (!activeCourse) return;
+    setIsDeletingCourse(true);
+    try {
+      const res = await fetch(`/api/courses/${activeCourse.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete course');
+      removeCourse(activeCourse.id);
+      toast.success(`"${activeCourse.title}" deleted.`);
+      setShowDeleteCourseConfirm(false);
+      navigate('courses');
+    } catch {
+      toast.error('Failed to delete course. Please try again.');
+    } finally {
+      setIsDeletingCourse(false);
+    }
+  };
+
+  // Only ever show the user's real slides — never demo placeholders
+  const slides = activeSlides.length > 0 ? activeSlides : (activeCourse?.slides ?? []);
   const currentSlide = slides[currentSlideIndex] ?? slides[0];
   const [activeSlideId, setActiveSlideId] = useState<string | null>(null);
   const [readProgress, setReadProgress] = useState(0);
+  const [slideToDelete, setSlideToDelete] = useState<Slide | null>(null);
+  const [isDeletingSlide, setIsDeletingSlide] = useState(false);
+  // Full-screen slide viewer opened from the thumbnail strip
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  const handleDeleteSlide = useCallback(async () => {
+    if (!slideToDelete) return;
+    setIsDeletingSlide(true);
+    try {
+      const res = await fetch(`/api/slides/${slideToDelete.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete slide');
+      const remaining = slides.filter((s) => s.id !== slideToDelete.id);
+      setActiveSlides(remaining);
+      if (currentSlideIndex >= remaining.length) {
+        setCurrentSlideIndex(Math.max(0, remaining.length - 1));
+      }
+      toast.success('Slide deleted.');
+      setSlideToDelete(null);
+    } catch {
+      toast.error('Failed to delete slide. Please try again.');
+    } finally {
+      setIsDeletingSlide(false);
+    }
+  }, [slideToDelete, slides, setActiveSlides, currentSlideIndex, setCurrentSlideIndex]);
   const [slideDirection, setSlideDirection] = useState(0);
   const [showConfetti, setShowConfetti] = useState(false);
 
@@ -180,6 +241,26 @@ export function CourseDetail() {
   const animatedQuizzes = useCountUp(quizzesTaken, { duration: 800 });
   const animatedScore = useCountUp(avgScore, { duration: 800 });
   const animatedTime = useCountUp(timeSpent, { duration: 800 });
+
+  // Lightbox keyboard navigation
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxIndex(null);
+      else if (e.key === 'ArrowRight' && lightboxIndex < slides.length - 1) setLightboxIndex(lightboxIndex + 1);
+      else if (e.key === 'ArrowLeft' && lightboxIndex > 0) setLightboxIndex(lightboxIndex - 1);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [lightboxIndex, slides.length]);
+
+  // Keep the main panel in sync with the slide opened in the lightbox
+  useEffect(() => {
+    if (lightboxIndex !== null && lightboxIndex !== currentSlideIndex) {
+      setCurrentSlideIndex(lightboxIndex);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lightboxIndex]);
 
   // Mark current slide as viewed when navigating to it
   useEffect(() => {
@@ -229,8 +310,46 @@ export function CourseDetail() {
     navigate('tutor');
   };
 
-  const handleTakeQuiz = () => {
-    navigate('quiz');
+  const handleTakeQuiz = async () => {
+    if (!activeCourse) {
+      navigate('quiz');
+      return;
+    }
+
+    setIsPreparingQuiz(true);
+    try {
+      const existingRes = await fetch(`/api/questions?courseId=${activeCourse.id}`);
+      if (existingRes.ok) {
+        const existingData = await existingRes.json();
+        if (existingData.questions?.length > 0) {
+          setCurrentQuestions(existingData.questions);
+          navigate('quiz');
+          return;
+        }
+      }
+
+      // No questions generated for this course yet — generate them now
+      const genRes = await fetch('/api/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseId: activeCourse.id }),
+      });
+      if (!genRes.ok) {
+        const err = await genRes.json().catch(() => ({ error: 'Failed to generate quiz questions.' }));
+        throw new Error(err.error || 'Failed to generate quiz questions.');
+      }
+      const genData = await genRes.json();
+      setCurrentQuestions(genData.questions);
+      navigate('quiz');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to prepare quiz. Please try again.');
+    } finally {
+      setIsPreparingQuiz(false);
+    }
+  };
+
+  const handleStudyCards = () => {
+    navigate('card-study');
   };
 
   const handleMarkComplete = useCallback(() => {
@@ -247,6 +366,7 @@ export function CourseDetail() {
   }, [viewedSlides]);
 
   return (
+    <>
     <motion.div
       variants={stagger}
       initial="initial"
@@ -302,9 +422,19 @@ export function CourseDetail() {
                   </Button>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="card-hover-lift">
-                  <Button size="sm" variant="outline" onClick={handleTakeQuiz}>
-                    <ClipboardCheck className="h-4 w-4 mr-2" />
-                    Start Quiz
+                  <Button size="sm" variant="outline" onClick={handleTakeQuiz} disabled={isPreparingQuiz}>
+                    {isPreparingQuiz ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <ClipboardCheck className="h-4 w-4 mr-2" />
+                    )}
+                    {isPreparingQuiz ? 'Preparing…' : 'Start Quiz'}
+                  </Button>
+                </motion.div>
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="card-hover-lift">
+                  <Button size="sm" variant="outline" onClick={handleStudyCards}>
+                    <Layers className="h-4 w-4 mr-2" />
+                    Card Mode
                   </Button>
                 </motion.div>
                 {!isCourseCompleted && (
@@ -320,6 +450,17 @@ export function CourseDetail() {
                     </Button>
                   </motion.div>
                 )}
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowDeleteCourseConfirm(true)}
+                    className="border-destructive/30 text-destructive hover:bg-destructive/10"
+                    aria-label="Delete course"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </motion.div>
               </div>
             </div>
             {/* Mobile action buttons */}
@@ -328,9 +469,17 @@ export function CourseDetail() {
                 <MessageSquare className="h-4 w-4 mr-2" />
                 Start Tutor
               </Button>
-              <Button size="sm" variant="outline" className="flex-1" onClick={handleTakeQuiz}>
-                <ClipboardCheck className="h-4 w-4 mr-2" />
-                Start Quiz
+              <Button size="sm" variant="outline" className="flex-1" onClick={handleTakeQuiz} disabled={isPreparingQuiz}>
+                {isPreparingQuiz ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <ClipboardCheck className="h-4 w-4 mr-2" />
+                )}
+                {isPreparingQuiz ? 'Preparing…' : 'Start Quiz'}
+              </Button>
+              <Button size="sm" variant="outline" className="flex-1" onClick={handleStudyCards}>
+                <Layers className="h-4 w-4 mr-2" />
+                Card Mode
               </Button>
               {!isCourseCompleted && (
                 <Button
@@ -343,6 +492,15 @@ export function CourseDetail() {
                   Mark Complete
                 </Button>
               )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowDeleteCourseConfirm(true)}
+                className="border-destructive/30 text-destructive"
+                aria-label="Delete course"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </div>
@@ -451,6 +609,108 @@ export function CourseDetail() {
         </div>
       </motion.div>
 
+      {/* Slide gallery strip — click a card to open it full-screen */}
+      {slides.length > 0 && (
+        <motion.div variants={fadeUp} className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-sm font-semibold text-muted-foreground">Browse slides</h3>
+            <span className="text-xs text-muted-foreground">{slides.length} slides</span>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory [-webkit-overflow-scrolling:touch]">
+            {slides.map((slide, i) => (
+              <button
+                key={slide.id}
+                type="button"
+                onClick={() => { handleSlideSelect(i); setLightboxIndex(i); }}
+                className={`group snap-start shrink-0 w-52 text-left rounded-xl border p-4 transition-colors ${
+                  i === currentSlideIndex
+                    ? 'border-primary/40 bg-primary/5'
+                    : 'border-border/60 bg-background/40 hover:border-primary/25'
+                }`}
+                aria-label={`Open slide ${i + 1}: ${slide.title}`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-mono text-muted-foreground">{String(i + 1).padStart(2, '0')}</span>
+                  <Maximize2 className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground/70 transition-colors" />
+                </div>
+                <p className="text-xs font-medium leading-snug line-clamp-2 min-h-[2rem]">{slide.title}</p>
+                <p className="mt-1.5 text-[10px] text-muted-foreground leading-relaxed line-clamp-3">
+                  {slide.content.replace(/[#*`>•-]/g, ' ').replace(/\s+/g, ' ').trim()}
+                </p>
+                {isSlideViewed(slide.id) && (
+                  <span className="mt-2 inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+                    <Check className="h-2.5 w-2.5" /> viewed
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Full-screen slide viewer */}
+      <AnimatePresence>
+        {lightboxIndex !== null && slides[lightboxIndex] && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            onClick={() => setLightboxIndex(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Slide viewer"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl bg-background border border-border shadow-2xl overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border/60">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-mono text-muted-foreground">
+                    {String(lightboxIndex + 1).padStart(2, '0')} / {String(slides.length).padStart(2, '0')}
+                  </p>
+                  <h2 className="text-lg font-semibold truncate">{slides[lightboxIndex].title}</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLightboxIndex(null)}
+                  className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full hover:bg-accent transition-colors"
+                  aria-label="Close slide viewer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-6 py-5">
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">{slides[lightboxIndex].content}</p>
+              </div>
+              <div className="flex items-center justify-between px-6 py-3 border-t border-border/60">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={lightboxIndex === 0}
+                  onClick={() => { const n = lightboxIndex - 1; handleSlideSelect(n); setLightboxIndex(n); }}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={lightboxIndex >= slides.length - 1}
+                  onClick={() => { const n = lightboxIndex + 1; handleSlideSelect(n); setLightboxIndex(n); }}
+                >
+                  Next <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Content area: two panels */}
       <motion.div variants={fadeUp} className="flex flex-col lg:flex-row gap-4 min-h-[60vh] glass rounded-2xl p-2 lg:p-3">
         {/* Left panel: mini-map / table of contents */}
@@ -491,13 +751,16 @@ export function CourseDetail() {
                 {slides.map((slide, i) => {
                   const viewed = isSlideViewed(slide.id);
                   return (
-                    <motion.button
+                    <motion.div
                       key={slide.id}
+                      role="button"
+                      tabIndex={0}
                       variants={{ initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } } }}
                       whileHover={{ x: 2 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => handleSlideSelect(i)}
-                      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm whitespace-nowrap lg:whitespace-normal transition-all min-w-[160px] lg:min-w-0 ${
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSlideSelect(i); }}
+                      className={`group/slide flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm whitespace-nowrap lg:whitespace-normal transition-all min-w-[160px] lg:min-w-0 cursor-pointer ${
                         i === currentSlideIndex
                           ? 'bg-gradient-to-r from-primary/10 to-secondary/5 text-primary font-medium shadow-sm border border-primary/10'
                           : viewed
@@ -522,8 +785,16 @@ export function CourseDetail() {
                           i + 1
                         )}
                       </span>
-                      <span className="truncate">{slide.title}</span>
-                    </motion.button>
+                      <span className="truncate flex-1">{slide.title}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setSlideToDelete(slide); }}
+                        className="shrink-0 h-6 w-6 rounded flex items-center justify-center text-muted-foreground/50 opacity-0 group-hover/slide:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-all"
+                        aria-label={`Delete ${slide.title}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </motion.div>
                   );
                 })}
               </motion.div>
@@ -542,7 +813,7 @@ export function CourseDetail() {
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: slideDirection * -40, scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 250, damping: 25 }}
-              className="glass rounded-xl p-6 space-y-4 glow-emerald wave-divider"
+              className="glass rounded-xl p-6 space-y-4"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1">
@@ -558,10 +829,15 @@ export function CourseDetail() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setActiveSlideId(activeSlideId === currentSlide.id ? null : currentSlide.id)}
+                    onClick={() => handleGenerateSlideQuestions(currentSlide)}
+                    disabled={generatingSlideId === currentSlide.id}
                     className={activeSlideId === currentSlide.id ? 'glow-emerald border-primary/30' : ''}
                   >
-                    <Sparkles className="h-4 w-4 mr-1" />
+                    {generatingSlideId === currentSlide.id ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 mr-1" />
+                    )}
                     Generate Questions
                   </Button>
                 </motion.div>
@@ -670,7 +946,7 @@ export function CourseDetail() {
                 </Button>
               </div>
 
-              {/* Generated questions placeholder */}
+              {/* Generated questions summary */}
               {activeSlideId === currentSlide.id && (
                 <motion.div
                   initial={{ opacity: 0, y: 10, height: 0 }}
@@ -680,19 +956,27 @@ export function CourseDetail() {
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <motion.span
-                      animate={{ rotate: [0, 15, -15, 0] }}
-                      transition={{ duration: 0.6, repeat: Infinity, repeatDelay: 2 }}
+                      animate={generatingSlideId === currentSlide.id ? { rotate: 360 } : { rotate: [0, 15, -15, 0] }}
+                      transition={generatingSlideId === currentSlide.id ? { duration: 1, repeat: Infinity, ease: 'linear' } : { duration: 0.6, repeat: Infinity, repeatDelay: 2 }}
                     >
-                      <Sparkles className="h-4 w-4 text-primary" />
+                      {generatingSlideId === currentSlide.id ? (
+                        <Loader2 className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 text-primary" />
+                      )}
                     </motion.span>
-                    <span className="text-sm font-semibold text-primary">Questions Generated</span>
+                    <span className="text-sm font-semibold text-primary">
+                      {generatingSlideId === currentSlide.id ? 'Generating Questions…' : 'Questions Generated'}
+                    </span>
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    5 questions generated for &ldquo;{currentSlide.title}&rdquo;.
-                    <Button variant="link" size="sm" className="px-1 h-auto font-medium" onClick={handleTakeQuiz}>
-                      Start Quiz →
-                    </Button>
-                  </p>
+                  {generatingSlideId !== currentSlide.id && (
+                    <p className="text-sm text-muted-foreground">
+                      {slideQuestionCounts[currentSlide.id] ?? 0} question{slideQuestionCounts[currentSlide.id] === 1 ? '' : 's'} generated for &ldquo;{currentSlide.title}&rdquo;.
+                      <Button variant="link" size="sm" className="px-1 h-auto font-medium" onClick={handleTakeQuiz} disabled={isPreparingQuiz}>
+                        Start Quiz →
+                      </Button>
+                    </p>
+                  )}
                 </motion.div>
               )}
             </motion.div>
@@ -708,6 +992,56 @@ export function CourseDetail() {
         </div>
       </motion.div>
     </motion.div>
+
+    <AlertDialog open={!!slideToDelete} onOpenChange={(open) => { if (!open) setSlideToDelete(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            Delete &quot;{slideToDelete?.title}&quot;?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete this slide. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isDeletingSlide}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => { e.preventDefault(); handleDeleteSlide(); }}
+            disabled={isDeletingSlide}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {isDeletingSlide ? 'Deleting…' : 'Delete'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <AlertDialog open={showDeleteCourseConfirm} onOpenChange={setShowDeleteCourseConfirm}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            Delete &quot;{activeCourse?.title}&quot;?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete this course and all {slides.length} of its slides.
+            This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isDeletingCourse}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => { e.preventDefault(); handleDeleteCourse(); }}
+            disabled={isDeletingCourse}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {isDeletingCourse ? 'Deleting…' : 'Delete'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
 

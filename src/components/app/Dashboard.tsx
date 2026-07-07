@@ -56,6 +56,7 @@ import {
   Trophy,
   ArrowUpDown,
   Bookmark,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   BarChart,
@@ -69,11 +70,21 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -84,24 +95,26 @@ import { StatsCard } from './StatsCard';
 import { CourseCard } from './CourseCard';
 import { EmptyState } from './EmptyState';
 import { useStudyStreak, useTotalStudyTime } from '@/hooks/useStudyTracker';
+import { useOpenCourse } from '@/hooks/useOpenCourse';
 import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
 import { useCountUp } from '@/hooks/useCountUp';
 import type { StudyGoal } from '@/types';
 
-const topicChips = ['Cell Biology', 'Organic Chemistry', 'Data Structures', 'Physics'];
+// Recent activity is derived entirely from the user's real data
+// (study sessions, notes, quiz answers, daily challenge, achievements, uploads).
+interface DashboardActivity {
+  id: string;
+  type: 'session' | 'quiz' | 'note' | 'challenge' | 'achievement' | 'upload';
+  text: string;
+  time: number;
+}
 
-const recentActivity = [
-  { id: '1', type: 'session' as const, text: 'Completed Cell Biology session', time: Date.now() - 2 * 60 * 60 * 1000 },
-  { id: '2', type: 'quiz' as const, text: 'Scored 85% on Organic Chemistry quiz', time: Date.now() - 24 * 60 * 60 * 1000 },
-  { id: '3', type: 'upload' as const, text: 'Uploaded "Data Structures" slides', time: Date.now() - 48 * 60 * 60 * 1000 },
-  { id: '4', type: 'session' as const, text: 'Started Physics tutoring session', time: Date.now() - 72 * 60 * 60 * 1000 },
-  { id: '5', type: 'quiz' as const, text: 'Achieved 92% mastery on Linear Algebra', time: Date.now() - 96 * 60 * 60 * 1000 },
-  { id: '6', type: 'session' as const, text: 'Reviewed Quantum Mechanics flashcards', time: Date.now() - 120 * 60 * 60 * 1000 },
-];
-
-const activityIcons: Record<string, typeof MessageSquare> = {
+const activityIcons: Record<DashboardActivity['type'], typeof MessageSquare> = {
   session: MessageSquare,
   quiz: Target,
+  note: BookOpen,
+  challenge: Zap,
+  achievement: Award,
   upload: Upload,
 };
 
@@ -120,31 +133,14 @@ function formatRelativeTime(timestamp: number): string {
   return `${Math.floor(days / 7)}w ago`;
 }
 
-const studyTips = [
+// Evidence-based study techniques — editorial content, not user data.
+// User-authored tips from the store are mixed in at render time.
+const baseStudyTips = [
   'Spaced repetition is 40% more effective than cramming. Review your notes at increasing intervals for better long-term retention.',
   'Try the Feynman Technique: explain a concept in simple terms as if teaching someone new. If you stumble, that\'s where to focus.',
   'Take a 5-minute break every 25 minutes using the Pomodoro technique. Your brain consolidates learning during rest periods.',
   'Active recall beats passive reading. Close your notes and try to write down everything you remember before checking.',
   'Teaching someone else is the fastest way to identify gaps in your own understanding. Find a study partner today.',
-];
-
-const mockWeeklyActivityData = [
-  { day: 'Mon', sessions: 3 },
-  { day: 'Tue', sessions: 5 },
-  { day: 'Wed', sessions: 2 },
-  { day: 'Thu', sessions: 7 },
-  { day: 'Fri', sessions: 4 },
-  { day: 'Sat', sessions: 6 },
-  { day: 'Sun', sessions: 1 },
-];
-
-const mockMasteryTrendData = [
-  { week: 'Week 1', mastery: 45 },
-  { week: 'Week 2', mastery: 52 },
-  { week: 'Week 3', mastery: 61 },
-  { week: 'Week 4', mastery: 68 },
-  { week: 'Week 5', mastery: 74 },
-  { week: 'Week 6', mastery: 78 },
 ];
 
 function getGreeting(): string {
@@ -349,7 +345,7 @@ function TiltCard({ children, className = '' }: { children: React.ReactNode; cla
 }
 
 // Slide-in activity item with timeline dot
-function ActivityItem({ activity, index }: { activity: typeof recentActivity[number]; index: number }) {
+function ActivityItem({ activity, index, total }: { activity: DashboardActivity; index: number; total: number }) {
   const Icon = activityIcons[activity.type] ?? Clock;
   const timeLabel = formatRelativeTime(activity.time);
   const isRecent = (Date.now() - activity.time) < 24 * 60 * 60 * 1000;
@@ -362,7 +358,7 @@ function ActivityItem({ activity, index }: { activity: typeof recentActivity[num
       className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors relative"
     >
       {/* Timeline connector dot */}
-      <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-primary/30 via-primary/10 to-transparent last:hidden pointer-events-none" style={{ display: index < recentActivity.length - 1 ? 'block' : 'none' }} />
+      <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-primary/30 via-primary/10 to-transparent last:hidden pointer-events-none" style={{ display: index < total - 1 ? 'block' : 'none' }} />
       <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 z-10">
         <Icon className="h-4 w-4 text-primary" />
       </div>
@@ -428,15 +424,17 @@ const SESSION_TYPE_CONFIG: Record<string, { icon: typeof BookOpen; color: string
   quiz: { icon: ClipboardCheck, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/10' },
 };
 
-// Study Buddies Online Mini Widget
+// Study Buddies Online Mini Widget — shows REAL peers from the presence
+// backend (usePresence polls /api/presence and writes into the store).
+// Clicking a buddy expands an honest detail panel; no fake invites.
 function StudyBuddiesOnlineWidget() {
   const { studyBuddies, navigate } = useAppStore();
   const onlineBuddies = studyBuddies.filter((b) => b.isOnline).slice(0, 4);
+  const [expandedBuddyId, setExpandedBuddyId] = useState<string | null>(null);
+  const expandedBuddy = onlineBuddies.find((b) => b.id === expandedBuddyId) ?? null;
 
-  const handleBuddyClick = (name: string) => {
-    toast.success(`Study session invite sent to ${name}!`, {
-      description: 'They\'ll receive your invitation shortly.',
-    });
+  const handleBuddyClick = (id: string) => {
+    setExpandedBuddyId((prev) => (prev === id ? null : id));
   };
 
   return (
@@ -455,7 +453,7 @@ function StudyBuddiesOnlineWidget() {
           </motion.span>
         </div>
         <motion.button
-          whileHover={{ scale: 1.05 }}
+          whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => navigate('leaderboard')}
           className="text-xs text-primary hover:underline flex items-center gap-1"
@@ -465,49 +463,127 @@ function StudyBuddiesOnlineWidget() {
         </motion.button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <AnimatePresence>
-          {onlineBuddies.map((buddy, i) => (
-            <motion.button
-              key={buddy.id}
-              initial={{ opacity: 0, y: 15, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ delay: i * 0.08, type: 'spring', stiffness: 300, damping: 22 }}
-              whileHover={{ scale: 1.03, y: -2 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => handleBuddyClick(buddy.name)}
-              className="group flex flex-col items-center gap-2 p-3 rounded-xl bg-accent/30 hover:bg-accent/60 border border-border/30 hover:border-primary/20 transition-all"
-            >
-              {/* Avatar with pulsing online dot */}
-              <div className="relative">
-                <Avatar className="h-10 w-10">
-                  <AvatarFallback className={`bg-gradient-to-br ${buddy.avatarGradient} text-white text-xs font-bold`}>
-                    {buddy.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <motion.span
-                  className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-background"
-                  animate={{
-                    boxShadow: [
-                      '0 0 0 0 rgba(16, 185, 129, 0.5)',
-                      '0 0 0 5px rgba(16, 185, 129, 0)',
-                    ],
-                  }}
-                  transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
-                />
-              </div>
-              <div className="text-center min-w-0 w-full">
-                <p className="text-xs font-medium truncate">{buddy.name.split(' ')[0]}</p>
-                <p className="text-[10px] text-muted-foreground truncate">{buddy.currentTopic}</p>
-                <div className="flex items-center justify-center gap-1 mt-1">
-                  <Flame className="h-2.5 w-2.5 text-orange-500" />
-                  <span className="text-[10px] font-semibold text-orange-600 dark:text-orange-400">{buddy.streak}d</span>
+      {onlineBuddies.length === 0 ? (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
+          className="flex items-center gap-3 rounded-xl border border-dashed border-border/50 bg-accent/20 px-4 py-5"
+        >
+          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+            <Users className="h-5 w-5 text-primary/70" />
+            <motion.span
+              className="absolute inset-0 rounded-full border border-primary/20"
+              animate={{ scale: [1, 1.35], opacity: [0.6, 0] }}
+              transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium">No other learners online right now</p>
+            <p className="text-xs text-muted-foreground">They&apos;ll appear here when they connect.</p>
+          </div>
+        </motion.div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <AnimatePresence>
+              {onlineBuddies.map((buddy, i) => (
+                <motion.button
+                  key={buddy.id}
+                  initial={{ opacity: 0, y: 15, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ delay: i * 0.08, type: 'spring', stiffness: 300, damping: 22 }}
+                  whileHover={{ y: -1 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => handleBuddyClick(buddy.id)}
+                  aria-expanded={expandedBuddyId === buddy.id}
+                  className={`group flex flex-col items-center gap-2 p-3 rounded-xl bg-accent/30 hover:bg-accent/60 border transition-all ${
+                    expandedBuddyId === buddy.id
+                      ? 'border-primary/40 bg-accent/60'
+                      : 'border-border/30 hover:border-primary/20'
+                  }`}
+                >
+                  {/* Avatar with pulsing online dot */}
+                  <div className="relative">
+                    <Avatar className="h-10 w-10">
+                      <AvatarFallback className={`bg-gradient-to-br ${buddy.avatarGradient} text-white text-xs font-bold`}>
+                        {buddy.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <motion.span
+                      className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-background"
+                      animate={{
+                        boxShadow: [
+                          '0 0 0 0 rgba(16, 185, 129, 0.5)',
+                          '0 0 0 5px rgba(16, 185, 129, 0)',
+                        ],
+                      }}
+                      transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+                    />
+                  </div>
+                  <div className="text-center min-w-0 w-full">
+                    <p className="text-xs font-medium truncate">{buddy.name.split(' ')[0]}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{buddy.currentTopic}</p>
+                    <div className="flex items-center justify-center gap-1 mt-1">
+                      <Flame className="h-2.5 w-2.5 text-orange-500" />
+                      <span className="text-[10px] font-semibold text-orange-600 dark:text-orange-400">{buddy.streak}d</span>
+                    </div>
+                  </div>
+                </motion.button>
+              ))}
+            </AnimatePresence>
+          </div>
+
+          {/* Expandable detail row — real presence data only */}
+          <AnimatePresence>
+            {expandedBuddy && (
+              <motion.div
+                key={expandedBuddy.id}
+                initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                animate={{ opacity: 1, height: 'auto', marginTop: 12 }}
+                exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+                className="overflow-hidden"
+              >
+                <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+                  <Avatar className="h-9 w-9 shrink-0">
+                    <AvatarFallback className={`bg-gradient-to-br ${expandedBuddy.avatarGradient} text-white text-xs font-bold`}>
+                      {expandedBuddy.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{expandedBuddy.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      Studying {expandedBuddy.currentTopic}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0 text-xs">
+                    <span className="flex items-center gap-1 font-semibold text-primary">
+                      <Sparkles className="h-3 w-3" />
+                      Lv {expandedBuddy.level}
+                    </span>
+                    <span className="flex items-center gap-1 font-semibold text-orange-600 dark:text-orange-400">
+                      <Flame className="h-3 w-3" />
+                      {expandedBuddy.streak}d
+                    </span>
+                    <span className="flex items-center gap-1 font-semibold text-teal-600 dark:text-teal-400">
+                      <Target className="h-3 w-3" />
+                      {expandedBuddy.quizAccuracy}%
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setExpandedBuddyId(null)}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md hover:bg-accent transition-colors"
+                    aria-label="Close buddy details"
+                  >
+                    <X className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
                 </div>
-              </div>
-            </motion.button>
-          ))}
-        </AnimatePresence>
-      </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
     </div>
   );
 }
@@ -1167,9 +1243,6 @@ export function Dashboard() {
     navigate,
     setActiveTopic,
     setActiveSession,
-    setActiveCourse,
-    setActiveSlides,
-    setCurrentSlideIndex,
     goals,
     addGoal,
     toggleGoalStatus,
@@ -1181,6 +1254,9 @@ export function Dashboard() {
     onboardingComplete,
     notes,
     quizScore,
+    adaptiveResults,
+    achievements,
+    tips: userTips,
     dailyChallenge: storeDailyChallenge,
     studyGoals,
     addStudyGoal,
@@ -1191,6 +1267,7 @@ export function Dashboard() {
     toggleBookmark,
   } = useAppStore();
 
+  const { openCourse } = useOpenCourse();
   const { current: currentStreak, best: bestStreak } = useStudyStreak();
   const totalStudyTimeMinutes = useTotalStudyTime();
   const { overdueCount, getStudyPlan } = useSpacedRepetition();
@@ -1201,8 +1278,16 @@ export function Dashboard() {
   const animatedStreak = useCountUp(currentStreak, { duration: 1200, delay: 600 });
   const animatedSessions = useCountUp(studySessions.length, { duration: 1200, delay: 800 });
 
+  // Study tips carousel: editorial techniques + the user's own saved tips
+  const studyTips = useMemo(() => {
+    const authored = userTips
+      .map((t) => t.content?.trim())
+      .filter((c): c is string => Boolean(c));
+    return [...baseStudyTips, ...authored];
+  }, [userTips]);
+
   const [progressValue, setProgressValue] = useState(0);
-  const [activeTipIndex, setActiveTipIndex] = useState(() => Math.floor(Math.random() * studyTips.length));
+  const [activeTipIndex, setActiveTipIndex] = useState(() => Math.floor(Math.random() * baseStudyTips.length));
   const [tipDirection, setTipDirection] = useState<'left' | 'right'>('left');
   const [toastShown, setToastShown] = useState(false);
   const [newGoalText, setNewGoalText] = useState('');
@@ -1270,7 +1355,7 @@ export function Dashboard() {
     }, 12000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [studyTips.length]);
 
   // Session reminder toast
   useEffect(() => {
@@ -1344,12 +1429,12 @@ export function Dashboard() {
   const nextTip = useCallback(() => {
     setTipDirection('left');
     setActiveTipIndex((prev) => (prev + 1) % studyTips.length);
-  }, []);
+  }, [studyTips.length]);
 
   const prevTip = useCallback(() => {
     setTipDirection('right');
     setActiveTipIndex((prev) => (prev - 1 + studyTips.length) % studyTips.length);
-  }, []);
+  }, [studyTips.length]);
 
   const handleStartSession = (topic: string) => {
     setActiveTopic(topic);
@@ -1361,14 +1446,7 @@ export function Dashboard() {
     navigate('tutor');
   };
 
-  const handleCourseClick = (course: (typeof courses)[number]) => {
-    setActiveCourse(course);
-    if (course.slides) {
-      setActiveSlides(course.slides);
-    }
-    setCurrentSlideIndex(0);
-    navigate('course-detail');
-  };
+  const handleCourseClick = (course: (typeof courses)[number]) => openCourse(course);
 
   const handleAddGoal = () => {
     const trimmed = newGoalText.trim();
@@ -1428,7 +1506,7 @@ export function Dashboard() {
   };
 
   // Compute real chart data from studySessions
-  const { weeklyActivityData, isWeeklyDemo, masteryTrendData, isMasteryDemo } = useMemo(() => {
+  const { weeklyActivityData, hasWeeklyData, masteryTrendData, hasMasteryData } = useMemo(() => {
     // Weekly activity: group by day of current week
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
@@ -1485,11 +1563,12 @@ export function Dashboard() {
     }
     const hasMasteryData = realMastery.length >= 2;
 
+    // Never substitute fabricated data — empty charts render an honest empty state.
     return {
-      weeklyActivityData: hasWeeklyData ? realWeekly : mockWeeklyActivityData,
-      isWeeklyDemo: !hasWeeklyData,
-      masteryTrendData: hasMasteryData ? realMastery : mockMasteryTrendData,
-      isMasteryDemo: !hasMasteryData,
+      weeklyActivityData: realWeekly,
+      hasWeeklyData,
+      masteryTrendData: realMastery,
+      hasMasteryData,
     };
   }, [studySessions, masteryMap]);
 
@@ -1502,8 +1581,115 @@ export function Dashboard() {
   }, [totalStudyTimeMinutes]);
 
   const greeting = getGreeting();
-  const displayName = userName || 'Student';
+  // First name only; empty when the user hasn't told us their name yet
+  const firstName = (userName || '').trim().split(/\s+/)[0] || '';
   const { courseCategories } = useAppStore();
+
+  // Your Topics: derived from the user's own data — weakest mastery concepts
+  // first (most useful to revisit), then course titles/subjects/categories.
+  const topicChips = useMemo(() => {
+    const seen = new Set<string>();
+    const chips: string[] = [];
+    const push = (raw: string | undefined | null) => {
+      const t = (raw || '').trim();
+      if (!t) return;
+      const key = t.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      chips.push(t);
+    };
+
+    // Weakest concepts from the mastery map first
+    Object.entries(masteryMap)
+      .sort((a, b) => a[1].level - b[1].level)
+      .forEach(([concept]) => push(concept));
+
+    // Then the user's courses: title, assigned category, subject
+    courses.forEach((c) => {
+      push(c.title);
+      push(courseCategories[c.id]);
+      push(c.subject);
+    });
+
+    return chips.slice(0, 6);
+  }, [masteryMap, courses, courseCategories]);
+
+  // Recent Activity: merged from everything the app actually recorded
+  const recentActivity = useMemo<DashboardActivity[]>(() => {
+    const items: DashboardActivity[] = [];
+
+    studySessions.forEach((s) => {
+      const t = new Date(s.date).getTime();
+      if (Number.isNaN(t)) return;
+      items.push({
+        id: `session-${s.id}`,
+        type: 'session',
+        text: `Studied ${s.topic || 'a topic'} for ${s.duration} min`,
+        time: t,
+      });
+    });
+
+    notes.forEach((n) => {
+      const t = new Date(n.createdAt).getTime();
+      if (Number.isNaN(t)) return;
+      items.push({
+        id: `note-${n.id}`,
+        type: 'note',
+        text: `Created note "${n.title || 'Untitled'}"`,
+        time: t,
+      });
+    });
+
+    adaptiveResults.forEach((r, i) => {
+      if (!r.timestamp) return;
+      items.push({
+        id: `adaptive-${r.timestamp}-${i}`,
+        type: 'quiz',
+        text: `${r.correct ? 'Answered correctly' : 'Missed a question'} on ${r.concept}`,
+        time: r.timestamp,
+      });
+    });
+
+    if (storeDailyChallenge.lastCompletedDate) {
+      const t = new Date(storeDailyChallenge.lastCompletedDate).getTime();
+      if (!Number.isNaN(t)) {
+        const res = storeDailyChallenge.todayResults;
+        items.push({
+          id: `challenge-${storeDailyChallenge.lastCompletedDate}`,
+          type: 'challenge',
+          text: res
+            ? `Completed the daily challenge (${res.score}/${res.total})`
+            : 'Completed the daily challenge',
+          time: t,
+        });
+      }
+    }
+
+    achievements.forEach((a) => {
+      if (!a.unlockedAt) return;
+      const t = new Date(a.unlockedAt).getTime();
+      if (Number.isNaN(t)) return;
+      items.push({
+        id: `achievement-${a.id}`,
+        type: 'achievement',
+        text: `Unlocked "${a.title}" achievement`,
+        time: t,
+      });
+    });
+
+    courses.forEach((c) => {
+      const t = new Date(c.createdAt).getTime();
+      if (Number.isNaN(t)) return;
+      items.push({
+        id: `upload-${c.id}`,
+        type: 'upload',
+        text: `Uploaded "${c.title}"`,
+        time: t,
+      });
+    });
+
+    return items.sort((a, b) => b.time - a.time).slice(0, 6);
+  }, [studySessions, notes, adaptiveResults, storeDailyChallenge, achievements, courses]);
 
   // Category filter state
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('All');
@@ -1624,15 +1810,17 @@ export function Dashboard() {
                 transition={{ duration: 0.6, delay: 0.1, ease: 'easeOut' }}
                 className="text-2xl lg:text-3xl font-bold"
               >
-                <TypewriterText text={`${greeting}, `} speed={40} />
-                <motion.span
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: `${greeting}, `.length * 0.04 + 0.15, duration: 0.4, ease: 'easeOut' }}
-                  className="gradient-text shimmer inline-block"
-                >
-                  {displayName}
-                </motion.span>
+                <TypewriterText text={firstName ? `${greeting}, ` : greeting} speed={40} />
+                {firstName && (
+                  <motion.span
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: `${greeting}, `.length * 0.04 + 0.15, duration: 0.4, ease: 'easeOut' }}
+                    className="gradient-text shimmer inline-block"
+                  >
+                    {firstName}
+                  </motion.span>
+                )}
               </motion.h1>
               {currentStreak > 0 && (
                 <motion.div
@@ -1980,10 +2168,12 @@ export function Dashboard() {
                 transition={{ delay: 0.6 }}
                 className="shrink-0"
               >
-                <Button size="sm" variant="outline" className="text-primary border-primary/30 hover:bg-primary/10 text-xs">
+                {/* Visually a button, but the whole row above is already the clickable
+                    element — a real nested <button> here is invalid HTML. */}
+                <span className={`${buttonVariants({ size: 'sm', variant: 'outline' })} text-primary border-primary/30 group-hover:bg-primary/10 text-xs pointer-events-none`}>
                   Resume
                   <ArrowRight className="h-3.5 w-3.5 ml-1 group-hover:translate-x-0.5 transition-transform" />
-                </Button>
+                </span>
               </motion.div>
             </motion.button>
           </div>
@@ -2085,22 +2275,35 @@ export function Dashboard() {
         </div>
       </motion.div>
 
-      {/* Topic Chips */}
+      {/* Your Topics — derived from the user's courses and mastery map */}
       <motion.div variants={fadeUp} className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Popular Topics</h3>
-        <div className="flex flex-wrap gap-2">
-          {topicChips.map((topic, i) => (
-            <motion.button
-              key={topic}
-              onClick={() => handleStartSession(topic)}
-              whileHover={{ rotate: [0, -2, 2, -1, 0] }}
-              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-              className="rounded-full border border-border bg-background/80 px-4 py-2 text-sm font-medium hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
-            >
-              {topic}
-            </motion.button>
-          ))}
-        </div>
+        <h3 className="text-sm font-medium text-muted-foreground">Your Topics</h3>
+        {topicChips.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {topicChips.map((topic) => (
+              <motion.button
+                key={topic}
+                onClick={() => handleStartSession(topic)}
+                whileHover={{ rotate: [0, -2, 2, -1, 0] }}
+                transition={{ duration: 0.4, ease: 'easeInOut' }}
+                className="rounded-full border border-border bg-background/80 px-4 py-2 text-sm font-medium hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
+              >
+                {topic}
+              </motion.button>
+            ))}
+          </div>
+        ) : (
+          <motion.button
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+            onClick={() => navigate('upload')}
+            className="flex items-center gap-2 rounded-full border border-dashed border-border bg-background/60 px-4 py-2 text-sm text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-all"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Upload slides and your topics will appear here
+          </motion.button>
+        )}
       </motion.div>
 
       <GradientDivider />
@@ -2350,7 +2553,7 @@ export function Dashboard() {
                       return (
                         <motion.button
                           key={type}
-                          whileHover={{ scale: 1.03 }}
+                          whileHover={{ scale: 1.01 }}
                           whileTap={{ scale: 0.97 }}
                           onClick={() => {
                             setSelectedGoalType(type);
@@ -2446,7 +2649,7 @@ export function Dashboard() {
               onKeyDown={handleGoalKeyDown}
               className="h-9 text-sm"
             />
-            <Button size="sm" className="shrink-0 h-9 px-3" onClick={handleAddGoal}>
+            <Button size="sm" className="shrink-0 h-9 px-3" onClick={handleAddGoal} aria-label="Add goal">
               <Plus className="h-4 w-4" />
             </Button>
           </div>
@@ -2584,13 +2787,24 @@ export function Dashboard() {
                 <div className="flex items-center gap-2 text-white">
                   <BarChart3 className="h-4 w-4" />
                   <span className="text-sm font-semibold">Weekly Activity</span>
-                  {isWeeklyDemo && (
-                    <span className="text-[10px] text-emerald-100/60 bg-white/10 px-1.5 py-0.5 rounded">demo data</span>
-                  )}
                 </div>
                 <p className="text-emerald-100/80 text-xs mt-0.5">Study sessions per day this week</p>
               </div>
               <div className="p-4" style={{ minHeight: 220 }}>
+                {!hasWeeklyData ? (
+                  <div className="flex h-[200px] flex-col items-center justify-center gap-3 text-center">
+                    <motion.div
+                      animate={{ y: [0, -5, 0] }}
+                      transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                      className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10"
+                    >
+                      <BarChart3 className="h-6 w-6 text-primary/70" />
+                    </motion.div>
+                    <p className="text-sm text-muted-foreground max-w-[240px]">
+                      No sessions logged this week yet — your daily activity will chart here as you study.
+                    </p>
+                  </div>
+                ) : (
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={weeklyActivityData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
@@ -2630,6 +2844,7 @@ export function Dashboard() {
                     </defs>
                   </BarChart>
                 </ResponsiveContainer>
+                )}
               </div>
             </div>
           </motion.div>
@@ -2645,13 +2860,24 @@ export function Dashboard() {
                 <div className="flex items-center gap-2 text-white">
                   <TrendingUp className="h-4 w-4" />
                   <span className="text-sm font-semibold">Mastery Trend</span>
-                  {isMasteryDemo && (
-                    <span className="text-[10px] text-emerald-100/60 bg-white/10 px-1.5 py-0.5 rounded">demo data</span>
-                  )}
                 </div>
                 <p className="text-emerald-100/80 text-xs mt-0.5">Overall mastery score over time</p>
               </div>
               <div className="p-4" style={{ minHeight: 220 }}>
+                {!hasMasteryData ? (
+                  <div className="flex h-[200px] flex-col items-center justify-center gap-3 text-center">
+                    <motion.div
+                      animate={{ y: [0, -5, 0] }}
+                      transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                      className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10"
+                    >
+                      <TrendingUp className="h-6 w-6 text-primary/70" />
+                    </motion.div>
+                    <p className="text-sm text-muted-foreground max-w-[240px]">
+                      Your mastery trend appears after a couple of weeks of tutoring and quizzes.
+                    </p>
+                  </div>
+                ) : (
                 <ResponsiveContainer width="100%" height={200}>
                   <LineChart data={masteryTrendData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
@@ -2694,6 +2920,7 @@ export function Dashboard() {
                     </defs>
                   </LineChart>
                 </ResponsiveContainer>
+                )}
               </div>
             </div>
           </motion.div>
@@ -2911,7 +3138,7 @@ export function Dashboard() {
                 return (
                   <motion.button
                     key={status}
-                    whileHover={{ scale: 1.05 }}
+                    whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setCourseStatusFilter(status)}
                     className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
@@ -2984,7 +3211,7 @@ export function Dashboard() {
             className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none"
           >
             <motion.button
-              whileHover={{ scale: 1.05 }}
+              whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setSelectedCategoryFilter('All')}
               className={`category-chip shrink-0 ${selectedCategoryFilter === 'All' ? 'active bg-gradient-to-r from-primary to-teal-500 text-primary-foreground' : 'bg-background/60 border-border text-muted-foreground hover:bg-accent'}`}
@@ -3001,7 +3228,7 @@ export function Dashboard() {
               return (
                 <motion.button
                   key={cat}
-                  whileHover={{ scale: 1.05 }}
+                  whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => setSelectedCategoryFilter(isActive ? 'All' : cat)}
                   className={`category-chip shrink-0 ${config?.chipClass || 'category-chip-other'} ${isActive ? 'active' : ''}`}
@@ -3063,13 +3290,34 @@ export function Dashboard() {
 
       <GradientDivider />
 
-      {/* Recent Activity */}
+      {/* Recent Activity — derived from real sessions, notes, quizzes, challenges, achievements, and uploads */}
       <motion.div variants={fadeUp} className="space-y-4">
         <h3 className="font-semibold text-lg">Recent Activity</h3>
         <div className="glass rounded-xl divide-y divide-border/50 overflow-hidden">
-          {recentActivity.map((activity, index) => (
-            <ActivityItem key={activity.id} activity={activity} index={index} />
-          ))}
+          {recentActivity.length > 0 ? (
+            recentActivity.map((activity, index) => (
+              <ActivityItem key={activity.id} activity={activity} index={index} total={recentActivity.length} />
+            ))
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+              className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center"
+            >
+              <motion.div
+                animate={{ y: [0, -5, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10"
+              >
+                <Clock className="h-6 w-6 text-primary/70" />
+              </motion.div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Your activity will show up here as you study</p>
+                <p className="text-xs text-muted-foreground">Sessions, notes, quizzes, and achievements all leave a trail.</p>
+              </div>
+            </motion.div>
+          )}
         </div>
       </motion.div>
 
@@ -3091,8 +3339,13 @@ export function Dashboard() {
               <div className="flex items-center gap-2">
                 <h4 className="text-sm font-semibold">Study Tip</h4>
                 <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                  Tip {activeTipIndex + 1} of {studyTips.length}
+                  Tip {(activeTipIndex % studyTips.length) + 1} of {studyTips.length}
                 </span>
+                {activeTipIndex % studyTips.length >= baseStudyTips.length && (
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                    Your tip
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1">
                 <button
@@ -3123,7 +3376,7 @@ export function Dashboard() {
                   transition={{ duration: 0.3, ease: 'easeInOut' }}
                   className="text-sm text-muted-foreground leading-relaxed pr-1"
                 >
-                  {studyTips[activeTipIndex]}
+                  {studyTips[activeTipIndex % studyTips.length]}
                 </motion.p>
               </AnimatePresence>
             </div>
@@ -3218,6 +3471,7 @@ function DashboardPomodoroTimer() {
               strokeWidth="6"
               strokeLinecap="round"
               strokeDasharray={circumference}
+              initial={{ strokeDashoffset: circumference }}
               animate={{ strokeDashoffset }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
             />
@@ -3293,6 +3547,7 @@ function DashboardPomodoroTimer() {
               }}
               className="h-8 text-xs"
               disabled={secondsLeft === POMODORO_SECONDS && !isRunning}
+              aria-label="Reset pomodoro timer"
             >
               <RotateCcw className="h-3 w-3" />
             </Button>
@@ -3308,13 +3563,35 @@ function DashboardPomodoroTimer() {
 
 function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof CourseCard>[0]['course']; onClick: () => void }) {
   const slideCount = course._count?.slides ?? course.slides?.length ?? 0;
+  const removeCourse = useAppStore((s) => s.removeCourse);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/courses/${course.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete course');
+      removeCourse(course.id);
+      toast.success(`"${course.title}" deleted.`);
+      setShowDeleteConfirm(false);
+    } catch {
+      toast.error('Failed to delete course. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
-    <motion.button
-      whileHover={{ scale: 1.02, y: -4 }}
+    <>
+    <motion.div
+      role="button"
+      tabIndex={0}
+      whileHover={{ y: -1 }}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      className="group text-left w-full"
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      className="group text-left w-full cursor-pointer"
     >
       <div className="glass rounded-xl overflow-hidden border border-border/50 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:glow-emerald card-hover-shadow-lift">
         {/* Thumbnail */}
@@ -3323,6 +3600,14 @@ function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof Cou
           <Badge className="absolute top-3 right-3 text-[10px] z-20" variant="secondary">
             {course.subject}
           </Badge>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }}
+            className="absolute top-3 left-3 z-20 h-7 w-7 rounded-full flex items-center justify-center bg-background/60 text-muted-foreground hover:text-destructive hover:bg-background/80 transition-all"
+            aria-label="Delete course"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
           {/* Gradient overlay that slides up from bottom on hover */}
           <motion.div
             className="absolute inset-0 bg-gradient-to-t from-primary/60 via-primary/20 to-transparent z-10"
@@ -3351,7 +3636,33 @@ function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof Cou
           </p>
         </div>
       </div>
-    </motion.button>
+    </motion.div>
+
+    <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            Delete &quot;{course.title}&quot;?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete this course and all {slideCount} of its slides.
+            This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => { e.preventDefault(); handleDelete(); }}
+            disabled={isDeleting}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {isDeleting ? 'Deleting…' : 'Delete'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
 
@@ -3465,7 +3776,7 @@ function QuickReviewCards() {
       .filter((c) => c.level < 60 && c.attempts > 0)
       .sort((a, b) => a.level - b.level);
 
-    return weakConcepts.slice(0, 4);
+    return entries.slice(0, 4);
   })();
 
   if (weakConcepts.length === 0) return null;

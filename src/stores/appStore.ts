@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { subscribeWithSelector } from 'zustand/middleware';
 import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings, Achievement, StudySession, StudyGoal, StudyNotification, AdaptiveResult, StudyBuddy, StarredMessage } from '@/types';
 
 interface AppState {
@@ -47,6 +48,8 @@ interface AppState {
   // Courses
   courses: Course[];
   setCourses: (courses: Course[]) => void;
+  addCourse: (course: Course) => void;
+  removeCourse: (courseId: string) => void;
   activeCourse: Course | null;
   setActiveCourse: (course: Course | null) => void;
 
@@ -88,8 +91,8 @@ interface AppState {
   setMoodSettings: (settings: Partial<{ energy: number; formality: number; patience: number; humor: number }>) => void;
 
   // Tutoring Mode
-  tutorMode: 'text' | 'slide' | 'hybrid';
-  setTutorMode: (mode: 'text' | 'slide' | 'hybrid') => void;
+  tutorMode: 'text' | 'slide' | 'hybrid' | 'cards';
+  setTutorMode: (mode: 'text' | 'slide' | 'hybrid' | 'cards') => void;
 
   // Notes
   notes: Note[];
@@ -183,6 +186,8 @@ interface AppState {
   // UI
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   isLoading: boolean;
   setLoading: (loading: boolean) => void;
 }
@@ -221,7 +226,7 @@ function safeObject<T extends Record<string, unknown>>(val: unknown, fallback: T
   try { const p = JSON.parse(String(val)); return p && typeof p === 'object' && !Array.isArray(p) ? p as T : fallback; } catch { return fallback; }
 }
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>()(subscribeWithSelector((set, get) => ({
   currentView: 'landing',
   previousView: null,
   navigate: (view) => set((s) => {
@@ -259,6 +264,29 @@ export const useAppStore = create<AppState>((set) => ({
   updateDecisionState: (updates) => set((s) => ({ decisionState: { ...s.decisionState, ...updates } })),
   courses: [],
   setCourses: (courses) => set({ courses }),
+  addCourse: (course) => set((s) => ({
+    courses: [course, ...s.courses.filter((c) => c.id !== course.id)],
+  })),
+  removeCourse: (courseId) => set((s) => {
+    const bookmarkedCourses = s.bookmarkedCourses.filter((id) => id !== courseId);
+    const completedCourses = s.completedCourses.filter((id) => id !== courseId);
+    const courseCategories = { ...s.courseCategories };
+    delete courseCategories[courseId];
+
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('synapse-bookmarks', JSON.stringify(bookmarkedCourses)); } catch { /* ignore */ }
+      try { localStorage.setItem('synapse-completed-courses', JSON.stringify(completedCourses)); } catch { /* ignore */ }
+      try { localStorage.setItem('synapse-course-categories', JSON.stringify(courseCategories)); } catch { /* ignore */ }
+    }
+
+    return {
+      courses: s.courses.filter((c) => c.id !== courseId),
+      activeCourse: s.activeCourse?.id === courseId ? null : s.activeCourse,
+      bookmarkedCourses,
+      completedCourses,
+      courseCategories,
+    };
+  }),
   activeCourse: null,
   setActiveCourse: (course) => set({ activeCourse: course }),
   activeSlides: [],
@@ -799,6 +827,20 @@ export const useAppStore = create<AppState>((set) => ({
 
   sidebarOpen: false,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  sidebarCollapsed: (() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return localStorage.getItem('synapse-sidebar-collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  })(),
+  setSidebarCollapsed: (collapsed) => set(() => {
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('synapse-sidebar-collapsed', String(collapsed)); } catch { /* ignore */ }
+    }
+    return { sidebarCollapsed: collapsed };
+  }),
   isLoading: false,
   setLoading: (loading) => set({ isLoading: loading }),
 
@@ -903,30 +945,23 @@ export const useAppStore = create<AppState>((set) => ({
   })),
   clearAdaptiveResults: () => set({ adaptiveResults: [] }),
 
-  // Study Buddies & Leaderboard
+  // Study Buddies & Leaderboard — populated live by the presence backend
+  // (usePresence). Older builds seeded fabricated buddies into localStorage;
+  // purge those so only real instances ever show.
   studyBuddies: (() => {
     if (typeof window === 'undefined') return [];
     try {
       const stored = localStorage.getItem('synapse-study-buddies');
-      if (stored) return safeArray(JSON.parse(stored)) as StudyBuddy[];
+      if (stored) {
+        const parsed = safeArray(JSON.parse(stored)) as StudyBuddy[];
+        if (parsed.some((b) => typeof b?.id === 'string' && b.id.startsWith('buddy-'))) {
+          localStorage.removeItem('synapse-study-buddies');
+          return [];
+        }
+        return parsed;
+      }
     } catch { /* ignore */ }
-    // Generate default buddies on first load
-    const defaultBuddies: StudyBuddy[] = [
-      { id: 'buddy-1', name: 'Aria Chen', avatarGradient: 'from-emerald-400 to-teal-500', totalXP: 12840, level: 24, streak: 15, coursesCompleted: 8, quizAccuracy: 92, currentTopic: 'Machine Learning Basics', isOnline: true },
-      { id: 'buddy-2', name: 'Marcus Webb', avatarGradient: 'from-amber-400 to-orange-500', totalXP: 15200, level: 28, streak: 22, coursesCompleted: 12, quizAccuracy: 88, currentTopic: 'Organic Chemistry', isOnline: true },
-      { id: 'buddy-3', name: 'Priya Sharma', avatarGradient: 'from-pink-400 to-rose-500', totalXP: 9750, level: 19, streak: 7, coursesCompleted: 5, quizAccuracy: 95, currentTopic: 'Data Structures & Algo', isOnline: true },
-      { id: 'buddy-4', name: 'Leo Tanaka', avatarGradient: 'from-violet-400 to-purple-500', totalXP: 18300, level: 32, streak: 31, coursesCompleted: 15, quizAccuracy: 91, currentTopic: 'Quantum Physics', isOnline: false },
-      { id: 'buddy-5', name: 'Sofia Rivera', avatarGradient: 'from-cyan-400 to-blue-500', totalXP: 11200, level: 21, streak: 12, coursesCompleted: 9, quizAccuracy: 87, currentTopic: 'Cell Biology', isOnline: true },
-      { id: 'buddy-6', name: 'Kai Nakamura', avatarGradient: 'from-red-400 to-rose-600', totalXP: 21500, level: 38, streak: 45, coursesCompleted: 18, quizAccuracy: 94, currentTopic: 'Linear Algebra', isOnline: false },
-      { id: 'buddy-7', name: 'Zara Patel', avatarGradient: 'from-lime-400 to-emerald-600', totalXP: 8900, level: 17, streak: 5, coursesCompleted: 4, quizAccuracy: 83, currentTopic: 'World History', isOnline: false },
-      { id: 'buddy-8', name: 'Finn O\'Brien', avatarGradient: 'from-sky-400 to-indigo-500', totalXP: 14100, level: 26, streak: 19, coursesCompleted: 11, quizAccuracy: 89, currentTopic: 'Biochemistry', isOnline: false },
-      { id: 'buddy-9', name: 'Nadia Kowalski', avatarGradient: 'from-fuchsia-400 to-pink-600', totalXP: 7600, level: 15, streak: 3, coursesCompleted: 3, quizAccuracy: 86, currentTopic: 'Thermodynamics', isOnline: false },
-      { id: 'buddy-10', name: 'Ethan Park', avatarGradient: 'from-teal-400 to-cyan-600', totalXP: 16900, level: 30, streak: 28, coursesCompleted: 14, quizAccuracy: 93, currentTopic: 'Neural Networks', isOnline: false },
-    ];
-    if (typeof window !== 'undefined') {
-      try { localStorage.setItem('synapse-study-buddies', JSON.stringify(defaultBuddies)); } catch { /* ignore */ }
-    }
-    return defaultBuddies;
+    return [];
   })(),
   leaderboardPeriod: 'weekly' as const,
   setLeaderboardPeriod: (period) => set({ leaderboardPeriod: period }),
@@ -937,4 +972,4 @@ export const useAppStore = create<AppState>((set) => ({
     }
     return { studyBuddies: updated };
   }),
-}));
+})));

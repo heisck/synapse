@@ -120,7 +120,7 @@ export function useSessionPersistence(): void {
     const savedBestTeachingStyle: string = safeGetItem(KEYS.bestTeachingStyle, '');
     const savedAlwaysConfuses: string = safeGetItem(KEYS.alwaysConfuses, '');
     const savedPersona: string = safeGetItem(KEYS.activePersona, 'storyteller');
-    const savedTutorMode: 'text' | 'slide' | 'hybrid' = safeGetItem(KEYS.tutorMode, 'hybrid');
+    const savedTutorMode: 'text' | 'slide' | 'hybrid' | 'cards' = safeGetItem(KEYS.tutorMode, 'hybrid');
     const savedDailyChallenge = safeGetItem<{
       lastCompletedDate: string | null;
       streak: number;

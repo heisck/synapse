@@ -275,11 +275,11 @@ class AmbientSoundEngine {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function FocusTimerView() {
-  // Timer state
+  // Timer state — focus duration comes from the user's settings
   const [mode, setMode] = useState<TimerMode>('focus');
   const [customMinutes, setCustomMinutes] = useState(10);
-  const [totalSeconds, setTotalSeconds] = useState(MODE_DURATIONS.focus);
-  const [remainingSeconds, setRemainingSeconds] = useState(MODE_DURATIONS.focus);
+  const [totalSeconds, setTotalSeconds] = useState(() => (useAppStore.getState().settings.defaultSessionDuration || 25) * 60);
+  const [remainingSeconds, setRemainingSeconds] = useState(() => (useAppStore.getState().settings.defaultSessionDuration || 25) * 60);
   const [isRunning, setIsRunning] = useState(false);
   const [sessionCount, setSessionCount] = useState(1);
   const [quoteIndex, setQuoteIndex] = useState(0);
@@ -292,7 +292,13 @@ export function FocusTimerView() {
   const [analyticsSessions, setAnalyticsSessions] = useState<FocusSession[]>(() => loadSessions());
 
   // App store
-  const { addStudySession, checkAchievements, studySessions, navigate } = useAppStore();
+  const { addStudySession, checkAchievements, studySessions, navigate, settings } = useAppStore();
+
+  // Mode durations honoring the user's default session duration setting
+  const modeDurations = useMemo<Record<string, number>>(() => ({
+    ...MODE_DURATIONS,
+    focus: (settings.defaultSessionDuration || 25) * 60,
+  }), [settings.defaultSessionDuration]);
 
   // Refresh analytics sessions when component gains focus or timer completes
   useEffect(() => {
@@ -329,11 +335,11 @@ export function FocusTimerView() {
       setTotalSeconds(dur);
       setRemainingSeconds(dur);
     } else {
-      const dur = MODE_DURATIONS[newMode];
+      const dur = modeDurations[newMode];
       setTotalSeconds(dur);
       setRemainingSeconds(dur);
     }
-  }, [customMinutes]);
+  }, [customMinutes, modeDurations]);
 
   // handleTimerComplete must be declared before the useEffect that calls it
   const handleTimerComplete = useCallback(() => {
@@ -437,7 +443,7 @@ export function FocusTimerView() {
           setTotalSeconds(dur);
           setRemainingSeconds(dur);
         } else {
-          const dur = MODE_DURATIONS[mode];
+          const dur = modeDurations[mode];
           setTotalSeconds(dur);
           setRemainingSeconds(dur);
         }
@@ -455,7 +461,7 @@ export function FocusTimerView() {
       setTotalSeconds(dur);
       setRemainingSeconds(dur);
     } else {
-      const dur = MODE_DURATIONS[mode];
+      const dur = modeDurations[mode];
       setTotalSeconds(dur);
       setRemainingSeconds(dur);
     }
@@ -808,7 +814,7 @@ export function FocusTimerView() {
             )}
             <span className="relative z-10">{MODE_LABELS[m]}</span>
             {m !== 'custom' && (
-              <span className="relative z-10 ml-1 opacity-70">{Math.round(MODE_DURATIONS[m] / 60)}m</span>
+              <span className="relative z-10 ml-1 opacity-70">{Math.round(modeDurations[m] / 60)}m</span>
             )}
           </button>
         ))}
@@ -930,15 +936,15 @@ export function FocusTimerView() {
 
         <Button
           onClick={handleStartPause}
-          className={`glass rounded-full h-14 w-14 glow-emerald ${
+          className={`rounded-full h-14 w-14 glow-emerald bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg hover:from-emerald-400 hover:to-teal-500 ${
             isRunning ? 'glass-inner-glow' : ''
           }`}
           aria-label={isRunning ? 'Pause timer' : 'Start timer'}
         >
           {isRunning ? (
-            <Pause className="h-5 w-5 text-primary-foreground" />
+            <Pause className="h-5 w-5 fill-current" />
           ) : (
-            <Play className="h-5 w-5 text-primary-foreground ml-0.5" />
+            <Play className="h-5 w-5 fill-current ml-0.5" />
           )}
         </Button>
 
