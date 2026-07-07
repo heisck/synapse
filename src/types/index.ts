@@ -7,7 +7,8 @@ export type AppView =
   | 'onboarding'
   | 'profile'
   | 'course-detail'
-  | 'notes';
+  | 'notes'
+  | 'settings';
 
 export interface LearnerProfile {
   learningStyle: 'visual' | 'auditory' | 'reading' | 'kinesthetic';
@@ -110,4 +111,24 @@ export interface Note {
   createdAt: string;
   updatedAt: string;
   tags: string[];
+}
+
+export interface Goal {
+  id: string;
+  text: string;
+  status: 'pending' | 'in-progress' | 'done';
+  createdAt: string;
+}
+
+export interface AppSettings {
+  theme: 'light' | 'dark' | 'system';
+  compactMode: boolean;
+  defaultPersona: string;
+  responseSpeed: 'concise' | 'balanced' | 'detailed';
+  language: string;
+  defaultSessionDuration: number;
+  autoBreakReminders: boolean;
+  dailyGoalHours: number;
+  sessionReminders: boolean;
+  streakAlerts: boolean;
 }

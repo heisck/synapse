@@ -22,6 +22,10 @@ import {
   ChevronLeft,
   ChevronRight,
   PlayCircle,
+  Plus,
+  ChevronUp,
+  ChevronDown,
+  Trash2,
 } from 'lucide-react';
 import {
   BarChart,
@@ -37,8 +41,8 @@ import {
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/stores/appStore';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { StatsCard } from './StatsCard';
@@ -83,12 +87,6 @@ const studyTips = [
   'Take a 5-minute break every 25 minutes using the Pomodoro technique. Your brain consolidates learning during rest periods.',
   'Active recall beats passive reading. Close your notes and try to write down everything you remember before checking.',
   'Teaching someone else is the fastest way to identify gaps in your own understanding. Find a study partner today.',
-];
-
-const weeklyGoals = [
-  { label: 'Complete Cell Biology', status: 'done' as const },
-  { label: 'Practice Calculus', status: 'in-progress' as const },
-  { label: 'Review Notes', status: 'pending' as const },
 ];
 
 const weeklyActivityData = [
@@ -214,6 +212,11 @@ export function Dashboard() {
     setActiveCourse,
     setActiveSlides,
     setCurrentSlideIndex,
+    goals,
+    addGoal,
+    toggleGoalStatus,
+    deleteGoal,
+    reorderGoals,
   } = useAppStore();
 
   const [progressValue, setProgressValue] = useState(0);
@@ -221,12 +224,20 @@ export function Dashboard() {
   const [tipDirection, setTipDirection] = useState<'left' | 'right'>('left');
   const [studyStreak] = useState(() => getStudyStreak());
   const [toastShown, setToastShown] = useState(false);
+  const [newGoalText, setNewGoalText] = useState('');
+
+  // Compute goal completion percentage
+  const goalCompletionPct = useMemo(() => {
+    if (goals.length === 0) return 0;
+    const done = goals.filter((g) => g.status === 'done').length;
+    return Math.round((done / goals.length) * 100);
+  }, [goals]);
 
   // Animate progress bar on mount
   useEffect(() => {
-    const timer = setTimeout(() => setProgressValue(73), 300);
+    const timer = setTimeout(() => setProgressValue(goalCompletionPct), 300);
     return () => clearTimeout(timer);
-  }, []);
+  }, [goalCompletionPct]);
 
   // Rotate study tips
   useEffect(() => {
@@ -291,6 +302,37 @@ export function Dashboard() {
     }
     setCurrentSlideIndex(0);
     navigate('course-detail');
+  };
+
+  const handleAddGoal = () => {
+    const trimmed = newGoalText.trim();
+    if (!trimmed) return;
+    addGoal({
+      id: `goal-${Date.now()}`,
+      text: trimmed,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    });
+    setNewGoalText('');
+    toast('Goal added');
+  };
+
+  const handleGoalKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddGoal();
+    }
+  };
+
+  const handleDeleteGoal = (id: string) => {
+    deleteGoal(id);
+    toast('Goal removed');
+  };
+
+  const handleMoveGoal = (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= goals.length) return;
+    reorderGoals(index, targetIndex);
   };
 
   const greeting = getGreeting();
@@ -525,65 +567,156 @@ export function Dashboard() {
 
       <GradientDivider />
 
-      {/* Learning Progress */}
+      {/* Learning Progress / Goals */}
       <motion.div variants={fadeUp}>
         <div className="glass rounded-xl p-6 space-y-5">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-lg">Learning Progress</h3>
-            <Badge variant="secondary" className="text-xs">
-              This Week
-            </Badge>
+            <h3 className="font-semibold text-lg">Study Goals</h3>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-xs">
+                {goals.length} goal{goals.length !== 1 ? 's' : ''}
+              </Badge>
+              {goals.length > 0 && (
+                <motion.span
+                  key={goalCompletionPct}
+                  initial={{ scale: 1.2, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="text-xs font-semibold text-primary"
+                >
+                  {goalCompletionPct}% complete
+                </motion.span>
+              )}
+            </div>
           </div>
 
-          {/* Progress bar */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Weekly completion</span>
-              <span className="font-semibold text-primary">{progressValue}%</span>
+          {/* Gradient progress bar */}
+          {goals.length > 0 && (
+            <div className="space-y-2">
+              <div className="h-3 w-full rounded-full bg-muted overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressValue}%` }}
+                  transition={{ duration: 0.8, ease: 'easeOut' }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {goals.filter((g) => g.status === 'done').length} of {goals.length} goals completed
+              </p>
             </div>
-            <Progress value={progressValue} className="h-3" />
-            <p className="text-xs text-muted-foreground">
-              5 of 7 goals met this week
-            </p>
+          )}
+
+          {/* Add goal input */}
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="Add a new study goal..."
+              value={newGoalText}
+              onChange={(e) => setNewGoalText(e.target.value)}
+              onKeyDown={handleGoalKeyDown}
+              className="h-9 text-sm"
+            />
+            <Button size="sm" className="shrink-0 h-9 px-3" onClick={handleAddGoal}>
+              <Plus className="h-4 w-4" />
+            </Button>
           </div>
 
           {/* Goals list */}
-          <div className="space-y-3 pt-1">
-            {weeklyGoals.map((goal) => (
-              <div key={goal.label} className="flex items-center gap-3">
-                {goal.status === 'done' && (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                )}
-                {goal.status === 'in-progress' && (
-                  <Loader2 className="h-4 w-4 text-teal-500 shrink-0 animate-spin" />
-                )}
-                {goal.status === 'pending' && (
-                  <Circle className="h-4 w-4 text-muted-foreground/40 shrink-0" />
-                )}
-                <span
-                  className={`text-sm ${
-                    goal.status === 'done'
-                      ? 'text-muted-foreground line-through'
-                      : goal.status === 'in-progress'
-                        ? 'text-foreground font-medium'
-                        : 'text-muted-foreground'
-                  }`}
+          <div className="space-y-1.5 max-h-80 overflow-y-auto">
+            <AnimatePresence initial={false}>
+              {goals.length === 0 && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-sm text-muted-foreground text-center py-4"
                 >
-                  {goal.label}
-                </span>
-                {goal.status === 'in-progress' && (
-                  <Badge variant="outline" className="text-[10px] ml-auto text-teal-600 border-teal-200 dark:border-teal-800">
-                    In Progress
-                  </Badge>
-                )}
-                {goal.status === 'done' && (
-                  <span className="text-[10px] text-emerald-600 ml-auto font-medium">Done</span>
-                )}
-                {goal.status === 'pending' && (
-                  <span className="text-[10px] text-muted-foreground ml-auto">Pending</span>
-                )}
-              </div>
-            ))}
+                  No goals yet. Add one above to get started.
+                </motion.p>
+              )}
+              {goals.map((goal, index) => (
+                <motion.div
+                  key={goal.id}
+                  layout
+                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, x: 40, scale: 0.9 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  className="group flex items-center gap-2.5 py-2 px-2 rounded-lg hover:bg-accent/50 transition-colors"
+                >
+                  <motion.button
+                    whileTap={{ scale: 0.85 }}
+                    onClick={() => toggleGoalStatus(goal.id)}
+                    className="shrink-0 focus:outline-none"
+                    aria-label={`Toggle goal: ${goal.text}`}
+                  >
+                    {goal.status === 'done' && (
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                      >
+                        <CheckCircle2 className="h-4.5 w-4.5 text-emerald-500" />
+                      </motion.div>
+                    )}
+                    {goal.status === 'in-progress' && (
+                      <Loader2 className="h-4.5 w-4.5 text-teal-500 animate-spin" />
+                    )}
+                    {goal.status === 'pending' && (
+                      <Circle className="h-4.5 w-4.5 text-muted-foreground/40" />
+                    )}
+                  </motion.button>
+                  <span
+                    className={`flex-1 text-sm cursor-pointer select-none ${
+                      goal.status === 'done'
+                        ? 'text-muted-foreground line-through'
+                        : goal.status === 'in-progress'
+                          ? 'text-foreground font-medium'
+                          : 'text-muted-foreground'
+                    }`}
+                    onClick={() => toggleGoalStatus(goal.id)}
+                  >
+                    {goal.text}
+                  </span>
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {goal.status === 'in-progress' && (
+                      <Badge variant="outline" className="text-[10px] text-teal-600 border-teal-200 dark:border-teal-800">
+                        Active
+                      </Badge>
+                    )}
+                    {goal.status === 'done' && (
+                      <span className="text-[10px] text-emerald-600 font-medium">Done</span>
+                    )}
+                    {goal.status === 'pending' && (
+                      <span className="text-[10px] text-muted-foreground">Pending</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <button
+                      onClick={() => handleMoveGoal(index, 'up')}
+                      disabled={index === 0}
+                      className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors"
+                      aria-label="Move goal up"
+                    >
+                      <ChevronUp className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                    <button
+                      onClick={() => handleMoveGoal(index, 'down')}
+                      disabled={index === goals.length - 1}
+                      className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors"
+                      aria-label="Move goal down"
+                    >
+                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteGoal(goal.id)}
+                      className="h-6 w-6 flex items-center justify-center rounded hover:bg-destructive/10 transition-colors"
+                      aria-label="Delete goal"
+                    >
+                      <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
         </div>
       </motion.div>

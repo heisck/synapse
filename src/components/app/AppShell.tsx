@@ -2,10 +2,11 @@
 
 import { Suspense, lazy, useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Loader2, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight } from 'lucide-react';
+import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { AppSidebar } from './AppSidebar';
 import { StoreInitializer } from './StoreInitializer';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import type { AppView } from '@/types';
 
@@ -22,15 +23,58 @@ const OnboardingFlow = lazy(() => import('./OnboardingFlow'));
 const ProfileView = lazy(() => import('./ProfileView'));
 const CourseDetail = lazy(() => import('./CourseDetail'));
 const NotesView = lazy(() => import('./NotesView'));
+const SettingsView = lazy(() => import('./SettingsView'));
 
 function ViewLoader() {
   return (
-    <div className="flex h-full min-h-[60vh] items-center justify-center">
-      <div className="flex flex-col items-center gap-3">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">Loading...</p>
+    <motion.div
+      initial={{ opacity: 0, scale: 0.92 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ type: 'spring', stiffness: 180, damping: 22, mass: 0.8 }}
+      className="flex h-full min-h-[60vh] items-center justify-center"
+    >
+      <div className="glass rounded-2xl p-8 flex flex-col items-center gap-5 max-w-xs w-full">
+        {/* Brain icon with pulsing glow */}
+        <motion.div
+          animate={{
+            boxShadow: [
+              '0 0 8px rgba(16, 185, 129, 0.15)',
+              '0 0 28px rgba(16, 185, 129, 0.35)',
+              '0 0 8px rgba(16, 185, 129, 0.15)',
+            ],
+            scale: [1, 1.06, 1],
+          }}
+          transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+          className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10"
+        >
+          <Brain className="h-8 w-8 text-primary" />
+        </motion.div>
+
+        {/* Animated gradient text */}
+        <p className="gradient-text-animated text-lg font-semibold">Loading...</p>
+
+        {/* Three bouncing dots */}
+        <div className="flex items-center gap-2">
+          {[0, 1, 2].map((i) => (
+            <motion.span
+              key={i}
+              animate={{
+                y: [0, -10, 0],
+                opacity: [0.4, 1, 0.4],
+                scale: [0.7, 1, 0.7],
+              }}
+              transition={{
+                duration: 1.2,
+                repeat: Infinity,
+                ease: 'easeInOut',
+                delay: i * 0.18,
+              }}
+              className="h-2.5 w-2.5 rounded-full bg-primary"
+            />
+          ))}
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -47,6 +91,7 @@ function SearchModal() {
     { label: 'Quiz Mode', view: 'quiz' as AppView, icon: ClipboardCheck },
     { label: 'Notes', view: 'notes' as AppView, icon: BookMarked },
     { label: 'Profile', view: 'profile' as AppView, icon: User },
+    { label: 'Settings', view: 'settings' as AppView, icon: Settings },
   ];
 
   const recentViewItems = recentViews
@@ -346,6 +391,7 @@ function KeyboardShortcuts() {
       if ((e.metaKey || e.ctrlKey) && e.key === '4') { e.preventDefault(); navigate('quiz'); }
       if ((e.metaKey || e.ctrlKey) && e.key === '5') { e.preventDefault(); navigate('notes'); }
       if ((e.metaKey || e.ctrlKey) && e.key === '6') { e.preventDefault(); navigate('profile'); }
+      if ((e.metaKey || e.ctrlKey) && e.key === '7') { e.preventDefault(); navigate('settings'); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -362,8 +408,10 @@ const pageVariants = {
 };
 
 export function AppShell() {
-  const { currentView } = useAppStore();
+  const { currentView, navigate } = useAppStore();
   const isFullViewport = fullViewportViews.includes(currentView);
+
+  const handleGoDashboard = () => navigate('dashboard');
 
   const renderView = () => {
     switch (currentView) {
@@ -385,6 +433,8 @@ export function AppShell() {
         return <CourseDetail />;
       case 'notes':
         return <NotesView />;
+      case 'settings':
+        return <SettingsView />;
       default:
         return <Dashboard />;
     }
@@ -408,7 +458,9 @@ export function AppShell() {
             className="min-h-screen mesh-gradient"
           >
             <Suspense fallback={<ViewLoader />}>
-              {renderView()}
+              <ErrorBoundary onGoDashboard={handleGoDashboard}>
+                {renderView()}
+              </ErrorBoundary>
             </Suspense>
           </motion.div>
         ) : (
@@ -425,7 +477,9 @@ export function AppShell() {
             <main className={`flex-1 min-h-screen overflow-y-auto ${currentView === 'tutor' ? '!p-0 !max-w-none' : ''}`}>
               <div className={`mx-auto max-w-6xl p-4 lg:p-8 ${currentView === 'tutor' ? '!max-w-none !p-0' : ''}`}>
                 <Suspense fallback={<ViewLoader />}>
-                  {renderView()}
+                  <ErrorBoundary onGoDashboard={handleGoDashboard}>
+                    {renderView()}
+                  </ErrorBoundary>
                 </Suspense>
               </div>
             </main>

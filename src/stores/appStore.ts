@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note } from '@/types';
+import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings } from '@/types';
 
 interface AppState {
   // Navigation
@@ -96,6 +96,17 @@ interface AppState {
   // Recent Views (for search modal)
   recentViews: AppView[];
   addRecentView: (view: AppView) => void;
+
+  // Goals
+  goals: Goal[];
+  addGoal: (goal: Goal) => void;
+  toggleGoalStatus: (id: string) => void;
+  deleteGoal: (id: string) => void;
+  reorderGoals: (fromIndex: number, toIndex: number) => void;
+
+  // Settings
+  settings: AppSettings;
+  updateSettings: (updates: Partial<AppSettings>) => void;
 
   // UI
   sidebarOpen: boolean;
@@ -200,6 +211,114 @@ export const useAppStore = create<AppState>((set) => ({
       localStorage.setItem('synapse-notes', JSON.stringify(updated));
     }
     return { notes: updated };
+  }),
+  goals: (() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem('synapse-goals');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  })(),
+  addGoal: (goal) => set((s) => {
+    const updated = [...s.goals, goal];
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-goals', JSON.stringify(updated));
+    }
+    return { goals: updated };
+  }),
+  toggleGoalStatus: (id) => set((s) => {
+    const cycle: Array<'pending' | 'in-progress' | 'done'> = ['pending', 'in-progress', 'done'];
+    const updated = s.goals.map((g) => {
+      if (g.id !== id) return g;
+      const currentIdx = cycle.indexOf(g.status);
+      const nextIdx = (currentIdx + 1) % cycle.length;
+      return { ...g, status: cycle[nextIdx] };
+    });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-goals', JSON.stringify(updated));
+    }
+    return { goals: updated };
+  }),
+  deleteGoal: (id) => set((s) => {
+    const updated = s.goals.filter((g) => g.id !== id);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-goals', JSON.stringify(updated));
+    }
+    return { goals: updated };
+  }),
+  reorderGoals: (fromIndex, toIndex) => set((s) => {
+    const arr = [...s.goals];
+    const [moved] = arr.splice(fromIndex, 1);
+    arr.splice(toIndex, 0, moved);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-goals', JSON.stringify(arr));
+    }
+    return { goals: arr };
+  }),
+  settings: (() => {
+    if (typeof window === 'undefined') return {
+      theme: 'system',
+      compactMode: false,
+      defaultPersona: 'storyteller',
+      responseSpeed: 'balanced',
+      language: 'English',
+      defaultSessionDuration: 30,
+      autoBreakReminders: true,
+      dailyGoalHours: 2,
+      sessionReminders: true,
+      streakAlerts: true,
+    };
+    try {
+      const stored = localStorage.getItem('synapse-settings');
+      if (stored) {
+        return { ...{
+          theme: 'system',
+          compactMode: false,
+          defaultPersona: 'storyteller',
+          responseSpeed: 'balanced',
+          language: 'English',
+          defaultSessionDuration: 30,
+          autoBreakReminders: true,
+          dailyGoalHours: 2,
+          sessionReminders: true,
+          streakAlerts: true,
+        }, ...JSON.parse(stored) };
+      }
+      return {
+        theme: 'system',
+        compactMode: false,
+        defaultPersona: 'storyteller',
+        responseSpeed: 'balanced',
+        language: 'English',
+        defaultSessionDuration: 30,
+        autoBreakReminders: true,
+        dailyGoalHours: 2,
+        sessionReminders: true,
+        streakAlerts: true,
+      };
+    } catch {
+      return {
+        theme: 'system',
+        compactMode: false,
+        defaultPersona: 'storyteller',
+        responseSpeed: 'balanced',
+        language: 'English',
+        defaultSessionDuration: 30,
+        autoBreakReminders: true,
+        dailyGoalHours: 2,
+        sessionReminders: true,
+        streakAlerts: true,
+      };
+    }
+  })(),
+  updateSettings: (updates) => set((s) => {
+    const updated = { ...s.settings, ...updates };
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-settings', JSON.stringify(updated));
+    }
+    return { settings: updated };
   }),
   recentViews: [],
   addRecentView: (view) => set((s) => {

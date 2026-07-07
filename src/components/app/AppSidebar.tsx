@@ -13,6 +13,7 @@ import {
   Menu,
   BookMarked,
   History,
+  Settings,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -37,6 +38,7 @@ const navItems: NavItem[] = [
   { icon: ClipboardCheck, label: 'Quiz Mode', view: 'quiz' },
   { icon: BookMarked, label: 'Notes', view: 'notes' },
   { icon: User, label: 'Profile', view: 'profile' },
+  { icon: Settings, label: 'Settings', view: 'settings' },
 ];
 
 const viewLabels: Record<string, string> = {
@@ -46,6 +48,7 @@ const viewLabels: Record<string, string> = {
   quiz: 'Quiz',
   profile: 'Profile',
   notes: 'Notes',
+  settings: 'Settings',
   'course-detail': 'Course Detail',
 };
 
@@ -56,6 +59,7 @@ const viewIcons: Record<string, typeof LayoutDashboard> = {
   quiz: ClipboardCheck,
   profile: User,
   notes: BookMarked,
+  settings: Settings,
   'course-detail': BookOpen,
 };
 

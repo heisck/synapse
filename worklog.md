@@ -608,3 +608,126 @@ Stage Summary:
 - 2 new hooks (useCountUp, useSessionPersistence already existed)
 - Dashboard significantly enhanced with animations and interactivity
 - Mobile sidebar polished with gradient transitions
+
+---
+Task ID: 15
+Agent: Main
+Task: Enhanced global CSS utilities + polished loading/empty/error states across the app
+
+Work Log:
+- **globals.css - 10 new utilities**:
+  - `gradient-text-animated`: multi-stop emerald gradient text with shifting background-position (6s loop)
+  - `glass-hover`: glass base + spring-cubic-bezier hover lift with shadow transition
+  - `neon-text`: emerald text-shadow glow (3 layers), stronger in dark mode
+  - `animated-border`: rotating conic gradient border via `@property --border-angle` (3s linear)
+  - `card-shadow`: 4-layer box-shadow for realistic depth, dark-mode variant
+  - `scroll-fade-top` / `scroll-fade-bottom`: CSS mask-image gradient fades for scroll containers
+  - `dot-pattern`: radial-gradient dot grid background (24px spacing)
+  - Enhanced dark mode scrollbar: distinct thumb colors, separate hover state
+  - `shimmer-diagonal`: 135-degree diagonal shimmer for skeleton loading
+- **globals.css - 5 new keyframes**: `gradientShift`, `borderRotate`, `dotPulse`, `slideUp`, `scaleIn`, `focusPulse`, `shimmerDiagonal`
+- **globals.css - Focus ring animation**: replaced static `:focus-visible` with animated pulse (outline-offset + color oscillation, 1.5s, plays once)
+- **EmptyState.tsx - 3 variants**:
+  - `default`: spring entrance, floating icon, gradient accent line, action button
+  - `search`: magnifying glass + animated scanning line sweeping vertically, outline button
+  - `error`: amber warning icon with pulsing glow (box-shadow animation), amber accent line, amber-tinted title
+- **CourseCard.tsx - enhanced**:
+  - Category color top bar (gradient mapped by subject: math=rose, science=sky, chemistry=violet, biology=lime, history=amber, english=orange, CS=cyan, default=emerald)
+  - Hover gradient overlay (emerald gradient from bottom) with sliding "Open" text
+  - Slide count badge with Layers icon
+  - "Last studied" relative time with Clock icon (uses `updatedAt`)
+  - Spring-based hover lift (`stiffness: 300, damping: 20`)
+  - `glass-hover` + `card-shadow` base styling replacing plain `glass`
+- **AppShell ViewLoader - elaborate loading animation**:
+  - Spring entrance animation (scale 0.92 -> 1)
+  - Brain icon with pulsing emerald glow (box-shadow cycle)
+  - `gradient-text-animated` "Loading..." text
+  - Three staggered bouncing dots (y + opacity + scale, 120ms delay)
+  - Glass card container
+- **ErrorBoundary.tsx - new component**:
+  - React class component Error Boundary with `getDerivedStateFromError` + `componentDidCatch`
+  - Spring entrance animation
+  - Animated amber warning icon with pulsing glow
+  - `gradient-text-animated` "Something went wrong" heading
+  - Error message in `glass-subtle` card
+  - "Try Again" (reset state) and "Go to Dashboard" (via `onGoDashboard` prop) buttons
+  - Console error logging
+- **AppShell.tsx - ErrorBoundary integration**: wraps both Suspense blocks (full-viewport and sidebar layout) with `<ErrorBoundary onGoDashboard={handleGoDashboard}>`
+
+Stage Summary:
+- 0 lint errors, clean build
+- 10 new CSS utilities + 7 keyframes added to globals.css
+- EmptyState supports 3 visual variants with spring/floating animations
+- CourseCard has category-colored top bar, hover overlay, slide count, relative time
+- ViewLoader is a polished brain-icon loading animation with bouncing dots
+- ErrorBoundary catches render errors with a beautiful recovery UI
+- All new components use the existing emerald/teal OKLCH design language
+
+---
+Task ID: 11
+Agent: Main Developer
+Task: Significantly enhance all 8 tutor sub-components with rich styling, animations, and interactivity
+
+Work Log:
+- **MasteryTracker.tsx**: Added contribution-graph-style heatmap (4x7 grid), animated skill bars with gradient fills (red/orange/teal/emerald), animated "Concepts Mastered: X/Y" counter using useSpring, staggered entrance animations, glass card container, legend for heatmap levels.
+- **SessionControls.tsx**: Added visual 4-phase stepper (Discovery/Starter/Teaching/Review) with animated connector line, phase icons, check marks for completed phases, pulse-glow on active phase. Added "Export Session" button that downloads chat as Markdown. End Session button has inline glass-card confirmation (no alert). All buttons have gradient-border hover effects and staggered entrance.
+- **PersonaSelector.tsx**: Added gradient avatar circles for each persona, animated gradient border indicator that slides between selections (layoutId), per-persona background tint that cross-fades (AnimatePresence), spring animations on selection changes, animated preview text snippet that changes per persona.
+- **TipInput.tsx**: Converted to collapsible/expandable design with animated chevron. Added 4 preset tip buttons (Too fast, Explain differently, More examples, Too simple) with icons and gradient-border hover. Glass-subtle form with gradient send button and shadow. Character count indicator (color-coded by ratio). Animated lightbulb icon in header.
+- **FeedbackBar.tsx**: Added "Rate this explanation" label with Brain icon, satisfaction meter bar (red-to-emerald gradient that fills based on rating), 5 feedback options arranged horizontally with icons (ThumbsDown/HelpCircle/Clock/Zap/ThumbsUp), animated check overlay on submit with 1.8s auto-reset, hover lift effects, active background tint.
+- **CourseContextPanel.tsx**: Added polished empty state with animated stacked icons (FileText + Upload) and "Load Course" gradient CTA button. Added course thumbnail icon with gradient background. Added "slide X of Y" badge + mini progress bar with animated width. Added auto-extracted topic tags as colored pills (emerald/teal/cyan/lime). Animated dot indicators for slide navigation. Glass-subtle styling throughout.
+- **RevisionButton.tsx**: Added toggle state (active/inactive) with visual feedback. Animated spin on click using framer-motion. Tooltip explaining revision mode. Active state shows green border/tint, pulse-glow indicator dot, "Revising" label. Gradient-border hover effect.
+- **TypingIndicator.tsx**: Added assistant avatar bubble (gradient circle with "AI" text). Chat-bubble-assistant styling with rounded corners. Subtle emerald pulse glow behind the bubble. Three gradient dots (emerald-to-teal) with staggered bounce. "AI is thinking..." label with fade-in animation.
+
+Stage Summary:
+- All 8 tutor sub-components significantly enhanced with rich animations, glass/gradient styling, and interactivity
+- Uses existing CSS utilities: glass, glass-subtle, glow-emerald, gradient-text, gradient-border, pulse-glow, chat-bubble-assistant
+- Framer-motion for all animations: spring physics, staggered entrances, layoutId transitions, AnimatePresence
+- No emojis used; all icons from lucide-react
+- Clean lint pass with no errors
+
+---
+Task ID: 3
+Agent: Full-Stack Developer
+Task: Enhanced Multi-Step Onboarding, Settings Page, Study Goals Tracker
+
+Work Log:
+- Added `Goal` and `AppSettings` interfaces to `src/types/index.ts`; added `'settings'` to `AppView` union type
+- Extended Zustand store (`src/stores/appStore.ts`) with goals CRUD (addGoal, toggleGoalStatus, deleteGoal, reorderGoals) and settings (updateSettings), both with localStorage persistence
+- Replaced single-step OnboardingFlow with 4-step wizard: Welcome (animated logo, features list), Learning Style (multi-select illustrated cards for Visual/Auditory/Reading/Kinesthetic), Pace & Topics (pace selector + topic interest chips), Done (summary with animated checkmarks). Uses AnimatePresence slide transitions, step indicator with numbered dots and connecting lines, spring animations on selections, skip/back navigation
+- Created `src/components/app/SettingsView.tsx` with 6 glass-card sections: Appearance (theme toggle, compact mode), AI Preferences (persona, response speed, language), Study Settings (session duration, auto-break, daily goal hours), Notifications (session reminders, streak alerts), Data Management (export notes, export history, clear all with AlertDialog confirmation), About (version, tech stack credits). Staggered entrance animations, all persisted to localStorage via Zustand
+- Updated `AppShell.tsx`: added SettingsView lazy import, `'settings'` case in view router, `Cmd+7` keyboard shortcut, Settings entry in search modal
+- Updated `AppSidebar.tsx`: added Settings nav item with Settings icon, added settings to viewLabels and viewIcons records
+- Replaced static `weeklyGoals` array in Dashboard.tsx with dynamic goals system: Input + button to add goals, click to cycle status (pending -> in-progress -> done), up/down reorder buttons, delete button (all with hover reveal), gradient progress bar, completion percentage counter, AnimatePresence for add/remove transitions
+
+Stage Summary:
+- Onboarding: 4-step wizard with smooth AnimatePresence slide transitions, step indicator, multi-select learning styles, pace/topics selection, summary with animated checkmarks, skip/back navigation
+- Settings: Full-featured preferences page with 6 sections (Appearance, AI, Study, Notifications, Data, About), glass cards with gradient headers, toggle switches, select dropdowns, AlertDialog for destructive actions, all persisted to localStorage
+- Goals: Dynamic study goals tracker with add/delete/reorder/status-cycle, gradient progress bar, animated percentage counter, AnimatePresence transitions, up/down buttons for reordering
+- All three features share extended Zustand store with localStorage persistence
+- Clean lint pass with zero errors
+
+---
+Task ID: 16
+Agent: Auto Review (Cron) - Round 6
+Task: Tutor sub-components polish, enhanced onboarding, settings page, goals tracker, global CSS, error boundary
+
+Work Log:
+- **QA Assessment**: Build passes clean (0 errors), lint passes clean (0 errors/warnings). Dev server OOM in sandbox (known limitation, not code bug).
+- **No conflicts**: All three subagents targeted different files. AppShell.tsx was modified by two subagents (ErrorBoundary + Settings route) without conflicts.
+- **8 Tutor Sub-Components Enhanced**: MasteryTracker (heatmap, skill bars, animated counter), SessionControls (4-phase stepper, export session, inline confirm), PersonaSelector (gradient avatars, sliding border, preview text), TipInput (collapsible, preset buttons, char count), FeedbackBar (satisfaction meter, animated rating), CourseContextPanel (mini progress, topic tags, empty state), RevisionButton (toggle, spin, tooltip), TypingIndicator (avatar bubble, gradient dots, pulse glow)
+- **Enhanced Onboarding**: 4-step wizard replacing quick-start (Welcome, Learning Style multi-select, Pace & Topics, Done summary), AnimatePresence slide transitions, step indicator with connecting lines
+- **Settings Page**: New `SettingsView.tsx` with 6 sections (Appearance, AI, Study, Notifications, Data, About), all persisted to localStorage via Zustand
+- **Study Goals Tracker**: Dynamic goals system with add/delete/reorder/status-cycle, gradient progress bar, animated percentage, replacing static weeklyGoals
+- **Global CSS**: 10 new utilities (gradient-text-animated, glass-hover, neon-text, animated-border, card-shadow, scroll-fade, dot-pattern, enhanced scrollbar, shimmer), 7 keyframes, animated focus ring
+- **Shared Components**: EmptyState (3 variants: default/search/error), CourseCard (category colors, hover overlay, slide count, relative time)
+- **ViewLoader**: Brain icon with pulsing glow, gradient text, bouncing dots in glass card
+- **ErrorBoundary**: New React error boundary with recovery UI (animated warning, try again, go to dashboard)
+
+Stage Summary:
+- 0 lint errors, clean production build
+- 8 tutor sub-components fully restyled (42->175, 57->250, 101->178, 45->159, 52->182, 165->277, 18->73, 17->50 lines)
+- 3 new features (onboarding wizard, settings page, goals tracker)
+- 1 new component (ErrorBoundary)
+- 10 new CSS utilities, 7 keyframes
+- 3 enhanced shared components (EmptyState, CourseCard, ViewLoader)
+- Zustand store extended with Goal, AppSettings types and actions

@@ -1,0 +1,904 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useMemo, useCallback } from 'react';
+     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→import {
+     6→  Flame,
+     7→  BookOpen,
+     8→  Target,
+     9→  Zap,
+    10→  MessageSquare,
+    11→  Upload,
+    12→  Clock,
+    13→  ArrowRight,
+    14→  Sparkles,
+    15→  CheckCircle2,
+    16→  Circle,
+    17→  Loader2,
+    18→  Lightbulb,
+    19→  Keyboard,
+    20→  TrendingUp,
+    21→  BarChart3,
+    22→  ChevronLeft,
+    23→  ChevronRight,
+    24→  PlayCircle,
+    25→} from 'lucide-react';
+    26→import {
+    27→  BarChart,
+    28→  Bar,
+    29→  LineChart,
+    30→  Line,
+    31→  XAxis,
+    32→  YAxis,
+    33→  CartesianGrid,
+    34→  Tooltip,
+    35→  ResponsiveContainer,
+    36→} from 'recharts';
+    37→import { format } from 'date-fns';
+    38→import { toast } from 'sonner';
+    39→import { Button } from '@/components/ui/button';
+    40→import { Progress } from '@/components/ui/progress';
+    41→import { Badge } from '@/components/ui/badge';
+    42→import { useAppStore } from '@/stores/appStore';
+    43→import { ThemeToggle } from '@/components/shared/ThemeToggle';
+    44→import { StatsCard } from './StatsCard';
+    45→import { CourseCard } from './CourseCard';
+    46→import { EmptyState } from './EmptyState';
+    47→
+    48→const topicChips = ['Cell Biology', 'Organic Chemistry', 'Data Structures', 'Physics'];
+    49→
+    50→const recentActivity = [
+    51→  { id: '1', type: 'session' as const, text: 'Completed Cell Biology session', time: Date.now() - 2 * 60 * 60 * 1000 },
+    52→  { id: '2', type: 'quiz' as const, text: 'Scored 85% on Organic Chemistry quiz', time: Date.now() - 24 * 60 * 60 * 1000 },
+    53→  { id: '3', type: 'upload' as const, text: 'Uploaded "Data Structures" slides', time: Date.now() - 48 * 60 * 60 * 1000 },
+    54→  { id: '4', type: 'session' as const, text: 'Started Physics tutoring session', time: Date.now() - 72 * 60 * 60 * 1000 },
+    55→  { id: '5', type: 'quiz' as const, text: 'Achieved 92% mastery on Linear Algebra', time: Date.now() - 96 * 60 * 60 * 1000 },
+    56→  { id: '6', type: 'session' as const, text: 'Reviewed Quantum Mechanics flashcards', time: Date.now() - 120 * 60 * 60 * 1000 },
+    57→];
+    58→
+    59→const activityIcons: Record<string, typeof MessageSquare> = {
+    60→  session: MessageSquare,
+    61→  quiz: Target,
+    62→  upload: Upload,
+    63→};
+    64→
+    65→function formatRelativeTime(timestamp: number): string {
+    66→  const now = Date.now();
+    67→  const diff = now - timestamp;
+    68→  const minutes = Math.floor(diff / 60000);
+    69→  const hours = Math.floor(diff / 3600000);
+    70→  const days = Math.floor(diff / 86400000);
+    71→
+    72→  if (minutes < 1) return 'Just now';
+    73→  if (minutes < 60) return `${minutes}m ago`;
+    74→  if (hours < 24) return `${hours}h ago`;
+    75→  if (days === 1) return 'Yesterday';
+    76→  if (days < 7) return `${days}d ago`;
+    77→  return `${Math.floor(days / 7)}w ago`;
+    78→}
+    79→
+    80→const studyTips = [
+    81→  'Spaced repetition is 40% more effective than cramming. Review your notes at increasing intervals for better long-term retention.',
+    82→  'Try the Feynman Technique: explain a concept in simple terms as if teaching someone new. If you stumble, that\'s where to focus.',
+    83→  'Take a 5-minute break every 25 minutes using the Pomodoro technique. Your brain consolidates learning during rest periods.',
+    84→  'Active recall beats passive reading. Close your notes and try to write down everything you remember before checking.',
+    85→  'Teaching someone else is the fastest way to identify gaps in your own understanding. Find a study partner today.',
+    86→];
+    87→
+    88→const weeklyGoals = [
+    89→  { label: 'Complete Cell Biology', status: 'done' as const },
+    90→  { label: 'Practice Calculus', status: 'in-progress' as const },
+    91→  { label: 'Review Notes', status: 'pending' as const },
+    92→];
+    93→
+    94→const weeklyActivityData = [
+    95→  { day: 'Mon', sessions: 3 },
+    96→  { day: 'Tue', sessions: 5 },
+    97→  { day: 'Wed', sessions: 2 },
+    98→  { day: 'Thu', sessions: 7 },
+    99→  { day: 'Fri', sessions: 4 },
+   100→  { day: 'Sat', sessions: 6 },
+   101→  { day: 'Sun', sessions: 1 },
+   102→];
+   103→
+   104→const masteryTrendData = [
+   105→  { week: 'Week 1', mastery: 45 },
+   106→  { week: 'Week 2', mastery: 52 },
+   107→  { week: 'Week 3', mastery: 61 },
+   108→  { week: 'Week 4', mastery: 68 },
+   109→  { week: 'Week 5', mastery: 74 },
+   110→  { week: 'Week 6', mastery: 78 },
+   111→];
+   112→
+   113→function getGreeting(): string {
+   114→  const hour = new Date().getHours();
+   115→  if (hour < 12) return 'Good morning';
+   116→  if (hour < 18) return 'Good afternoon';
+   117→  return 'Good evening';
+   118→}
+   119→
+   120→const stagger = {
+   121→  animate: { transition: { staggerChildren: 0.08 } },
+   122→};
+   123→const fadeUp = {
+   124→  initial: { opacity: 0, y: 20 },
+   125→  animate: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+   126→};
+   127→
+   128→// Animated gradient divider component
+   129→function GradientDivider() {
+   130→  return (
+   131→    <motion.div
+   132→      initial={{ scaleX: 0, opacity: 0 }}
+   133→      animate={{ scaleX: 1, opacity: 1 }}
+   134→      transition={{ duration: 0.8, ease: 'easeOut' }}
+   135→      className="h-[2px] w-full origin-left overflow-hidden rounded-full"
+   136→    >
+   137→      <div className="h-full w-full bg-gradient-to-r from-transparent via-primary/40 to-transparent animate-gradient-sweep" />
+   138→    </motion.div>
+   139→  );
+   140→}
+   141→
+   142→// Slide-in activity item
+   143→function ActivityItem({ activity, index }: { activity: typeof recentActivity[number]; index: number }) {
+   144→  const Icon = activityIcons[activity.type] ?? Clock;
+   145→  const timeLabel = formatRelativeTime(activity.time);
+   146→  const isRecent = (Date.now() - activity.time) < 24 * 60 * 60 * 1000;
+   147→
+   148→  return (
+   149→    <motion.div
+   150→      initial={{ opacity: 0, x: 30 }}
+   151→      animate={{ opacity: 1, x: 0 }}
+   152→      transition={{ duration: 0.4, delay: index * 0.08, ease: 'easeOut' }}
+   153→      className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors"
+   154→    >
+   155→      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+   156→        <Icon className="h-4 w-4 text-primary" />
+   157→      </div>
+   158→      <div className="flex-1 min-w-0">
+   159→        <p className="text-sm font-medium truncate">{activity.text}</p>
+   160→        <p className="text-xs text-muted-foreground">{timeLabel}</p>
+   161→      </div>
+   162→      {isRecent && (
+   163→        <motion.div
+   164→          initial={{ scale: 0 }}
+   165→          animate={{ scale: 1 }}
+   166→          transition={{ delay: index * 0.08 + 0.2, type: 'spring', stiffness: 400, damping: 20 }}
+   167→        >
+   168→          <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30">
+   169→            New
+   170→          </Badge>
+   171→        </motion.div>
+   172→      )}
+   173→    </motion.div>
+   174→  );
+   175→}
+   176→
+   177→// Study streak helper
+   178→function getStudyStreak(): number {
+   179→  if (typeof window === 'undefined') return 0;
+   180→  try {
+   181→    const streakData = localStorage.getItem('synapse-study-streak');
+   182→    if (!streakData) return 0;
+   183→    const parsed = JSON.parse(streakData) as { lastStudyDate: string; streak: number };
+   184→    const lastDate = new Date(parsed.lastStudyDate);
+   185→    const today = new Date();
+   186→    today.setHours(0, 0, 0, 0);
+   187→    lastDate.setHours(0, 0, 0, 0);
+   188→    const diffDays = Math.floor((today.getTime() - lastDate.getTime()) / 86400000);
+   189→    // Allow same-day or yesterday to count
+   190→    if (diffDays <= 1) return parsed.streak;
+   191→    return 0;
+   192→  } catch {
+   193→    return 0;
+   194→  }
+   195→}
+   196→
+   197→function getLastSessionTime(): number | null {
+   198→  if (typeof window === 'undefined') return null;
+   199→  try {
+   200→    const val = localStorage.getItem('synapse-last-session');
+   201→    return val ? parseInt(val, 10) : null;
+   202→  } catch {
+   203→    return null;
+   204→  }
+   205→}
+   206→
+   207→export function Dashboard() {
+   208→  const {
+   209→    courses,
+   210→    userName,
+   211→    navigate,
+   212→    setActiveTopic,
+   213→    setActiveSession,
+   214→    setActiveCourse,
+   215→    setActiveSlides,
+   216→    setCurrentSlideIndex,
+   217→  } = useAppStore();
+   218→
+   219→  const [progressValue, setProgressValue] = useState(0);
+   220→  const [activeTipIndex, setActiveTipIndex] = useState(() => Math.floor(Math.random() * studyTips.length));
+   221→  const [tipDirection, setTipDirection] = useState<'left' | 'right'>('left');
+   222→  const [studyStreak] = useState(() => getStudyStreak());
+   223→  const [toastShown, setToastShown] = useState(false);
+   224→
+   225→  // Animate progress bar on mount
+   226→  useEffect(() => {
+   227→    const timer = setTimeout(() => setProgressValue(73), 300);
+   228→    return () => clearTimeout(timer);
+   229→  }, []);
+   230→
+   231→  // Rotate study tips
+   232→  useEffect(() => {
+   233→    const interval = setInterval(() => {
+   234→      setTipDirection('left');
+   235→      setActiveTipIndex((prev) => (prev + 1) % studyTips.length);
+   236→    }, 12000);
+   237→
+   238→    return () => clearInterval(interval);
+   239→  }, []);
+   240→
+   241→  // Session reminder toast
+   242→  useEffect(() => {
+   243→    if (toastShown) return;
+   244→    const lastSession = getLastSessionTime();
+   245→    if (lastSession === null) return;
+   246→    const hoursSince = (Date.now() - lastSession) / 3600000;
+   247→    if (hoursSince > 24) {
+   248→      const timer = setTimeout(() => {
+   249→        toast('Welcome back! Ready for your next study session?', {
+   250→          description: 'Your knowledge is waiting. Pick up where you left off.',
+   251→          icon: <Sparkles className="h-4 w-4 text-emerald-500" />,
+   252→          duration: 5000,
+   253→          style: {
+   254→            border: '1px solid oklch(0.627 0.194 149.214 / 0.3)',
+   255→            background: 'oklch(0.995 0.002 155)',
+   256→            color: 'oklch(0.185 0.02 155)',
+   257→          },
+   258→          className: '!border-l-4 !border-l-emerald-500',
+   259→        });
+   260→        setToastShown(true);
+   261→      }, 1500);
+   262→      return () => clearTimeout(timer);
+   263→    }
+   264→  }, [toastShown]);
+   265→
+   266→  // Tip navigation
+   267→  const nextTip = useCallback(() => {
+   268→    setTipDirection('left');
+   269→    setActiveTipIndex((prev) => (prev + 1) % studyTips.length);
+   270→  }, []);
+   271→
+   272→  const prevTip = useCallback(() => {
+   273→    setTipDirection('right');
+   274→    setActiveTipIndex((prev) => (prev - 1 + studyTips.length) % studyTips.length);
+   275→  }, []);
+   276→
+   277→  const handleStartSession = (topic: string) => {
+   278→    setActiveTopic(topic);
+   279→    setActiveSession(`session-${Date.now()}`);
+   280→    // Record session time
+   281→    if (typeof window !== 'undefined') {
+   282→      localStorage.setItem('synapse-last-session', String(Date.now()));
+   283→    }
+   284→    navigate('tutor');
+   285→  };
+   286→
+   287→  const handleCourseClick = (course: (typeof courses)[number]) => {
+   288→    setActiveCourse(course);
+   289→    if (course.slides) {
+   290→      setActiveSlides(course.slides);
+   291→    }
+   292→    setCurrentSlideIndex(0);
+   293→    navigate('course-detail');
+   294→  };
+   295→
+   296→  const greeting = getGreeting();
+   297→  const displayName = userName || 'Student';
+   298→  const showViewAll = courses.length > 3;
+   299→  const displayedCourses = courses.slice(0, 3);
+   300→  const lastCourse = courses.length > 0 ? courses[0] : null;
+   301→
+   302→  // Tip slide variants
+   303→  const tipVariants = {
+   304→    enter: (dir: 'left' | 'right') => ({
+   305→      x: dir === 'left' ? 40 : -40,
+   306→      opacity: 0,
+   307→    }),
+   308→    center: {
+   309→      x: 0,
+   310→      opacity: 1,
+   311→    },
+   312→    exit: (dir: 'left' | 'right') => ({
+   313→      x: dir === 'left' ? -40 : 40,
+   314→      opacity: 0,
+   315→    }),
+   316→  };
+   317→
+   318→  // Glow sweep keyframes for quick start card
+   319→  const glowSweep = useMemo(() => ({
+   320→    initial: { opacity: 0 },
+   321→    animate: {
+   322→      opacity: [0, 0.6, 0.3, 0.6, 0.3, 0.4, 0],
+   323→      transition: { duration: 2.5, ease: 'easeInOut', delay: 0.3 },
+   324→    },
+   325→  }), []);
+   326→
+   327→  return (
+   328→    <motion.div
+   329→      variants={stagger}
+   330→      initial="initial"
+   331→      animate="animate"
+   332→      className="space-y-8 pt-2 lg:pt-4"
+   333→    >
+   334→      {/* Welcome Header */}
+   335→      <motion.div variants={fadeUp} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+   336→        <div className="space-y-1 pl-14 lg:pl-0">
+   337→          <div className="flex items-center gap-3 flex-wrap">
+   338→            <motion.h1
+   339→              initial={{ opacity: 0, y: 10 }}
+   340→              animate={{ opacity: 1, y: 0 }}
+   341→              transition={{ duration: 0.6, delay: 0.1, ease: 'easeOut' }}
+   342→              className="text-2xl lg:text-3xl font-bold"
+   343→            >
+   344→              {greeting},{' '}
+   345→              <motion.span
+   346→                initial={{ opacity: 0, backgroundPosition: '200% center' }}
+   347→                animate={{ opacity: 1, backgroundPosition: '0% center' }}
+   348→                transition={{ duration: 0.8, delay: 0.4, ease: 'easeOut' }}
+   349→                className="gradient-text inline-block bg-[length:200%_auto]"
+   350→              >
+   351→                {displayName}
+   352→              </motion.span>
+   353→            </motion.h1>
+   354→            {studyStreak > 0 && (
+   355→              <motion.div
+   356→                initial={{ scale: 0, opacity: 0 }}
+   357→                animate={{ scale: 1, opacity: 1 }}
+   358→                transition={{ delay: 0.8, type: 'spring', stiffness: 400, damping: 20 }}
+   359→                className="flex items-center gap-1 text-orange-500 bg-orange-500/10 px-2.5 py-0.5 rounded-full"
+   360→              >
+   361→                <Flame className="h-4 w-4" />
+   362→                <span className="text-xs font-bold">{studyStreak} day streak</span>
+   363→              </motion.div>
+   364→            )}
+   365→          </div>
+   366→          <motion.p
+   367→            initial={{ opacity: 0 }}
+   368→            animate={{ opacity: 1 }}
+   369→            transition={{ delay: 0.5 }}
+   370→            className="text-muted-foreground text-sm"
+   371→          >
+   372→            {format(new Date(), 'EEEE, MMMM d, yyyy')}
+   373→          </motion.p>
+   374→        </div>
+   375→        <motion.div
+   376→          initial={{ opacity: 0, y: 10 }}
+   377→          animate={{ opacity: 1, y: 0 }}
+   378→          transition={{ delay: 0.3 }}
+   379→          className="flex items-center gap-2 pl-14 lg:pl-0"
+   380→        >
+   381→          <ThemeToggle />
+   382→          <Button onClick={() => handleStartSession('General Study')} size="sm">
+   383→            <Sparkles className="h-4 w-4 mr-2" />
+   384→            Start Session
+   385→          </Button>
+   386→          <Button variant="outline" size="sm" onClick={() => navigate('upload')}>
+   387→            <Upload className="h-4 w-4 mr-2" />
+   388→            Upload Slides
+   389→          </Button>
+   390→        </motion.div>
+   391→      </motion.div>
+   392→
+   393→      <GradientDivider />
+   394→
+   395→      {/* Quick Start Card */}
+   396→      <motion.div variants={fadeUp}>
+   397→        <div className="relative group">
+   398→          {/* Animated glow border sweep on mount */}
+   399→          <motion.div
+   400→            {...glowSweep}
+   401→            className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 blur-sm"
+   402→          />
+   403→          <div
+   404→            className="relative overflow-hidden rounded-xl p-6 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white cursor-pointer"
+   405→            onClick={() => handleStartSession("Today's Topic")}
+   406→          >
+   407→            <div className="absolute inset-0 bg-grid-pattern opacity-10" />
+   408→            <div className="relative z-10 flex items-center justify-between">
+   409→              <div className="space-y-2">
+   410→                <p className="text-emerald-100 text-sm font-medium">Quick Start</p>
+   411→                <h2 className="text-xl font-bold">Continue learning with your AI Tutor</h2>
+   412→                <p className="text-emerald-100/80 text-sm">
+   413→                  Pick a topic below or upload new study material to get started
+   414→                </p>
+   415→                <div className="flex items-center gap-2 pt-1 text-sm font-medium text-white/90 group-hover:text-white transition-colors">
+   416→                  Start now <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+   417→                </div>
+   418→              </div>
+   419→              <div className="hidden sm:block">
+   420→                <div className="h-20 w-20 rounded-2xl bg-white/10 flex items-center justify-center animate-float">
+   421→                  <Zap className="h-10 w-10 text-white/80" />
+   422→                </div>
+   423→              </div>
+   424→            </div>
+   425→          </div>
+   426→        </div>
+   427→      </motion.div>
+   428→
+   429→      {/* Continue Learning Section */}
+   430→      {lastCourse && (
+   431→        <motion.div variants={fadeUp}>
+   432→          <div className="glass rounded-xl overflow-hidden">
+   433→            <div className="flex items-center justify-between p-4 pb-0">
+   434→              <div className="flex items-center gap-2">
+   435→                <PlayCircle className="h-4 w-4 text-primary" />
+   436→                <h3 className="font-semibold text-sm">Continue Learning</h3>
+   437→              </div>
+   438→            </div>
+   439→            <motion.button
+   440→              whileHover={{ scale: 1.005 }}
+   441→              whileTap={{ scale: 0.995 }}
+   442→              onClick={() => handleCourseClick(lastCourse)}
+   443→              className="w-full text-left p-4 pt-2 flex items-center gap-4 group"
+   444→            >
+   445→              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-teal-500/10">
+   446→                <BookOpen className="h-6 w-6 text-primary/70" />
+   447→              </div>
+   448→              <div className="flex-1 min-w-0">
+   449→                <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">{lastCourse.title}</p>
+   450→                <p className="text-xs text-muted-foreground truncate">{lastCourse.description}</p>
+   451→              </div>
+   452→              <motion.div
+   453→                initial={{ opacity: 0, x: -8 }}
+   454→                animate={{ opacity: 1, x: 0 }}
+   455→                transition={{ delay: 0.6 }}
+   456→                className="shrink-0"
+   457→              >
+   458→                <Button size="sm" variant="outline" className="text-primary border-primary/30 hover:bg-primary/10 text-xs">
+   459→                  Resume
+   460→                  <ArrowRight className="h-3.5 w-3.5 ml-1 group-hover:translate-x-0.5 transition-transform" />
+   461→                </Button>
+   462→              </motion.div>
+   463→            </motion.button>
+   464→          </div>
+   465→        </motion.div>
+   466→      )}
+   467→
+   468→      {/* Topic Chips */}
+   469→      <motion.div variants={fadeUp} className="space-y-3">
+   470→        <h3 className="text-sm font-medium text-muted-foreground">Popular Topics</h3>
+   471→        <div className="flex flex-wrap gap-2">
+   472→          {topicChips.map((topic) => (
+   473→            <button
+   474→              key={topic}
+   475→              onClick={() => handleStartSession(topic)}
+   476→              className="rounded-full border border-border bg-background/80 px-4 py-2 text-sm font-medium hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
+   477→            >
+   478→              {topic}
+   479→            </button>
+   480→          ))}
+   481→        </div>
+   482→      </motion.div>
+   483→
+   484→      <GradientDivider />
+   485→
+   486→      {/* Stats Row */}
+   487→      <motion.div variants={fadeUp}>
+   488→        <div className="glass rounded-xl p-4">
+   489→          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+   490→            <StatsCard
+   491→              icon={BookOpen}
+   492→              label="Active Courses"
+   493→              value={courses.length}
+   494→              trend="up"
+   495→              change="+2 this week"
+   496→              index={0}
+   497→            />
+   498→            <StatsCard
+   499→              icon={Target}
+   500→              label="Mastery Rate"
+   501→              value="78%"
+   502→              trend="up"
+   503→              change="+5%"
+   504→              index={1}
+   505→            />
+   506→            <StatsCard
+   507→              icon={Zap}
+   508→              label="Sessions"
+   509→              value="24"
+   510→              trend="up"
+   511→              change="+3 this week"
+   512→              index={2}
+   513→            />
+   514→            <StatsCard
+   515→              icon={MessageSquare}
+   516→              label="Questions"
+   517→              value="156"
+   518→              trend="down"
+   519→              change="-2 today"
+   520→              index={3}
+   521→            />
+   522→          </div>
+   523→        </div>
+   524→      </motion.div>
+   525→
+   526→      <GradientDivider />
+   527→
+   528→      {/* Learning Progress */}
+   529→      <motion.div variants={fadeUp}>
+   530→        <div className="glass rounded-xl p-6 space-y-5">
+   531→          <div className="flex items-center justify-between">
+   532→            <h3 className="font-semibold text-lg">Learning Progress</h3>
+   533→            <Badge variant="secondary" className="text-xs">
+   534→              This Week
+   535→            </Badge>
+   536→          </div>
+   537→
+   538→          {/* Progress bar */}
+   539→          <div className="space-y-2">
+   540→            <div className="flex items-center justify-between text-sm">
+   541→              <span className="text-muted-foreground">Weekly completion</span>
+   542→              <span className="font-semibold text-primary">{progressValue}%</span>
+   543→            </div>
+   544→            <Progress value={progressValue} className="h-3" />
+   545→            <p className="text-xs text-muted-foreground">
+   546→              5 of 7 goals met this week
+   547→            </p>
+   548→          </div>
+   549→
+   550→          {/* Goals list */}
+   551→          <div className="space-y-3 pt-1">
+   552→            {weeklyGoals.map((goal) => (
+   553→              <div key={goal.label} className="flex items-center gap-3">
+   554→                {goal.status === 'done' && (
+   555→                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+   556→                )}
+   557→                {goal.status === 'in-progress' && (
+   558→                  <Loader2 className="h-4 w-4 text-teal-500 shrink-0 animate-spin" />
+   559→                )}
+   560→                {goal.status === 'pending' && (
+   561→                  <Circle className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+   562→                )}
+   563→                <span
+   564→                  className={`text-sm ${
+   565→                    goal.status === 'done'
+   566→                      ? 'text-muted-foreground line-through'
+   567→                      : goal.status === 'in-progress'
+   568→                        ? 'text-foreground font-medium'
+   569→                        : 'text-muted-foreground'
+   570→                  }`}
+   571→                >
+   572→                  {goal.label}
+   573→                </span>
+   574→                {goal.status === 'in-progress' && (
+   575→                  <Badge variant="outline" className="text-[10px] ml-auto text-teal-600 border-teal-200 dark:border-teal-800">
+   576→                    In Progress
+   577→                  </Badge>
+   578→                )}
+   579→                {goal.status === 'done' && (
+   580→                  <span className="text-[10px] text-emerald-600 ml-auto font-medium">Done</span>
+   581→                )}
+   582→                {goal.status === 'pending' && (
+   583→                  <span className="text-[10px] text-muted-foreground ml-auto">Pending</span>
+   584→                )}
+   585→              </div>
+   586→            ))}
+   587→          </div>
+   588→        </div>
+   589→      </motion.div>
+   590→
+   591→      {/* Learning Analytics */}
+   592→      <motion.div variants={fadeUp} className="space-y-4">
+   593→        <div className="flex items-center justify-between">
+   594→          <h3 className="font-semibold text-lg">Learning Analytics</h3>
+   595→          <Badge variant="secondary" className="text-xs">
+   596→            <BarChart3 className="h-3 w-3 mr-1" />
+   597→            Insights
+   598→          </Badge>
+   599→        </div>
+   600→
+   601→        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+   602→          {/* Weekly Activity Bar Chart */}
+   603→          <motion.div
+   604→            initial={{ opacity: 0, y: 16 }}
+   605→            animate={{ opacity: 1, y: 0 }}
+   606→            transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+   607→          >
+   608→            <div className="glass rounded-xl overflow-hidden">
+   609→              <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-3">
+   610→                <div className="flex items-center gap-2 text-white">
+   611→                  <BarChart3 className="h-4 w-4" />
+   612→                  <span className="text-sm font-semibold">Weekly Activity</span>
+   613→                </div>
+   614→                <p className="text-emerald-100/80 text-xs mt-0.5">Study sessions per day this week</p>
+   615→              </div>
+   616→              <div className="p-4" style={{ minHeight: 220 }}>
+   617→                <ResponsiveContainer width="100%" height={200}>
+   618→                  <BarChart data={weeklyActivityData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+   619→                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+   620→                    <XAxis
+   621→                      dataKey="day"
+   622→                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+   623→                      axisLine={false}
+   624→                      tickLine={false}
+   625→                    />
+   626→                    <YAxis
+   627→                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+   628→                      axisLine={false}
+   629→                      tickLine={false}
+   630→                      allowDecimals={false}
+   631→                    />
+   632→                    <Tooltip
+   633→                      contentStyle={{
+   634→                        backgroundColor: 'hsl(var(--card))',
+   635→                        border: '1px solid hsl(var(--border))',
+   636→                        borderRadius: '8px',
+   637→                        fontSize: '12px',
+   638→                        color: 'hsl(var(--foreground))',
+   639→                      }}
+   640→                      cursor={{ fill: 'hsl(var(--accent))', opacity: 0.4 }}
+   641→                    />
+   642→                    <Bar
+   643→                      dataKey="sessions"
+   644→                      fill="url(#barGradient)"
+   645→                      radius={[4, 4, 0, 0]}
+   646→                      maxBarSize={40}
+   647→                    />
+   648→                    <defs>
+   649→                      <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+   650→                        <stop offset="0%" stopColor="#10b981" />
+   651→                        <stop offset="100%" stopColor="#14b8a6" />
+   652→                      </linearGradient>
+   653→                    </defs>
+   654→                  </BarChart>
+   655→                </ResponsiveContainer>
+   656→              </div>
+   657→            </div>
+   658→          </motion.div>
+   659→
+   660→          {/* Mastery Trend Line Chart */}
+   661→          <motion.div
+   662→            initial={{ opacity: 0, y: 16 }}
+   663→            animate={{ opacity: 1, y: 0 }}
+   664→            transition={{ duration: 0.5, delay: 0.2, ease: 'easeOut' }}
+   665→          >
+   666→            <div className="glass rounded-xl overflow-hidden">
+   667→              <div className="bg-gradient-to-r from-teal-600 to-emerald-600 px-5 py-3">
+   668→                <div className="flex items-center gap-2 text-white">
+   669→                  <TrendingUp className="h-4 w-4" />
+   670→                  <span className="text-sm font-semibold">Mastery Trend</span>
+   671→                </div>
+   672→                <p className="text-emerald-100/80 text-xs mt-0.5">Overall mastery score over time</p>
+   673→              </div>
+   674→              <div className="p-4" style={{ minHeight: 220 }}>
+   675→                <ResponsiveContainer width="100%" height={200}>
+   676→                  <LineChart data={masteryTrendData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+   677→                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+   678→                    <XAxis
+   679→                      dataKey="week"
+   680→                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+   681→                      axisLine={false}
+   682→                      tickLine={false}
+   683→                    />
+   684→                    <YAxis
+   685→                      domain={[0, 100]}
+   686→                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+   687→                      axisLine={false}
+   688→                      tickLine={false}
+   689→                      tickFormatter={(v: number) => `${v}%`}
+   690→                    />
+   691→                    <Tooltip
+   692→                      contentStyle={{
+   693→                        backgroundColor: 'hsl(var(--card))',
+   694→                        border: '1px solid hsl(var(--border))',
+   695→                        borderRadius: '8px',
+   696→                        fontSize: '12px',
+   697→                        color: 'hsl(var(--foreground))',
+   698→                      }}
+   699→                      formatter={(value: number) => [`${value}%`, 'Mastery']}
+   700→                    />
+   701→                    <Line
+   702→                      type="monotone"
+   703→                      dataKey="mastery"
+   704→                      stroke="url(#lineGradient)"
+   705→                      strokeWidth={2.5}
+   706→                      dot={{ fill: '#10b981', strokeWidth: 2, stroke: '#fff', r: 4 }}
+   707→                      activeDot={{ r: 6, fill: '#14b8a6', stroke: '#fff', strokeWidth: 2 }}
+   708→                    />
+   709→                    <defs>
+   710→                      <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
+   711→                        <stop offset="0%" stopColor="#10b981" />
+   712→                        <stop offset="100%" stopColor="#14b8a6" />
+   713→                      </linearGradient>
+   714→                    </defs>
+   715→                  </LineChart>
+   716→                </ResponsiveContainer>
+   717→              </div>
+   718→            </div>
+   719→          </motion.div>
+   720→        </div>
+   721→      </motion.div>
+   722→
+   723→      <GradientDivider />
+   724→
+   725→      {/* My Courses */}
+   726→      <motion.div variants={fadeUp} className="space-y-4">
+   727→        <div className="flex items-center justify-between">
+   728→          <h3 className="font-semibold text-lg">My Courses</h3>
+   729→          <div className="flex items-center gap-2">
+   730→            {showViewAll && (
+   731→              <Button
+   732→                variant="ghost"
+   733→                size="sm"
+   734→                onClick={() => navigate('courses')}
+   735→                className="text-primary hover:text-primary"
+   736→              >
+   737→                View All
+   738→                <ArrowRight className="h-4 w-4 ml-1" />
+   739→              </Button>
+   740→            )}
+   741→            <Button variant="ghost" size="sm" onClick={() => navigate('upload')}>
+   742→              <Upload className="h-4 w-4 mr-1" />
+   743→              Add New
+   744→            </Button>
+   745→          </div>
+   746→        </div>
+   747→
+   748→        {courses.length === 0 ? (
+   749→          <EmptyState
+   750→            icon={BookOpen}
+   751→            title="No courses yet"
+   752→            description="Upload your first set of slides to create a course and start learning with your AI tutor."
+   753→            actionLabel="Upload Slides"
+   754→            onAction={() => navigate('upload')}
+   755→          />
+   756→        ) : (
+   757→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   758→            {displayedCourses.map((course, i) => (
+   759→              <motion.div
+   760→                key={course.id}
+   761→                initial={{ opacity: 0, y: 20 }}
+   762→                animate={{ opacity: 1, y: 0 }}
+   763→                transition={{ delay: i * 0.1, duration: 0.4 }}
+   764→              >
+   765→                <EnhancedCourseCard
+   766→                  course={course}
+   767→                  onClick={() => handleCourseClick(course)}
+   768→                />
+   769→              </motion.div>
+   770→            ))}
+   771→          </div>
+   772→        )}
+   773→      </motion.div>
+   774→
+   775→      <GradientDivider />
+   776→
+   777→      {/* Recent Activity */}
+   778→      <motion.div variants={fadeUp} className="space-y-4">
+   779→        <h3 className="font-semibold text-lg">Recent Activity</h3>
+   780→        <div className="glass rounded-xl divide-y divide-border/50 overflow-hidden">
+   781→          {recentActivity.map((activity, index) => (
+   782→            <ActivityItem key={activity.id} activity={activity} index={index} />
+   783→          ))}
+   784→        </div>
+   785→      </motion.div>
+   786→
+   787→      <GradientDivider />
+   788→
+   789→      {/* Study Tips - Carousel */}
+   790→      <motion.div variants={fadeUp}>
+   791→        <div className="glass rounded-xl p-5 flex gap-4 items-start">
+   792→          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/10">
+   793→            <Lightbulb className="h-5 w-5 text-amber-500" />
+   794→          </div>
+   795→          <div className="space-y-2 flex-1 min-w-0">
+   796→            <div className="flex items-center justify-between gap-2">
+   797→              <div className="flex items-center gap-2">
+   798→                <h4 className="text-sm font-semibold">Study Tip</h4>
+   799→                <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+   800→                  Tip {activeTipIndex + 1} of {studyTips.length}
+   801→                </span>
+   802→              </div>
+   803→              <div className="flex items-center gap-1">
+   804→                <button
+   805→                  onClick={prevTip}
+   806→                  className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent transition-colors"
+   807→                  aria-label="Previous tip"
+   808→                >
+   809→                  <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+   810→                </button>
+   811→                <button
+   812→                  onClick={nextTip}
+   813→                  className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent transition-colors"
+   814→                  aria-label="Next tip"
+   815→                >
+   816→                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+   817→                </button>
+   818→              </div>
+   819→            </div>
+   820→            <div className="relative overflow-hidden">
+   821→              <AnimatePresence initial={false} custom={tipDirection} mode="wait">
+   822→                <motion.p
+   823→                  key={activeTipIndex}
+   824→                  custom={tipDirection}
+   825→                  variants={tipVariants}
+   826→                  initial="enter"
+   827→                  animate="center"
+   828→                  exit="exit"
+   829→                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+   830→                  className="text-sm text-muted-foreground leading-relaxed pr-1"
+   831→                >
+   832→                  {studyTips[activeTipIndex]}
+   833→                </motion.p>
+   834→              </AnimatePresence>
+   835→            </div>
+   836→          </div>
+   837→        </div>
+   838→      </motion.div>
+   839→
+   840→      {/* Keyboard Shortcut Hint */}
+   841→      <motion.div variants={fadeUp} className="flex items-center justify-center gap-1.5 pb-8">
+   842→        <Keyboard className="h-3.5 w-3.5 text-muted-foreground/50" />
+   843→        <p className="text-xs text-muted-foreground/50">
+   844→          Press <kbd className="font-mono text-[11px] bg-muted/80 px-1.5 py-0.5 rounded border border-border/50">⌘K</kbd> to search &bull; <kbd className="font-mono text-[11px] bg-muted/80 px-1.5 py-0.5 rounded border border-border/50">⌘1-5</kbd> to navigate
+   845→        </p>
+   846→      </motion.div>
+   847→    </motion.div>
+   848→  );
+   849→}
+   850→
+   851→// Enhanced Course Card with gradient overlay and animated Open button
+   852→function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof CourseCard>[0]['course']; onClick: () => void }) {
+   853→  const slideCount = course._count?.slides ?? course.slides?.length ?? 0;
+   854→
+   855→  return (
+   856→    <motion.button
+   857→      whileHover={{ scale: 1.02, y: -4 }}
+   858→      whileTap={{ scale: 0.98 }}
+   859→      onClick={onClick}
+   860→      className="group text-left w-full"
+   861→    >
+   862→      <div className="glass rounded-xl overflow-hidden border border-border/50 transition-shadow hover:shadow-lg hover:shadow-primary/5">
+   863→        {/* Thumbnail */}
+   864→        <div className="relative h-32 bg-gradient-to-br from-emerald-500/20 via-teal-500/15 to-emerald-600/10 flex items-center justify-center overflow-hidden">
+   865→          <BookOpen className="h-10 w-10 text-primary/40 group-hover:text-primary/60 transition-colors relative z-10" />
+   866→          <Badge className="absolute top-3 right-3 text-[10px] z-20" variant="secondary">
+   867→            {course.subject}
+   868→          </Badge>
+   869→          {/* Gradient overlay on hover */}
+   870→          <motion.div
+   871→            className="absolute inset-0 bg-gradient-to-t from-emerald-900/30 to-transparent"
+   872→            initial={{ opacity: 0 }}
+   873→            whileHover={{ opacity: 1 }}
+   874→            transition={{ duration: 0.3 }}
+   875→          />
+   876→          {/* Animated Open button reveal */}
+   877→          <motion.div
+   878→            className="absolute bottom-3 right-3 z-20"
+   879→            initial={{ opacity: 0, y: 8, scale: 0.9 }}
+   880→            whileHover={{ opacity: 1, y: 0, scale: 1 }}
+   881→            transition={{ duration: 0.2 }}
+   882→          >
+   883→            <span className="inline-flex items-center gap-1 text-xs font-medium bg-white/90 dark:bg-black/60 text-foreground px-3 py-1.5 rounded-full backdrop-blur-sm shadow-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300 translate-y-2 group-hover:translate-y-0">
+   884→              Open <ArrowRight className="h-3 w-3" />
+   885→            </span>
+   886→          </motion.div>
+   887→        </div>
+   888→
+   889→        {/* Content */}
+   890→        <div className="p-4 space-y-2">
+   891→          <h3 className="font-semibold text-sm line-clamp-1 group-hover:text-primary transition-colors">
+   892→            {course.title}
+   893→          </h3>
+   894→          <p className="text-xs text-muted-foreground line-clamp-2">
+   895→            {course.description}
+   896→          </p>
+   897→          <p className="text-xs text-muted-foreground">
+   898→            {slideCount} slide{slideCount !== 1 ? 's' : ''}
+   899→          </p>
+   900→        </div>
+   901→      </div>
+   902→    </motion.button>
+   903→  );
+   904→}
