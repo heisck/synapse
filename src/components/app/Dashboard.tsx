@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Flame,
@@ -28,6 +28,10 @@ import {
   Trash2,
   Download,
   Brain,
+  Timer,
+  Award,
+  Hash,
+  X,
 } from 'lucide-react';
 import {
   BarChart,
@@ -52,6 +56,8 @@ import { CourseCard } from './CourseCard';
 import { EmptyState } from './EmptyState';
 import { useStudyStreak, useTotalStudyTime } from '@/hooks/useStudyTracker';
 import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
+import { useCountUp } from '@/hooks/useCountUp';
+import type { StudyGoal } from '@/types';
 
 const topicChips = ['Cell Biology', 'Organic Chemistry', 'Data Structures', 'Physics'];
 
@@ -175,6 +181,144 @@ function GradientDivider() {
   );
 }
 
+// Animated floating particles behind Quick Start card
+function QuickStartParticles() {
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <motion.div
+          key={i}
+          className="absolute w-2 h-2 rounded-full bg-emerald-400/40"
+          style={{
+            left: `${20 + i * 22}%`,
+            top: `${15 + (i % 2) * 55}%`,
+          }}
+          animate={{
+            y: [0, -18, 0],
+            x: [0, (i % 2 === 0 ? 8 : -8), 0],
+            opacity: [0.2, 0.7, 0.2],
+            scale: [0.8, 1.2, 0.8],
+          }}
+          transition={{
+            duration: 3.5 + i * 0.8,
+            repeat: Infinity,
+            delay: i * 0.6,
+            ease: 'easeInOut',
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Circular SVG progress ring with emerald gradient
+function GoalProgressRing({ percentage, size = 64, strokeWidth = 5 }: { percentage: number; size?: number; strokeWidth?: number }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const clampedPct = Math.min(Math.max(percentage, 0), 100);
+  const isComplete = clampedPct >= 100;
+  const countUpValue = useCountUp(Math.round(clampedPct), { duration: 1000 });
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <defs>
+          <linearGradient id={`goalRing-${size}`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#10b981" />
+            <stop offset="100%" stopColor="#14b8a6" />
+          </linearGradient>
+        </defs>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          className="text-muted/20"
+        />
+        <motion.circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={`url(#goalRing-${size})`}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: circumference - (clampedPct / 100) * circumference }}
+          transition={{ duration: 1.2, ease: 'easeOut', type: 'spring', stiffness: 300, damping: 25 }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        {isComplete ? (
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+            className="glow-emerald-strong"
+          >
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+          </motion.div>
+        ) : (
+          <span className="text-[10px] font-bold text-primary">
+            {countUpValue}%
+          </span>
+        )}
+      </div>
+      {isComplete && (
+        <motion.div
+          className="absolute inset-0 rounded-full"
+          initial={{ boxShadow: '0 0 0 0 rgba(16,185,129,0.4)' }}
+          animate={{ boxShadow: ['0 0 0 0 rgba(16,185,129,0.4)', '0 0 0 6px rgba(16,185,129,0)', '0 0 0 0 rgba(16,185,129,0.4)'] }}
+          transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Goal type config
+const GOAL_TYPE_CONFIG: Record<StudyGoal['type'], { icon: typeof Target; label: string; unit: string; defaultValue: number }> = {
+  sessions: { icon: MessageSquare, label: 'Study Sessions', unit: 'sessions', defaultValue: 5 },
+  quiz_score: { icon: Award, label: 'Quiz Score Target', unit: '%', defaultValue: 80 },
+  hours: { icon: Clock, label: 'Study Hours', unit: 'hrs', defaultValue: 10 },
+  reviews: { icon: Brain, label: 'Questions to Review', unit: 'questions', defaultValue: 20 },
+};
+
+// Hover tilt wrapper for StatsCards
+function TiltCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    ref.current.style.transform = `perspective(600px) rotateY(${x * 4}deg) rotateX(${-y * 4}deg)`;
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (ref.current) {
+      ref.current.style.transform = 'perspective(600px) rotateY(0deg) rotateX(0deg)';
+    }
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      className={className}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{ transition: 'transform 0.2s ease-out' }}
+    >
+      {children}
+    </div>
+  );
+}
+
 // Slide-in activity item with timeline dot
 function ActivityItem({ activity, index }: { activity: typeof recentActivity[number]; index: number }) {
   const Icon = activityIcons[activity.type] ?? Clock;
@@ -244,6 +388,11 @@ export function Dashboard() {
     onboardingComplete,
     notes,
     quizScore,
+    dailyChallenge: storeDailyChallenge,
+    studyGoals,
+    addStudyGoal,
+    updateStudyGoal,
+    deleteStudyGoal: removeStudyGoal,
   } = useAppStore();
 
   const { current: currentStreak, best: bestStreak } = useStudyStreak();
@@ -256,6 +405,29 @@ export function Dashboard() {
   const [tipDirection, setTipDirection] = useState<'left' | 'right'>('left');
   const [toastShown, setToastShown] = useState(false);
   const [newGoalText, setNewGoalText] = useState('');
+
+  // Study goals state
+  const [showAddGoalDialog, setShowAddGoalDialog] = useState(false);
+  const [selectedGoalType, setSelectedGoalType] = useState<StudyGoal['type']>('sessions');
+  const [goalTargetInput, setGoalTargetInput] = useState('');
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
+  const [editingGoalTarget, setEditingGoalTarget] = useState('');
+
+  // Weekly reset: clear study goals progress if a new week has started
+  useEffect(() => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - mondayOffset);
+    const currentWeekStart = monday.toISOString().split('T')[0];
+
+    studyGoals.forEach((g) => {
+      if (g.weekStart !== currentWeekStart) {
+        updateStudyGoal(g.id, { currentProgress: 0, weekStart: currentWeekStart });
+      }
+    });
+  }, [studyGoals, updateStudyGoal]);
 
   // Compute goal completion percentage
   const goalCompletionPct = useMemo(() => {
@@ -304,6 +476,49 @@ export function Dashboard() {
       return () => clearTimeout(timer);
     }
   }, [toastShown]);
+
+  // Compute overall weekly study goals progress
+  const weeklyGoalPct = useMemo(() => {
+    if (studyGoals.length === 0) return 0;
+    const total = studyGoals.reduce((sum, g) => {
+      const pct = g.target > 0 ? Math.min((g.currentProgress / g.target) * 100, 100) : 0;
+      return sum + pct;
+    }, 0);
+    return Math.round(total / studyGoals.length);
+  }, [studyGoals]);
+
+  // Goal type config
+  const goalTypeConfig = useMemo(() => GOAL_TYPE_CONFIG, []);
+
+  const handleAddStudyGoal = () => {
+    const target = parseInt(goalTargetInput, 10);
+    if (isNaN(target) || target <= 0) {
+      toast.error('Please enter a valid target number');
+      return;
+    }
+    const config = goalTypeConfig[selectedGoalType];
+    addStudyGoal({ type: selectedGoalType, label: config.label, target });
+    setShowAddGoalDialog(false);
+    setGoalTargetInput('');
+    toast('Weekly study goal added');
+  };
+
+  const handleEditGoalTarget = (goal: StudyGoal) => {
+    setEditingGoalId(goal.id);
+    setEditingGoalTarget(String(goal.target));
+  };
+
+  const handleSaveGoalTarget = (id: string) => {
+    const target = parseInt(editingGoalTarget, 10);
+    if (isNaN(target) || target <= 0) {
+      toast.error('Please enter a valid target number');
+      return;
+    }
+    updateStudyGoal(id, { target });
+    setEditingGoalId(null);
+    setEditingGoalTarget('');
+    toast('Goal target updated');
+  };
 
   // Tip navigation
   const nextTip = useCallback(() => {
@@ -510,7 +725,7 @@ export function Dashboard() {
                 initial={{ opacity: 0, x: 10 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: `${greeting}, `.length * 0.04 + 0.15, duration: 0.4, ease: 'easeOut' }}
-                className="gradient-text inline-block"
+                className="gradient-text shimmer inline-block"
               >
                 {displayName}
               </motion.span>
@@ -570,6 +785,7 @@ export function Dashboard() {
         <div className="glass mesh-gradient gradient-border rounded-xl p-6 cursor-pointer group relative overflow-hidden"
           onClick={() => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic")}
         >
+          <QuickStartParticles />
           <div className="relative z-10 flex items-center justify-between">
             <div className="space-y-2">
               <div className="flex items-center gap-2">
@@ -603,6 +819,85 @@ export function Dashboard() {
             </div>
           </div>
         </div>
+      </motion.div>
+
+      {/* Daily Challenge Card */}
+      <motion.div variants={fadeUp}>
+        {(() => {
+          const today = new Date().toISOString().split('T')[0];
+          const isCompleted = storeDailyChallenge.lastCompletedDate === today;
+          const streak = storeDailyChallenge.streak;
+          const todayResults = storeDailyChallenge.todayResults;
+          const multiplier = streak >= 7 ? 3 : streak >= 3 ? 2 : 1;
+
+          return (
+            <div
+              className="glass rounded-xl p-6 cursor-pointer group relative overflow-hidden"
+              onClick={() => navigate('quiz')}
+            >
+              <div className="relative z-10 flex items-center justify-between">
+                <div className="space-y-2 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-primary">Daily Challenge</p>
+                    {isCompleted && todayResults && (
+                      <div className="flex items-center gap-0.5">
+                        {[1, 2, 3].map((s) => (
+                          <svg key={s} width="14" height="14" viewBox="0 0 24 24" fill={s <= todayResults.stars ? '#f59e0b' : 'none'} stroke={s <= todayResults.stars ? '#f59e0b' : '#a1a1aa'} strokeWidth="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                          </svg>
+                        ))}
+                      </div>
+                    )}
+                    {multiplier > 1 && (
+                      <span className="flex items-center gap-1 text-xs font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                        <Zap className="h-3 w-3" />
+                        {multiplier}x
+                      </span>
+                    )}
+                  </div>
+                  {isCompleted && todayResults ? (
+                    <div className="space-y-1">
+                      <h2 className="text-lg font-bold">Completed!</h2>
+                      <p className="text-muted-foreground text-sm">
+                        {todayResults.score}/{todayResults.total} correct -- Come back tomorrow
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <h2 className="text-lg font-bold">Ready to challenge yourself?</h2>
+                      <p className="text-muted-foreground text-sm">
+                        5 questions, 3 minutes. Beat the clock!
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col items-center gap-2 shrink-0 ml-4">
+                  {streak > 0 && (
+                    <motion.div
+                      animate={{ scale: [1, 1.1, 1] }}
+                      transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20"
+                    >
+                      <Flame className="h-4 w-4 text-orange-500" />
+                      <span className="text-sm font-bold text-orange-600 dark:text-orange-400">{streak}</span>
+                    </motion.div>
+                  )}
+                  {!isCompleted ? (
+                    <Button size="sm" className="pulse-glow">
+                      Start Challenge
+                      <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
+                    </Button>
+                  ) : (
+                    <div className="text-center">
+                      <div className="text-2xl font-bold gradient-text">{todayResults?.score || 0}</div>
+                      <div className="text-[10px] text-muted-foreground">points</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </motion.div>
 
       {/* Learning Path Progress */}
@@ -882,13 +1177,10 @@ export function Dashboard() {
               <motion.div
                 key={stat.label}
                 animate={{ y: [0, -2, 0] }}
-                whileHover={{
-                  boxShadow: '0 8px 30px rgba(16, 185, 129, 0.15), 0 4px 12px rgba(0, 0, 0, 0.08)',
-                  transition: { duration: 0.2 },
-                }}
                 transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.4 }}
                 className="rounded-xl"
               >
+                <TiltCard className="w-full">
                 <StatsCard
                   icon={stat.icon}
                   label={stat.label}
@@ -897,6 +1189,7 @@ export function Dashboard() {
                   change={stat.change}
                   index={stat.idx}
                 />
+                </TiltCard>
               </motion.div>
             ))}
           </div>
@@ -904,6 +1197,212 @@ export function Dashboard() {
       </motion.div>
 
       <GradientDivider />
+
+      {/* Weekly Study Goals */}
+      <motion.div variants={fadeUp}>
+        <div className="glass mesh-gradient gradient-border rounded-xl p-6 card-shadow relative overflow-hidden">
+          <div className="relative z-10 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Target className="h-5 w-5 text-primary" />
+                <h3 className="font-semibold text-sm">Weekly Study Goals</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                {studyGoals.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {weeklyGoalPct}% overall
+                  </Badge>
+                )}
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
+                  setSelectedGoalType('sessions');
+                  setGoalTargetInput(String(GOAL_TYPE_CONFIG.sessions.defaultValue));
+                  setShowAddGoalDialog(true);
+                }}>
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Add Goal
+                </Button>
+              </div>
+            </div>
+
+            {/* Overall progress bar */}
+            {studyGoals.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="h-2.5 w-full rounded-full bg-muted/50 overflow-hidden">
+                  <motion.div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${weeklyGoalPct}%` }}
+                    transition={{ duration: 0.8, ease: 'easeOut' }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Weekly progress
+                </p>
+              </div>
+            )}
+
+            {/* Goals list */}
+            <div className="space-y-3 max-h-80 overflow-y-auto">
+              <AnimatePresence initial={false}>
+                {studyGoals.length === 0 && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="text-center py-6"
+                  >
+                    <Target className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">No weekly goals set</p>
+                    <p className="text-xs text-muted-foreground/70 mt-1">Track sessions, quiz scores, hours, and more</p>
+                  </motion.div>
+                )}
+                {studyGoals.map((goal) => {
+                  const config = GOAL_TYPE_CONFIG[goal.type];
+                  const Icon = config.icon;
+                  const pct = goal.target > 0 ? Math.min((goal.currentProgress / goal.target) * 100, 100) : 0;
+                  const displayCurrent = goal.type === 'hours'
+                    ? goal.currentProgress.toFixed(1)
+                    : Math.floor(goal.currentProgress);
+                  const isEditing = editingGoalId === goal.id;
+
+                  return (
+                    <motion.div
+                      key={goal.id}
+                      layout
+                      initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: 40, scale: 0.9 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                      className="group flex items-center gap-4 p-3 rounded-xl bg-background/40 hover:bg-accent/30 transition-colors"
+                    >
+                      {/* Progress Ring */}
+                      <GoalProgressRing percentage={pct} size={56} strokeWidth={4} />
+
+                      {/* Goal Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Icon className="h-3.5 w-3.5 text-primary shrink-0" />
+                          <span className="text-sm font-medium truncate">{config.label}</span>
+                        </div>
+                        {isEditing ? (
+                          <div className="flex items-center gap-2 mt-1">
+                            <Input
+                              type="number"
+                              value={editingGoalTarget}
+                              onChange={(e) => setEditingGoalTarget(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveGoalTarget(goal.id);
+                                if (e.key === 'Escape') setEditingGoalId(null);
+                              }}
+                              className="h-7 w-20 text-xs"
+                              min={1}
+                              autoFocus
+                            />
+                            <span className="text-xs text-muted-foreground">{config.unit}</span>
+                            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => handleSaveGoalTarget(goal.id)}>Save</Button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleEditGoalTarget(goal)}
+                            className="text-xs text-muted-foreground hover:text-primary transition-colors mt-0.5 text-left"
+                            title="Click to edit target"
+                          >
+                            {displayCurrent} / {goal.target} {config.unit}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Delete button */}
+                      <button
+                        onClick={() => { removeStudyGoal(goal.id); toast('Study goal removed'); }}
+                        className="opacity-0 group-hover:opacity-100 h-7 w-7 flex items-center justify-center rounded-md hover:bg-destructive/10 transition-all shrink-0"
+                        aria-label="Delete study goal"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                      </button>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          {/* Add Goal Dialog */}
+          <AnimatePresence>
+            {showAddGoalDialog && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-20 bg-background/80 backdrop-blur-sm rounded-xl flex items-center justify-center p-6"
+                onClick={() => setShowAddGoalDialog(false)}
+              >
+                <motion.div
+                  initial={{ scale: 0.9, y: 10 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.9, y: 10 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                  className="glass rounded-xl p-6 w-full max-w-sm space-y-4 gradient-border glow-emerald"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-semibold text-sm">Add Weekly Goal</h4>
+                    <button onClick={() => setShowAddGoalDialog(false)} className="h-6 w-6 flex items-center justify-center rounded-md hover:bg-muted">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(Object.entries(GOAL_TYPE_CONFIG) as [StudyGoal['type'], typeof GOAL_TYPE_CONFIG[StudyGoal['type']]][]).map(([type, cfg]) => {
+                      const TypeIcon = cfg.icon;
+                      return (
+                        <motion.button
+                          key={type}
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => {
+                            setSelectedGoalType(type);
+                            setGoalTargetInput(String(cfg.defaultValue));
+                          }}
+                          className={`flex items-center gap-2 p-3 rounded-lg border text-left text-sm transition-all ${
+                            selectedGoalType === type
+                              ? 'border-primary bg-primary/10 text-primary glow-emerald'
+                              : 'border-border hover:border-primary/30 hover:bg-accent/50'
+                          }`}
+                        >
+                          <TypeIcon className="h-4 w-4 shrink-0" />
+                          <span className="truncate text-xs font-medium">{cfg.label}</span>
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Target ({GOAL_TYPE_CONFIG[selectedGoalType].unit})
+                    </label>
+                    <Input
+                      type="number"
+                      value={goalTargetInput}
+                      onChange={(e) => setGoalTargetInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleAddStudyGoal();
+                      }}
+                      min={1}
+                      placeholder={`Enter ${GOAL_TYPE_CONFIG[selectedGoalType].unit}...`}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setShowAddGoalDialog(false)}>Cancel</Button>
+                    <Button size="sm" onClick={handleAddStudyGoal} className="glow-emerald">
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Add Goal
+                    </Button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </motion.div>
 
       {/* Learning Progress / Goals */}
       <motion.div variants={fadeUp}>

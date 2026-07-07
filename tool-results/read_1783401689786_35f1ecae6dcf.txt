@@ -1,0 +1,502 @@
+   900→   900→│   ├── tutor/ (TutorView, ChatBubble, OnboardingFlow, TypingIndicator, MasteryTracker, SessionControls, TipInput, FeedbackBar, RevisionButton, CourseContextPanel, PersonaSelector)
+   901→   901→│   ├── shared/ (ThemeToggle)
+   902→   902→│   └── ui/ (54+ shadcn components)
+   903→   903→├── lib/ (ai.ts, db.ts, prompts/index.ts, utils.ts)
+   904→   904→├── stores/appStore.ts (Zustand - achievements, goals, settings, notes, study sessions)
+   905→   905→├── types/index.ts (Achievement, StudySession, Goal, AppSettings, Note, ...)
+   906→   906→├── hooks/ (use-mobile, use-toast, useSessionPersistence, useStudyTracker, useCountUp)
+   907→   907→```
+   908→   908→
+   909→   909→### Known Issues:
+   910→   910→1. **Server stability** - Next.js dev server OOMs after Turbopack compilation (sandbox memory limitation, not code bug)
+   911→   911→2. **Three.js SSR bail** - ParticleField uses `next/dynamic` with `ssr: false` (expected)
+   912→   912→3. **Mock chart fallback** - Dashboard charts fall back to mock data when no localStorage data exists (expected behavior)
+   913→   913→
+   914→   914→---
+   915→   915→Task ID: 14
+   916→   916→Agent: Auto Review (Cron) - Round 5
+   917→   917→Task: QA assessment, quiz enhancements, onboarding simplification, chat polish, dashboard styling
+   918→   918→
+   919→   919→Work Log:
+   920→   920→- **QA Assessment**: Build passes clean (0 errors, 0 warnings), lint passes clean (0 errors across all files). Production build compiles successfully in 28.9s.
+   921→   921→- **QuizView - Drag-and-Drop Matching with SVG Connectors**:
+   922→   922→  - Upgraded MatchingInput to support HTML5 drag-and-drop with visual SVG bezier curve connectors between matched pairs
+   923→   923→  - Connector lines use animated gradient stroke (emerald-to-teal) with framer-motion pathLength animation
+   924→   924→  - Pulsing glow effect on drop zones during drag
+   925→   925→  - Click-to-match preserved as fallback for accessibility/touch
+   926→   926→  - Click matched left items to remove connections
+   927→   927→  - Uses ResizeObserver for reliable position tracking
+   928→   928→- **QuizView - 3D Flashcard Flip Animation**:
+   929→   929→  - Proper 3D flip using framer-motion rotateY with perspective: 1000px and backfaceVisibility: hidden
+   930→   930→  - Front face: question, concept badge, difficulty badge, type badge, course badge
+   931→   931→  - Back face: answer, explanation, concept tag
+   932→   932→  - "Tap to reveal" hint with pulsing dot (hidden after first flip)
+   933→   933→  - Swipe gestures (drag=x): swipe right = "I know this", swipe left = "Still learning"
+   934→   934→  - Directional hint icons (Check/X) using useMotionValue + useTransform
+   935→   935→  - Card stack effect: next card visible behind current (scaled 0.97, offset, 30% opacity)
+   936→   936→- **QuizView - Session Timer**: MM:SS timer starts on first answer, pauses on results, pulsing Clock icon
+   937→   937→- **QuizView - Difficulty Progress Tracker**: Thin stacked horizontal bar (emerald/amber/rose) with labels showing Easy/Medium/Hard question distribution
+   938→   938→- **OnboardingFlow - Quick Start**: Added prominent "Quick Start" button that skips all configuration, sets defaults (visual, steady pace), navigates directly to dashboard
+   939→   939→- **OnboardingFlow - Skip All**: Added "Skip all" link at bottom-right of Welcome step
+   940→   940→- **OnboardingFlow - Visual Polish**: Floating Brain icon (animate-float), animated border shimmer on "Get Started" button (.animated-border), enhanced staggered entrance animations (0.15s intervals), confetti particles on Done step (36 colored burst particles)
+   941→   941→- **Dashboard - Typewriter Greeting**: Characters reveal one-by-one at 40ms with blinking cursor, username fades in with gradient-text
+   942→   942→- **Dashboard - StatsCard Hover**: Enhanced shadow with emerald-tinted glow on hover via framer-motion whileHover
+   943→   943→- **Dashboard - Quick Start Hero Card**: Glass + mesh-gradient + gradient-border, conditional "Continue Learning"/"Start a Session" text, pulsing CTA, streak badge
+   944→   944→- **Dashboard - Chart Styling**: Added .card-shadow to chart containers for multi-layered depth
+   945→   945→- **Dashboard - CourseCard Hover Glow**: hover:glow-emerald on course cards
+   946→   946→- **ChatBubble - Message Reactions**: Added ReactionBar with thumbs up/down, lightbulb, thinking emoji reactions that appear on hover for assistant messages, stored in local state, animated count badges
+   947→   947→- **ChatBubble - Enhanced Entrance Animation**: Bouncier spring physics (stiffness: 300, damping: 24 for outer, 350/26 for inner)
+   948→   948→- **ChatBubble - Gradient Glow**: Radial emerald-to-teal gradient glow on assistant messages that fades after 2s
+   949→   949→- **TutorView - Suggestion Chips**: 4 contextual pill chips ("Explain in simpler terms", "Give me an example", "Quiz me on this", "Go deeper") with framer-motion stagger animation
+   950→   950→- **TutorView - Character Count**: Enhanced to "X/500" format with color thresholds (green < 350, amber < 450, red >= 450)
+   951→   951→- **TutorView - Input Styling**: Glass background (.glass), animated gradient border (.gradient-border), pulse-glow on send button when text present
+   952→   952→
+   953→   953→Stage Summary:
+   954→   954→- 0 lint errors, clean production build
+   955→   955→- 4 major features added (DnD matching, 3D flashcards, quiz timer, difficulty tracker)
+   956→   956→- Onboarding flow simplified with Quick Start option
+   957→   957→- Dashboard visual polish (typewriter greeting, hero card, enhanced hover effects)
+   958→   958→- Chat experience enhanced (reactions, better animations, suggestion chips)
+   959→   959→
+   960→   960→## Current Project Status
+   961→   961→
+   962→   962→### Verified Working:
+   963→   963→- Landing page with GSAP/WebGL/Lenis/framer-motion animations
+   964→   964→- Simplified onboarding with Quick Start shortcut + full multi-step wizard option
+   965→   965→- Enhanced Dashboard with typewriter greeting, hero card, real analytics, floating stats
+   966→   966→- AI Tutor with typewriter streaming chat, message reactions, suggested prompts, gradient glow
+   967→   967→- Three tutoring modes: Chat (text-only), Slides (slide-focused), Hybrid (combined)
+   968→   968→- TTS audio playback with animated indicators
+   969→   969→- Achievement system with 15 badges across 5 categories and 4 rarity levels
+   970→   970→- Study session auto-tracking with streak computation
+   971→   971→- Quiz mode with per-course filtering, 6 question types, drag-and-drop matching, 3D flashcards, streak counter, session timer, difficulty distribution bar
+   972→   972→- Notes/Journal system with tag filtering, search, sort, colored pills
+   973→   973→- Settings page with 6 sections, all persisted to localStorage
+   974→   974→- Study goals tracker with dynamic add/delete/reorder
+   975→   975→- Search modal (Cmd+K) with recent views, courses, quick actions, keyboard navigation
+   976→   976→- Glass morphism sidebar with animated gradient edge, layout animations, notification badges
+   977→   977→- Error boundary with recovery UI
+   978→   978→- Dark mode, toasts, keyboard shortcuts (Cmd+1-7)
+   979→   979→- Full SEO, rate limiting, Zod validation
+   980→   980→
+   981→   981→### Known Issues:
+   982→   982→1. **Server stability** - Next.js dev server OOMs after Turbopack compilation (sandbox memory limitation, not code bug)
+   983→   983→2. **Three.js SSR bail** - ParticleField uses `next/dynamic` with `ssr: false` (expected)
+   984→   984→3. **Mock chart fallback** - Dashboard charts fall back to mock data when no localStorage data exists (expected behavior)
+   985→   985→
+   986→   986→---
+   987→   987→Task ID: 15
+   988→   988→Agent: Auto Review (Cron) - Round 6
+   989→   989→Task: Interior page styling overhaul, export features, sidebar polish, mobile responsive, Vercel config
+   990→   990→
+   991→   991→Work Log:
+   992→   992→- **QA Assessment**: Build passes clean (0 errors, 0 warnings), lint passes clean (0 errors across all files). Production build compiles in 26.2s.
+   993→   993→- **ProfileView Styling Overhaul**:
+   994→   994→  - Glass morphism profile card with gradient-border + card-shadow
+   995→   995→  - Animated mesh-gradient header strip with grid-pattern overlay
+   996→   996→  - Avatar with pulsing emerald glow ring (framer-motion cycling box-shadow)
+   997→   997→  - Staggered section entrance animations with floating/pulsing section icons
+   998→   998→  - Skill bars with shimmer sweep effect animation
+   999→   999→  - Achievement cards with glass-hover lift + rarity-based glow (legendary=purple, epic=blue, rare=emerald)
+  1000→  1000→  - Heatmap cells with hover tooltip (motion.popover), scale-up, smooth opacity transitions
+  1001→  1001→  - Stats cards with AnimatedNumber component (useSpring + useMotionValue + useTransform count-up)
+  1002→  1002→  - glow-emerald-strong on stats hover with lift effect
+  1003→  1003→- **UploadView Styling Overhaul**:
+  1004→  1004→  - Drag-and-drop zone: glass background, pulse-glow + glow-emerald-strong when dragging, animated upload icon wiggle
+  1005→  1005→  - File list items: glass-hover lift-on-hover, file type icon color coding (docx=blue, pdf=red, pptx=orange)
+  1006→  1006→  - Progress bars: shimmer sweep overlay animation during upload/processing
+  1007→  1007→  - Category chips: spring entrance stagger (0.05s), hover scale (1.08), active glow-emerald
+  1008→  1008→  - Double-ring spinning loader with emerald color for processing state
+  1009→  1009→  - Collapsible sections: framer-motion layout animation for smooth spring-based height transitions
+  1010→  1010→  - Quick Tips section: glass card with gradient-border + card-shadow, 3 best practice tips
+  1011→  1011→  - File list container with scroll-fade-bottom
+  1012→  1012→- **SettingsView Styling Overhaul**:
+  1013→  1013→  - Section cards: glass + gradient-border + card-shadow
+  1014→  1014→  - AnimatedSwitch component with AnimatePresence for smooth scale+opacity toggle transitions
+  1015→  1015→  - SelectWithGlow component with hover scale + glow-emerald on trigger hover
+  1016→  1016→  - AnimatedIcon component: subtle float animation (y: 0 to -2px) on section header icons
+  1017→  1017→  - Danger Zone: red-tinted glass body, animated warning icon with wiggle+scale pulse, red gradient border
+  1018→  1018→  - ExportButton component with download icon bounce animation on click
+  1019→  1019→  - Theme buttons: active state gets glow-emerald, hover/tap micro-interactions
+  1020→  1020→  - Tech stack badges: staggered entrance, hover lift (scale + y), border color transition
+  1021→  1021→- **NotesView Styling Overhaul**:
+  1022→  1022→  - Note cards: glass-hover lift-on-hover, colored left border (border-l-4) based on primary tag
+  1023→  1023→  - Tag filter bar: spring entrance stagger (0.03s), active tags get glow-emerald
+  1024→  1024→  - Search input: gradient-border container when focused
+  1025→  1025→  - Sort button icon: rotation animation (-90 to 0) when toggling sort mode
+  1026→  1026→  - Empty states: custom glass + mesh-gradient + dot-pattern cards with floating animated icons
+  1027→  1027→  - Note content: line-clamp-2 preview in collapsed state
+  1028→  1028→  - Delete button: shake animation (x oscillation) on hover
+  1029→  1029→  - Create note form: card-shadow, mesh-gradient overlay, glow-emerald on save button
+  1030→  1030→- **Notes Markdown Export**: Export All button generates single .md file, single-note download on each card hover, proper markdown formatting with title/tags/dates/content/separators
+  1031→  1031→- **Study Data CSV Export**: Dashboard export button reads study sessions from store, generates CSV with Date/Topic/Duration/Messages/Mastery columns
+  1032→  1032→- **Upload History**: Collapsible section tracking uploads in localStorage (max 20 FIFO), file icons/sizes/timestamps/delete buttons
+  1033→  1033→- **Batch Upload Summary Toast**: "N files uploaded successfully" after multi-file uploads
+  1034→  1034→- **AppSidebar Polish**:
+  1035→  1035→  - Tooltips on all nav items using shadcn Tooltip
+  1036→  1036→  - Active nav item: bg-primary/5 backdrop-blur-sm glass background
+  1037→  1037→  - Animated 2px emerald-to-teal gradient line at bottom of active item (layoutId)
+  1038→  1038→  - Red pulsing notification dot on Quiz nav item
+  1039→  1039→  - Icon bounce on tap (whileTap y:-2, scale:1.15)
+  1040→  1040→  - Brain logo icon: pulse-glow CSS class
+  1041→  1041→- **CourseDetail Enhancement**:
+  1042→  1042→  - Breadcrumb navigation (Dashboard > Course Name) with aria-label
+  1043→  1043→  - Glass morphism container (rounded-2xl p-2)
+  1044→  1044→  - Staggered slide list entrance animations
+  1045→  1045→  - "Start Quiz" button for navigating to quiz with course questions
+  1046→  1046→- **Vercel Deployment Compatibility**:
+  1047→  1047→  - Added serverExternalPackages: ['better-sqlite3'] to next.config.ts
+  1048→  1048→  - Comprehensive JSDoc comment block explaining config choices
+  1049→  1049→- **Mobile Responsive Improvements**:
+  1050→  1050→  - AppShell: overflow-x-hidden on main, safe-area-inset-bottom padding for notch devices
+  1051→  1051→  - Search modal: full-width on mobile (w-[calc(100%-1rem)])
+  1052→  1052→  - globals.css: @media (max-width: 640px) breakpoints for reduced glass padding, smaller headings, reduced mesh-gradient opacity
+  1053→  1053→
+  1054→  1054→Stage Summary:
+  1055→  1055→- 0 lint errors, clean production build
+  1056→  1056→- 4 interior pages completely restyled (Profile, Upload, Settings, Notes)
+  1057→  1057→- 3 new export features (notes markdown, study CSV, upload history)
+  1058→  1058→- Sidebar enhanced with tooltips, gradient line, notification dot, bounce animations
+  1059→  1059→- CourseDetail enhanced with breadcrumbs, glass styling, staggered animations
+  1060→  1060→- Vercel deployment config updated
+  1061→  1061→- Mobile responsive improvements across AppShell, search modal, and globals.css
+  1062→  1062→
+  1063→  1063→## Current Project Status
+  1064→  1064→
+  1065→  1065→### Verified Working:
+  1066→  1066→- Landing page with GSAP/WebGL/Lenis/framer-motion animations
+  1067→  1067→- Simplified onboarding with Quick Start shortcut + full multi-step wizard
+  1068→  1068→- Enhanced Dashboard with typewriter greeting, hero card, real analytics, CSV export
+  1069→  1069→- AI Tutor with typewriter streaming chat, message reactions, suggested prompts, gradient glow
+  1070→  1070→- Three tutoring modes: Chat, Slides, Hybrid with pill-style toggle
+  1071→  1071→- TTS audio playback with animated indicators
+  1072→  1072→- Achievement system with 15 badges (5 categories, 4 rarity levels, rarity-based glow)
+  1073→  1073→- Study session auto-tracking with streak computation
+  1074→  1074→- Quiz mode with DnD matching (SVG connectors), 3D flashcards (swipe gestures), timer, difficulty bar
+  1075→  1075→- Notes with tag filtering, search, sort, colored borders, markdown export (single + bulk)
+  1076→  1076→- Upload with drag-drop, category chips, upload history (localStorage), batch summary toasts
+  1077→  1077→- Settings with animated toggles, glow selects, danger zone, export buttons
+  1078→  1078→- Profile with pulsing avatar, animated stats, rarity glow achievements, heatmap tooltips
+  1079→  1079→- Course detail with breadcrumbs, glass styling, Start Quiz button
+  1080→  1080→- Enhanced sidebar with tooltips, gradient active indicator, notification dot, bounce
+  1081→  1081→- Mobile responsive: safe-area padding, reduced glass padding, smaller headings, full-width search
+  1082→  1082→- Vercel-compatible next.config.ts with serverExternalPackages
+  1083→  1083→- Dark mode, toasts, keyboard shortcuts (Cmd+1-7, Cmd+K)
+  1084→  1084→- Full SEO, rate limiting, Zod validation
+  1085→  1085→
+  1086→  1086→### Known Issues:
+  1087→  1087→1. **Server stability** - Next.js dev server OOMs after Turbopack compilation (sandbox memory limitation, not code bug)
+  1088→  1088→2. **Three.js SSR bail** - ParticleField uses `next/dynamic` with `ssr: false` (expected)
+  1089→  1089→3. **Mock chart fallback** - Dashboard charts fall back to mock data when no localStorage data exists (expected behavior)
+  1090→  1090→4. **SQLite on Vercel** - Vercel serverless doesn't natively support SQLite; serverExternalPackages added but full deploy needs a DB migration plan
+  1091→  1091→
+  1092→  1092→---
+  1093→  1093→Task ID: 16
+  1094→  1094→Agent: Auto Review (Cron) - Round 7
+  1095→  1095→Task: Keyboard shortcuts dialog, learning path visualization, session summary panel, chat search, new CSS utilities, achievement toasts
+  1096→  1096→
+  1097→  1097→Work Log:
+  1098→  1098→- **QA Assessment**: Build passes clean (0 errors, 0 warnings), lint passes clean (0 errors). Production build in 26.2s, static generation in 176.6ms.
+  1099→  1099→- **Keyboard Shortcuts Dialog (AppShell.tsx)**:
+  1100→  1100→  - Floating `?` button (fixed bottom-right) with glass + pulse-glow styling
+  1101→  1101→  - Opens via `?` key, `Cmd+,` shortcut, or click
+  1102→  1102→  - Dialog with mesh-gradient background, 3 shortcut categories (Navigation, Actions, Quiz)
+  1103→  1103→  - Each row: styled kbd element + description with staggered framer-motion entrance
+  1104→  1104→- **Learning Path Progress (Dashboard.tsx)**:
+  1105→  1105→  - 5 milestone nodes on horizontal timeline: Get Started, First Session, Quiz Taker, Note Keeper, Streak Master
+  1106→  1106→  - Completed nodes: emerald-filled + white checkmark + glow-emerald-strong
+  1107→  1107→  - Current node: emerald outline + pulsing ring
+  1108→  1108→  - Locked nodes: muted gray outline
+  1109→  1109→  - Gradient connector lines between nodes
+  1110→  1110→  - Progress badge "X/5 milestones reached"
+  1111→  1111→  - Staggered fadeUp entrance animations
+  1112→  1112→- **Session Summary Panel (TutorView.tsx)**:
+  1113→  1113→  - "End Session" button with LogOut icon in right panel
+  1114→  1114→  - Slide-up panel with spring animation (AnimatePresence) + backdrop blur
+  1115→  1115→  - Session stats grid (2x2): Duration, Messages, Topics, Concepts
+  1116→  1116→  - Mastery progress bar with animated gradient fill
+  1117→  1117→  - Key takeaways: last 3 assistant messages truncated to 100 chars
+  1118→  1118→  - Action buttons: "Continue Studying" / "Save & Close"
+  1119→  1119→  - 40 confetti particles when session > 10 minutes
+  1120→  1120→- **Chat Search/Filter (TutorView.tsx)**:
+  1121→  1121→  - Search icon button toggles sliding search bar (framer-motion height animation)
+  1122→  1122→  - Real-time message filtering with emerald highlight on matching text
+  1123→  1123→  - Match count display ("3 matches")
+  1124→  1124→  - Escape key or X button to close
+  1125→  1125→  - Empty state when no matches
+  1126→  1126→- **Word Count Stats (TutorView.tsx)**:
+  1127→  1127→  - Glass pill in header with message count (MessageCircle icon) + session duration (Clock icon)
+  1128→  1128→- **10 New CSS Utilities (globals.css)**:
+  1129→  1129→  1. `.glass-inner-glow` - Glass card with inset glow that intensifies on hover
+  1130→  1130→  2. `.typing-cursor` - Blinking cursor element (2px, 1s step-end infinite)
+  1131→  1131→  3. `.gradient-text-shimmer` - Text with sweeping shimmer highlight
+  1132→  1132→  4. `.floating-particles` - CSS-only floating dots via pseudo-elements
+  1133→  1133→  5. `.morph-radius` - Border-radius transition (1rem to full) on hover
+  1134→  1134→  6. `.checkmark-draw` - SVG checkmark stroke-dashoffset animation
+  1135→  1135→  7. `.glass-accent-top` - Glass panel with 3px emerald-teal gradient accent line
+  1136→  1136→  8. `.breathe` - Gentle scale pulse (1 to 1.02 over 4s)
+  1137→  1137→  9. `.animated-dashed-border` - Rotating dashed border animation (20s)
+  1138→  1138→  10. `.glass-corner-decorations` - L-shaped corner marks with hover opacity transition
+  1139→  1139→  - 6 new @keyframes: cursorBlink, shimmerSweep, particlesFloat, checkmarkStroke, breatheScale, dashRotate
+  1140→  1140→- **Achievement Unlock Toast (StoreInitializer.tsx)**:
+  1141→  1141→  - Tracks previous achievement states via useRef
+  1142→  1142→  - Detects when unlockedAt transitions from null to value
+  1143→  1143→  - Fires custom sonner toast: Trophy icon, gradient background, 6000ms duration
+  1144→  1144→  - Emerald-to-teal gradient styling, unstyled mode
+  1145→  1145→
+  1146→  1146→Stage Summary:
+  1147→  1147→- 0 lint errors, clean production build
+  1148→  1148→- Keyboard shortcuts dialog with visual reference for all hotkeys
+  1149→  1149→- Learning path progress visualization (5 milestones) on Dashboard
+  1150→  1150→- Session summary panel with stats, takeaways, confetti
+  1151→  1151→- Chat search with real-time filtering and text highlighting
+  1152→  1152→- 10 new CSS micro-animation utilities (glass, particles, animations)
+  1153→  1153→- Achievement unlock toast notifications with gradient styling
+  1154→  1154→
+  1155→  1155→## Current Project Status
+  1156→  1156→
+  1157→  1157→### Verified Working:
+  1158→  1158→- Landing page with GSAP/WebGL/Lenis/framer-motion animations
+  1159→  1159→- Simplified onboarding with Quick Start shortcut + full multi-step wizard
+  1160→  1160→- Enhanced Dashboard with typewriter greeting, hero card, learning path milestones (5 nodes), CSV export
+  1161→  1161→- AI Tutor with typewriter streaming chat, message reactions, suggested prompts, gradient glow, chat search, session summary, word count stats
+  1162→  1162→- Three tutoring modes: Chat, Slides, Hybrid with pill-style toggle
+  1163→  1163→- TTS audio playback with animated indicators
+  1164→  1164→- Achievement system with 15 badges, rarity-based glow, unlock toast notifications
+  1165→  1165→- Study session auto-tracking with streak computation
+  1166→  1166→- Quiz mode with DnD matching (SVG connectors), 3D flashcards (swipe gestures), timer, difficulty bar
+  1167→  1167→- Notes with tag filtering, search, sort, colored borders, markdown export (single + bulk)
+  1168→  1168→- Upload with drag-drop, category chips, upload history (localStorage), batch summary toasts
+  1169→  1169→- Settings with animated toggles, glow selects, danger zone, export buttons
+  1170→  1170→- Profile with pulsing avatar, animated stats, rarity glow achievements, heatmap tooltips
+  1171→  1171→- Course detail with breadcrumbs, glass styling, Start Quiz button
+  1172→  1172→- Enhanced sidebar with tooltips, gradient active indicator, notification dot, bounce
+  1173→  1173→- Keyboard shortcuts dialog (Cmd+, or ?)
+  1174→  1174→- Mobile responsive: safe-area padding, reduced glass sizing, smaller headings, full-width search
+  1175→  1175→- Vercel-compatible next.config.ts with serverExternalPackages
+  1176→  1176→- 10 new CSS micro-animation utilities (glass variants, particles, checkmark, shimmer, etc.)
+  1177→  1177→- Dark mode, toasts, keyboard shortcuts (Cmd+1-7, Cmd+K)
+  1178→  1178→- Full SEO, rate limiting, Zod validation
+  1179→  1179→
+  1180→  1180→### Known Issues:
+  1181→  1181→1. **Server stability** - Next.js dev server OOMs after Turbopack compilation (sandbox memory limitation, not code bug)
+  1182→  1182→2. **Three.js SSR bail** - ParticleField uses `next/dynamic` with `ssr: false` (expected)
+  1183→  1183→3. **Mock chart fallback** - Dashboard charts fall back to mock data when no localStorage data exists (expected behavior)
+  1184→  1184→4. **SQLite on Vercel** - Vercel serverless doesn't natively support SQLite; serverExternalPackages added but full deploy needs a DB migration plan
+  1185→  1185→
+  1186→  1186→---
+  1187→  1187→Task ID: 17
+  1188→  1188→Agent: Auto Review (Cron) - Round 8
+  1189→  1189→Task: Focus Timer widget, Daily Challenge mode, Spaced Repetition, Landing dark mode polish
+  1190→  1190→
+  1191→  1191→Work Log:
+  1192→  1192→- **QA Assessment**: Build passes clean (0 errors, 0 warnings), lint passes clean (0 errors). Production build compiles in ~27s.
+  1193→  1193→- **Focus Timer View (NEW component)**:
+  1194→  1194→  - Full-screen focus timer page at `/home/z/my-project/src/components/app/FocusTimerView.tsx`
+  1195→  1195→  - 4 timer modes: Focus (25m), Short Break (5m), Long Break (15m), Custom (user-set)
+  1196→  1196→  - Circular SVG progress ring (220px) with emerald-to-teal gradient stroke
+  1197→  1197→  - Large MM:SS display using gradient-text-animated
+  1198→  1198→  - Controls: Start/Pause, Reset, Skip (glass-styled buttons)
+  1199→  1199→  - Auto-transition: toast notification suggests break after focus, long break after 4 sessions
+  1200→  1200→  - Session counter: "Session X of 4" display
+  1201→  1201→  - 3 procedural ambient sounds via Web Audio API:
+  1202→  1202→    - Rain: white noise + lowpass filter
+  1203→  1203→    - Forest: brown noise + bandpass filter
+  1204→  1204→    - Waves: modulated sine wave + slow LFO
+  1205→  1205→    - Each with play/pause toggle, volume slider (0-100%), mute button
+  1206→  1206→    - Collapsible panel with quick-toggle buttons
+  1207→  1207→  - Rotating motivational quotes that change each session
+  1208→  1208→  - Stats bar: today's completed sessions, total focus minutes, average
+  1209→  1209→  - localStorage persistence under 'synapse-focus-sessions'
+  1210→  1210→- **Focus Timer Integration**:
+  1211→  1211→  - Added 'focus-timer' to AppView union type in types/index.ts
+  1212→  1212→  - Lazy import + renderView case in AppShell.tsx
+  1213→  1213→  - Sidebar nav item with Timer icon, ⌘+8 keyboard shortcut
+  1214→  1214→  - Search modal entry, view transition animation
+  1215→  1215→- **Daily Challenge Mode (QuizView.tsx)**:
+  1216→  1216→  - Third study mode: 'daily' alongside quiz and flashcard
+  1217→  1217→  - Hero banner: "Daily Challenge" with gradient-text, today's date, streak counter, midnight countdown timer
+  1218→  1218→  - 5 random mixed-difficulty questions per challenge
+  1219→  1219→  - Challenge data in localStorage ('synapse-daily-challenge'): { date, completed, score, total, questions }
+  1220→  1220→  - "Come back tomorrow" if already completed today
+  1221→  1221→  - Confetti burst on perfect score (5/5)
+  1222→  1222→  - Streak tracking in localStorage ('synapse-daily-streak'): { current, best, lastDate }
+  1223→  1223→  - Results screen with animated circular progress, share button (copies "SynapseLearn Daily Challenge - 4/5 - 3 day streak")
+  1224→  1224→- **Spaced Repetition Hook (NEW file)**:
+  1225→  1225→  - Created `/home/z/my-project/src/hooks/useSpacedRepetition.ts`
+  1226→  1226→  - SM-2-like algorithm: SRItem { questionId, concept, nextReview, interval, ease, repetitions }
+  1227→  1227→  - getItemsDue(), updateItemAfterReview(), getStudyPlan() pure functions
+  1228→  1228→  - Quality 0-2: interval halved; quality 3: same; quality 4-5: interval *= ease
+  1229→  1229→  - Ease adjusts by 0.1 - (5-q)*(0.08 + (5-q)*0.02), clamped [1.0, 3.0]
+  1230→  1230→  - Min interval: 1h, max: 30 days (720h)
+  1231→  1231→  - Hook auto-syncs with masteryMap, creates SRItems for concepts with mastery >= 3
+  1232→  1232→  - localStorage persistence under 'synapse-sr-items'
+  1233→  1233→- **Landing Page Dark Mode Enhancements**:
+  1234→  1234→  - HeroSection: Vibrant/neon floating orbs in dark mode, CSS starfield particle effect, enhanced mesh gradient
+  1235→  1235→  - FeaturesSection: Enhanced glass cards (24px blur), gradient hover glow borders, brighter icon gradients
+  1236→  1236→  - CTASection: Neon glow pulsing button, deeper gradient overlays, animated top gradient line
+  1237→  1237→  - Footer: Dark glass background (black/30, 20px blur), neon social icon hover glow, gradient top border
+  1238→  1238→  - PromptSystemSection: Enhanced node glow rings (48px spread), brighter connector lines, enhanced card glass
+  1239→  1239→- **New CSS Utilities (globals.css)**:
+  1240→  1240→  - .page-skeleton: Full-page loading skeleton with animated shimmer, light/dark variants
+  1241→  1241→  - pageSlideIn/pageFadeIn/pageScaleIn: Page transition keyframe animations
+  1242→  1242→  - .glass-dark-enhanced: 32px backdrop blur, emerald border glow, inner shadow for dark mode
+  1243→  1243→  - .scroll-progress: Fixed 2px top bar with emerald gradient, dark mode neon glow
+  1244→  1244→
+  1245→  1245→Stage Summary:
+  1246→  1246→- 0 lint errors, clean production build
+  1247→  1247→- 1 new page (Focus Timer) with ambient sounds and session tracking
+  1248→  1248→- Daily Challenge mode in Quiz with streak tracking and share functionality
+  1249→  1249→- Spaced Repetition hook (SM-2 algorithm) for intelligent review scheduling
+  1250→  1250→- Landing page dark mode comprehensively enhanced (5 components)
+  1251→  1251→- 4 new CSS utilities for page transitions and dark mode glass effects
+  1252→  1252→
+  1253→  1253→## Current Project Status
+  1254→  1254→
+  1255→  1255→### Verified Working:
+  1256→  1256→- Landing page with GSAP/WebGL/Lenis/framer-motion animations + comprehensive dark mode
+  1257→  1257→- Simplified onboarding with Quick Start shortcut + full multi-step wizard
+  1258→  1258→- Enhanced Dashboard with typewriter greeting, hero card, learning path milestones, CSV export
+  1259→  1259→- AI Tutor with typewriter streaming chat, message reactions, suggested prompts, gradient glow, chat search, session summary
+  1260→  1260→- Three tutoring modes: Chat, Slides, Hybrid
+  1261→  1261→- Focus Timer page (Pomodoro) with 3 ambient sounds (rain, forest, waves), session tracking, quotes
+  1262→  1262→- TTS audio playback with animated indicators
+  1263→  1263→- Achievement system with 15 badges, rarity glow, unlock toast notifications
+  1264→  1264→- Study session auto-tracking with streak computation
+  1265→  1265→- Quiz mode with DnD matching (SVG connectors), 3D flashcards (swipe), timer, difficulty bar, Daily Challenge mode
+  1266→  1266→- Spaced repetition scheduling (SM-2 algorithm) with localStorage persistence
+  1267→  1267→- Notes with tag filtering, search, sort, colored borders, markdown export
+  1268→  1268→- Upload with drag-drop, category chips, upload history, batch summary toasts
+  1269→  1269→- Settings with animated toggles, glow selects, danger zone
+  1270→  1270→- Profile with pulsing avatar, animated stats, rarity glow achievements, heatmap tooltips
+  1271→  1271→- Course detail with breadcrumbs, glass styling, Start Quiz button
+  1272→  1272→- Enhanced sidebar with tooltips, gradient active indicator, notification dot
+  1273→  1273→- Keyboard shortcuts dialog (Cmd+, or ?)
+  1274→  1274→- Mobile responsive + Vercel-compatible config
+  1275→  1275→- Dark mode, toasts, keyboard shortcuts (Cmd+1-8, Cmd+K)
+  1276→  1276→- 14+ CSS micro-animation utilities
+  1277→  1277→- Full SEO, rate limiting, Zod validation
+  1278→  1278→
+  1279→  1279→### Known Issues:
+  1280→  1280→1. **Server stability** - Next.js dev server OOMs after Turbopack compilation (sandbox memory limitation, not code bug)
+  1281→  1281→2. **Three.js SSR bail** - ParticleField uses `next/dynamic` with `ssr: false` (expected)
+  1282→  1282→3. **Mock chart fallback** - Dashboard charts fall back to mock data when no localStorage data exists (expected)
+  1283→  1283→4. **SQLite on Vercel** - serverExternalPackages added, full deploy needs DB migration plan
+  1284→  1284→5. **Ambient sound autoplay** - Web Audio API requires user gesture to start (browser policy, expected)
+  1285→  1285→
+  1286→  1286→### Recommendations for Next Phase:
+  1287→  1287→1. **Priority 1**: End-to-end test with real .docx upload -> question generation -> quiz flow
+  1288→  1288→2. **Priority 1**: Verify TTS playback works end-to-end in browser
+  1289→  1289→3. **Priority 1**: Vercel deployment test with environment variable configuration
+  1290→  1290→4. **Priority 2**: WebSocket for real-time AI response streaming (SSE)
+  1291→  1291→5. **Priority 2**: PWA wrapper for mobile (service worker + manifest)
+  1292→  1292→6. **Priority 2**: Accessibility audit (ARIA labels, keyboard navigation, screen reader)
+  1293→  1293→7. **Priority 2**: Connect spaced repetition to quiz review mode
+  1294→  1294→8. **Priority 3**: Collaborative study features (shared sessions, group quizzes)
+  1295→  1295→9. **Priority 3**: Internationalization (i18n) support
+  1296→  1296→
+  1297→  1297→---
+  1298→  1298→Task ID: 18-c
+  1299→  1299→Agent: Subagent - Styling Polish + Features
+  1300→  1300→Task: TutorView glass morphism, achievement tabs fix, quiz bookmarks, nav fix
+  1301→  1301→
+  1302→  1302→Work Log:
+  1303→  1303→- Replaced all `bg-card/30`, `bg-card/50`, `bg-background/60` instances in TutorView with `glass` class
+  1304→  1304→- Applied `glass-hover` to suggested prompt chips instead of `glass`
+  1305→  1305→- Added `gradient-border` + `card-shadow` to main containers (slide panel, input area, right panel, session summary cards)
+  1306→  1306→- Applied `glass` to search bar, chat message results, and all session summary stat cards
+  1307→  1307→- Added `social` category tab to ProfileView with `Users` icon import from lucide-react
+  1308→  1308→- Added question bookmarking system to QuizView: `bookmarkedQuestions` Set state with localStorage persistence (`synapse-bookmarked-questions`)
+  1309→  1309→- Added bookmark toggle button (Bookmark/BookmarkCheck with framer-motion scale pop) on quiz question cards, hidden until hover
+  1310→  1310→- Added "Bookmarked (N)" filter chip in course filter area with glass/emerald styling
+  1311→  1311→- Added "Review Bookmarked" button in quiz results screen
+  1312→  1312→- Fixed "My Courses" nav item in AppSidebar to navigate to `upload` view instead of duplicating `dashboard`
+  1313→  1313→- Added `⌘+9` keyboard shortcut for Notes in AppShell (both handler and shortcuts dialog entry)
+  1314→  1314→- Ran ESLint on all 5 modified files: zero errors
+  1315→  1315→
+  1316→  1316→Stage Summary:
+  1317→  1317→- TutorView now has consistent glass morphism across ~13 containers with gradient borders and card shadows
+  1318→  1318→- ProfileView achievements section is type-complete with all 5 categories (study, quiz, streak, mastery, social)
+  1319→  1319→- QuizView supports full question bookmarking workflow: bookmark on hover, filter by bookmarks, review from results
+  1320→  1320→- Sidebar navigation no longer duplicates Dashboard for "My Courses"
+  1321→  1321→- `⌘+9` is an alias shortcut for Notes (alongside `⌘+5`)
+  1322→  1322→---
+  1323→  1323→Task ID: 18-b
+  1324→  1324→Agent: Subagent - Real Data + FocusTimer Integration
+  1325→  1325→Task: Dynamic heatmap/skills, FocusTimer→store, chat export
+  1326→  1326→
+  1327→  1327→Work Log:
+  1328→  1328→- Replaced hardcoded heatmap seed array with real studySessions data (5-week × 7-day grid)
+  1329→  1329→- Heatmap intensity levels: 0 (none), 1 (1 session, 0.25 opacity), 2 (2-3 sessions, 0.5), 3 (4+ sessions, 0.8)
+  1330→  1330→- Added empty state for heatmap when no study sessions exist
+  1331→  1331→- Removed static skillBars; computed 5 dynamic skill dimensions from real store data via useMemo
+  1332→  1332→  - Comprehension: average masteryMap levels × 20 (clamped 0-100)
+  1333→  1333→  - Problem Solving: quizScore/quizTotal × 100 (fallback to comprehension)
+  1334→  1334→  - Knowledge Base: (concept count / 50) × 100
+  1335→  1335→  - Consistency: (currentStreak / 14) × 100
+  1336→  1336→  - Engagement: (total sessions / 20) × 100
+  1337→  1337→- Connected FocusTimerView to appStore: addStudySession + checkAchievements on timer complete and skip
+  1338→  1338→- Replaced "Avg Min/Session" stat with "Total Sessions" from studySessions
+  1339→  1339→- Added "Go to Tutor" button (AnimatePresence) after focus session completion
+  1340→  1340→- Added Export Chat button in TutorView sidebar with Download icon, glass styling, whileTap animation
+  1341→  1341→- Export generates markdown with date, role, timestamp per message, downloads as .md file
+  1342→  1342→- Fixed ChatMessage field reference (createdAt not timestamp)
+  1343→  1343→- Ran ESLint on all 3 modified files: zero errors
+  1344→  1344→
+  1345→  1345→Stage Summary:
+  1346→  1346→- ProfileView heatmap and skill radar are fully data-driven from Zustand store
+  1347→  1347→- FocusTimer sessions are now tracked globally via addStudySession, enabling achievement triggers and heatmap visibility
+  1348→  1348→- Chat export allows users to download conversations as formatted markdown files
+  1349→  1349→
+  1350→  1350→---
+  1351→  1351→Task ID: 18-a
+  1352→  1352→Agent: Subagent - SR Integration
+  1353→  1353→Task: Wire useSpacedRepetition hook into Dashboard, QuizView, ProfileView
+  1354→  1354→
+  1355→  1355→Work Log:
+  1356→  1356→- Dashboard.tsx: Added `useSpacedRepetition` hook import and `Brain` icon from lucide-react
+  1357→  1357→- Dashboard.tsx: Added "Spaced Review" glass card between "Continue Learning" and "Topic Chips" sections with gradient-border styling
+  1358→  1358→- Dashboard.tsx: Card shows overdue count with badge, "All caught up! 🎉" state with green glow when zero, or count + "Start Review" button
+  1359→  1359→- Dashboard.tsx: Start Review button dispatches `CustomEvent('start-spaced-review')` and calls `navigate('quiz')`
+  1360→  1360→- Dashboard.tsx: Mini 7-day study plan row with emerald opacity-proportional boxes (Mon-Sun labels)
+  1361→  1361→- Dashboard.tsx: framer-motion fadeUp entrance animation with delay 0.2
+  1362→  1362→- QuizView.tsx: Added `'review'` to `StudyMode` union type
+  1363→  1363→- QuizView.tsx: Imported `useSpacedRepetition` hook and `Brain` icon
+  1364→  1364→- QuizView.tsx: Added `updateMastery` to existing `useAppStore` destructuring
+  1365→  1365→- QuizView.tsx: Added spaced repetition state: `reviewShowResults`, `reviewedCount`, `reviewQuestions`, `reviewCurrentQ`, `reviewProgress`
+  1366→  1366→- QuizView.tsx: Added `useEffect` listener for `'start-spaced-review'` custom event to auto-switch mode
+  1367→  1367→- QuizView.tsx: Added `handleReviewAnswer` callback that calls `reviewItem(concept, quality)` and `updateMastery()`
+  1368→  1368→- QuizView.tsx: Updated `handleModeChange` and `handleNext` to handle review mode state resets and completion
+  1369→  1369→- QuizView.tsx: Added "Review" tab to mode selector with `Brain` icon and overdue count badge
+  1370→  1370→- QuizView.tsx: Updated page title ternary to include "Spaced Review" label
+  1371→  1371→- QuizView.tsx: Hid course filter, difficulty bar, question counter, and progress bar in review mode
+  1372→  1372→- QuizView.tsx: Added review mode progress banner, empty state, question card (multiple_choice, true_false, short_answer, fill_blank, error_correction), and results screen with confetti
+  1373→  1373→- QuizView.tsx: Added review mode question navigator dots
+  1374→  1374→- ProfileView.tsx: Added `useSpacedRepetition` hook import and `formatDistanceToNow` from date-fns
+  1375→  1375→- ProfileView.tsx: Added "Upcoming Reviews" section between Skill Radar and Action Buttons
+  1376→  1376→- ProfileView.tsx: 2-week calendar grid (7 rows × 14 columns) with day labels (Mon-Sun)
+  1377→  1377→- ProfileView.tsx: Color-coded cells: bg-muted/30 (0 reviews), bg-emerald-500/40 (1-2), bg-emerald-500/80 (3+)
+  1378→  1378→- ProfileView.tsx: Summary stats: total items tracked and next review in relative time
+  1379→  1379→- All 3 files pass ESLint with zero errors
+  1380→  1380→
+  1381→  1381→Stage Summary:
+  1382→  1382→- useSpacedRepetition hook is now fully integrated across Dashboard, QuizView, and ProfileView
+  1383→  1383→- Users can see due reviews on the Dashboard, start review sessions via custom event, complete reviews with SM-2 algorithm updates
+  1384→  1384→- ProfileView shows a 2-week upcoming review calendar with color intensity encoding
+  1385→  1385→- Review mode in QuizView supports all question types with progress tracking and confetti completion screen
+  1386→  1386→- Fixed duplicate `dragXMotion` variable conflict between flashcard and review mode sections
+  1387→  1387→
+  1388→  1388→---
+  1389→  1389→Task ID: 18
+  1390→  1390→Agent: Auto Review (Cron) - Round 9
+  1391→  1391→Task: Spaced Repetition integration, real data connections, styling polish, quiz bookmarks, chat export
+  1392→  1392→
+  1393→  1393→Work Log:
+  1394→  1394→- **QA Assessment**: Build passes clean (0 errors, 0 warnings), lint passes clean (0 errors). Production build compiles in 26.0s.
+  1395→  1395→- **Spaced Repetition Integration** (Priority 2 from Round 8 — now complete):
+  1396→  1396→  - useSpacedRepetition hook wired into Dashboard, QuizView, ProfileView
+  1397→  1397→  - Dashboard: "Spaced Review" glass card with overdue count badge, 7-day mini study plan, "Start Review" CTA dispatching CustomEvent
+  1398→  1398→  - QuizView: 4th "Review" mode tab with Brain icon + overdue count badge, full question rendering, SM-2 quality-based review updates, mastery updates, confetti completion screen
+  1399→  1399→  - ProfileView: "Upcoming Reviews" section with 2-week calendar grid (7×14), color intensity encoding, summary stats
+
+[showing lines 900-1399 of 1478; use offset=1400 with limit to continue reading]

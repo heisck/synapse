@@ -155,3 +155,13 @@ export interface StudySession {
   messagesCount: number;
   masteryGained: number;
 }
+
+export interface StudyGoal {
+  id: string;
+  type: 'sessions' | 'quiz_score' | 'hours' | 'reviews';
+  label: string;
+  target: number;
+  currentProgress: number;
+  createdAt: string;
+  weekStart: string; // YYYY-MM-DD of the Monday of the current week
+}

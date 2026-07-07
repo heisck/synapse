@@ -600,9 +600,17 @@ export function NotesView() {
 
                       {/* Content preview with line-clamp in collapsed state */}
                       {expandedId !== note.id && note.content && (
+                        <>
                         <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
                           {note.content}
                         </p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                            <Type className="h-2.5 w-2.5" />
+                            {note.content.trim().split(/\s+/).filter(Boolean).length} words
+                          </span>
+                        </div>
+                        </>
                       )}
 
                       <AnimatePresence>

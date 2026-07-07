@@ -273,8 +273,12 @@ function getTimeUntilMidnight(): { hours: number; minutes: number; seconds: numb
 }
 
 function selectDailyQuestions(allQs: Question[]): Question[] {
-  const shuffled = [...allQs].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, DAILY_QUESTION_COUNT);
+  const seed = new Date().toISOString().split('T')[0];
+  const hash = seed.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  // Seeded pseudo-random shuffle
+  const indexed = allQs.map((q, i) => ({ q, sortKey: ((hash * (i + 1) * 2654435761) >>> 0) % 100000 }));
+  indexed.sort((a, b) => a.sortKey - b.sortKey);
+  return indexed.slice(0, DAILY_QUESTION_COUNT).map((x) => x.q);
 }
 
 const COURSE_QUIZ_GROUPS = [
@@ -307,7 +311,45 @@ function ConfettiParticle({ delay, color }: { delay: number; color: string }) {
   );
 }
 
-const CONFETTI_COLORS = ['#10b981', '#14b8a6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#f97316', '#22c55e'];
+const CONFETTI_COLORS = ['#10b981', '#14b8a6', '#f59e0b', '#ffffff', '#06b6d4', '#f97316', '#22c55e', '#ec4899'];
+
+const DAILY_CONFETTI_COLORS = ['#10b981', '#14b8a6', '#f59e0b', '#ffffff'];
+const DAILY_TIMER_SECONDS = 180; // 3 minutes
+
+function getScoreMultiplier(streak: number): number {
+  if (streak >= 7) return 3;
+  if (streak >= 3) return 2;
+  return 1;
+}
+
+function getStars(score: number, total: number): number {
+  const pct = total > 0 ? score / total : 0;
+  if (pct >= 0.8) return 3;
+  if (pct >= 0.5) return 2;
+  if (pct > 0) return 1;
+  return 0;
+}
+
+// Star component with bounce animation
+function Star({ filled, delay }: { filled: boolean; delay: number }) {
+  return (
+    <motion.div
+      initial={{ scale: 0, opacity: 0 }}
+      animate={{ scale: filled ? 1 : 0.8, opacity: 1 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 12, delay }}
+    >
+      <motion.div
+        animate={filled ? { scale: [1, 1.3, 1] } : {}}
+        transition={{ duration: 0.4, delay: delay + 0.2 }}
+        className={filled ? 'text-amber-400 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]' : 'text-muted-foreground/30'}
+      >
+        <svg width="36" height="36" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        </svg>
+      </motion.div>
+    </motion.div>
+  );
+}
 
 // ---------- Animated counter hook ----------
 function useAnimatedCounter(target: number, duration: number = 1200) {
@@ -722,11 +764,14 @@ export function QuizView() {
   }, []);
 
   // Daily Challenge state
+  const { dailyChallenge: storeDailyChallenge, setDailyChallenge: setStoreDailyChallenge } = useAppStore();
   const [dailyChallenge, setDailyChallenge] = useState<DailyChallengeData | null>(null);
   const [dailyStreak, setDailyStreak] = useState({ current: 0, best: 0, lastDate: '' });
   const [dailyTimeLeft, setDailyTimeLeft] = useState({ hours: 0, minutes: 0, seconds: 0 });
   const [dailyShowResults, setDailyShowResults] = useState(false);
   const [dailyShareCopied, setDailyShareCopied] = useState(false);
+  const [dailyTimerLeft, setDailyTimerLeft] = useState(DAILY_TIMER_SECONDS);
+  const [dailyTimerActive, setDailyTimerActive] = useState(false);
   const dailyQuestions = useMemo<Question[]>(() => {
     if (dailyChallenge?.questions) {
       return dailyChallenge.questions
@@ -746,6 +791,24 @@ export function QuizView() {
   const dailyScorePercent = dailyQuestions.length > 0 ? dailyScore / dailyQuestions.length : 0;
   const dailyStrokeDashoffset = dailyCircumference * (1 - dailyScorePercent);
   const dailyAnimatedScore = useAnimatedCounter(dailyShowResults ? dailyScore : 0, 1500);
+  const dailyMultiplier = getScoreMultiplier(dailyStreak.current);
+  const dailyStars = getStars(dailyScore, dailyQuestions.length);
+  const dailyTimerCircumference = 2 * Math.PI * 28;
+  const dailyTimerPercent = dailyTimerLeft / DAILY_TIMER_SECONDS;
+  const dailyTimerStroke = dailyTimerCircumference * (1 - dailyTimerPercent);
+
+  // Validate streak from store on mount
+  useEffect(() => {
+    const dc = storeDailyChallenge;
+    if (!dc.lastCompletedDate) return;
+    const today = getTodayStr();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    if (dc.lastCompletedDate !== today && dc.lastCompletedDate !== yesterdayStr) {
+      setStoreDailyChallenge({ streak: 0 });
+    }
+  }, []);
 
   // Load daily challenge data on mount and when mode changes
   useEffect(() => {
@@ -753,12 +816,15 @@ export function QuizView() {
     const today = getTodayStr();
     const saved = loadDailyChallenge();
     const streakData = loadDailyStreak();
+    // Use store streak as source of truth if available
+    const effectiveStreak = storeDailyChallenge.streak > 0 ? { current: storeDailyChallenge.streak, best: Math.max(storeDailyChallenge.streak, streakData.best), lastDate: storeDailyChallenge.lastCompletedDate || streakData.lastDate } : streakData;
 
     if (saved && saved.date === today) {
       setDailyChallenge(saved);
-      setDailyStreak(streakData);
+      setDailyStreak(effectiveStreak);
       if (saved.completed) {
         setDailyShowResults(true);
+        setDailyTimerActive(false);
       }
     } else {
       // New day, new challenge
@@ -772,10 +838,12 @@ export function QuizView() {
       };
       saveDailyChallenge(newChallenge);
       setDailyChallenge(newChallenge);
-      setDailyStreak(streakData);
+      setDailyStreak(effectiveStreak);
       setDailyShowResults(false);
+      setDailyTimerLeft(DAILY_TIMER_SECONDS);
+      setDailyTimerActive(false);
     }
-  }, [studyMode, allQuestions]);
+  }, [studyMode, allQuestions, storeDailyChallenge.streak, storeDailyChallenge.lastCompletedDate]);
 
   // Update daily countdown timer
   useEffect(() => {
@@ -787,11 +855,45 @@ export function QuizView() {
     return () => clearInterval(interval);
   }, [studyMode]);
 
+  // Daily challenge 3-minute countdown timer
+  useEffect(() => {
+    if (studyMode !== 'daily' || !dailyTimerActive || dailyShowResults) return;
+    if (dailyTimerLeft <= 0) {
+      // Time's up — auto-complete challenge
+      const finalScore = dailyQuestions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+      const updatedStreak = updateDailyStreak();
+      setDailyStreak(updatedStreak);
+      const completedData: DailyChallengeData = {
+        date: getTodayStr(),
+        completed: true,
+        score: finalScore,
+        total: dailyQuestions.length,
+        questions: dailyQuestions.map((q) => q.id),
+      };
+      saveDailyChallenge(completedData);
+      setDailyChallenge(completedData);
+      setDailyShowResults(true);
+      setDailyTimerActive(false);
+      const stars = getStars(finalScore, dailyQuestions.length);
+      setStoreDailyChallenge({
+        lastCompletedDate: getTodayStr(),
+        streak: updatedStreak.current,
+        bestScore: Math.max(storeDailyChallenge.bestScore, finalScore),
+        totalCompleted: storeDailyChallenge.totalCompleted + 1,
+        todayResults: { score: finalScore, total: dailyQuestions.length, timeTaken: DAILY_TIMER_SECONDS, stars },
+      });
+      return;
+    }
+    const timeout = setTimeout(() => setDailyTimerLeft((s) => s - 1), 1000);
+    return () => clearTimeout(timeout);
+  }, [studyMode, dailyTimerActive, dailyShowResults, dailyTimerLeft, dailyQuestions, answered, answers, isCorrect, storeDailyChallenge.bestScore, storeDailyChallenge.totalCompleted, setStoreDailyChallenge]);
+
   const handleDailyAnswer = useCallback(
     (answer: string) => {
       if (!dailyCurrentQ || answered[dailyCurrentQ.id]) return;
 
       if (!timerStarted) setTimerStarted(true);
+      if (!dailyTimerActive) setDailyTimerActive(true);
 
       const newAnswers = { ...answers, [dailyCurrentQ.id]: answer };
       const newAnswered = { ...answered, [dailyCurrentQ.id]: true };
@@ -813,7 +915,7 @@ export function QuizView() {
         setStreak(0);
       }
     },
-    [answered, answers, dailyCurrentQ, isCorrect, streak, bestStreak, timerStarted],
+    [answered, answers, dailyCurrentQ, isCorrect, streak, bestStreak, timerStarted, dailyTimerActive],
   );
 
   const handleDailyNext = useCallback(() => {
@@ -825,6 +927,7 @@ export function QuizView() {
       const finalScore = dailyQuestions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
       const updatedStreak = updateDailyStreak();
       setDailyStreak(updatedStreak);
+      const stars = getStars(finalScore, dailyQuestions.length);
 
       const completedData: DailyChallengeData = {
         date: getTodayStr(),
@@ -836,8 +939,19 @@ export function QuizView() {
       saveDailyChallenge(completedData);
       setDailyChallenge(completedData);
       setDailyShowResults(true);
+      setDailyTimerActive(false);
+
+      // Update Zustand store
+      const timeTaken = DAILY_TIMER_SECONDS - dailyTimerLeft;
+      setStoreDailyChallenge({
+        lastCompletedDate: getTodayStr(),
+        streak: updatedStreak.current,
+        bestScore: Math.max(storeDailyChallenge.bestScore, finalScore),
+        totalCompleted: storeDailyChallenge.totalCompleted + 1,
+        todayResults: { score: finalScore, total: dailyQuestions.length, timeTaken, stars },
+      });
     }
-  }, [currentIndex, dailyQuestions, answered, answers, isCorrect]);
+  }, [currentIndex, dailyQuestions, answered, answers, isCorrect, dailyTimerLeft, storeDailyChallenge.bestScore, storeDailyChallenge.totalCompleted, setStoreDailyChallenge]);
 
   const handleDailyShare = useCallback(async () => {
     const text = `SynapseLearn Daily Challenge - ${dailyScore}/${dailyQuestions.length} - ${dailyStreak.current} day streak`;
@@ -1025,6 +1139,8 @@ export function QuizView() {
     setDailyShareCopied(false);
     setReviewShowResults(false);
     setReviewedCount(0);
+    setDailyTimerLeft(DAILY_TIMER_SECONDS);
+    setDailyTimerActive(false);
   };
 
   // Filter questions by selected course and bookmarked
@@ -1563,13 +1679,21 @@ export function QuizView() {
                   <motion.div
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-background/60 border border-border text-xs font-mono text-muted-foreground"
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-mono ${
+                      timerSeconds < 30 && !showResults
+                        ? 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400'
+                        : 'bg-background/60 border-border text-muted-foreground'
+                    }`}
                   >
                     <motion.div
-                      animate={showResults ? {} : { opacity: [1, 0.5, 1] }}
-                      transition={showResults ? {} : { duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                      animate={showResults ? {} : timerSeconds < 30 && !showResults
+                        ? { scale: [1, 1.3, 1], opacity: [1, 0.5, 1] }
+                        : { opacity: [1, 0.5, 1] }}
+                      transition={showResults ? {} : timerSeconds < 30
+                        ? { duration: 0.8, repeat: Infinity, ease: 'easeInOut' }
+                        : { duration: 2, repeat: Infinity, ease: 'easeInOut' }}
                     >
-                      <Clock className="h-3.5 w-3.5 text-primary/60" />
+                      <Clock className={`h-3.5 w-3.5 ${timerSeconds < 30 && !showResults ? 'text-red-500' : 'text-primary/60'}`} />
                     </motion.div>
                     <span>{formatTimer(timerSeconds)}</span>
                   </motion.div>
@@ -1745,12 +1869,12 @@ export function QuizView() {
             animate={{ opacity: 1, y: 0 }}
             className="mb-6"
           >
-            <div className="glass-accent-top rounded-2xl p-6 animated-border relative overflow-hidden">
+            <div className={`glass-accent-top rounded-2xl p-6 animated-border relative overflow-hidden ${dailyStreak.current > 3 ? 'ring-2 ring-orange-500/30' : ''}`}>
               <div className="relative z-10">
                 <div className="flex items-center justify-between">
                   <div className="space-y-2">
                     <h2 className="text-2xl font-bold gradient-text-animated">Daily Challenge</h2>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                       <div className="flex items-center gap-1.5">
                         <Calendar className="h-4 w-4" />
                         <span>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
@@ -1759,21 +1883,78 @@ export function QuizView() {
                         <motion.div
                           initial={{ scale: 0.9 }}
                           animate={{ scale: 1 }}
-                          className="flex items-center gap-1.5 text-orange-600 dark:text-orange-400 font-semibold"
+                          className="flex items-center gap-1.5 font-semibold"
+                          style={{ background: 'linear-gradient(90deg, #f97316, #ef4444)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
                         >
-                          <Flame className="h-4 w-4" />
+                          <motion.div
+                            animate={{ scale: [1, 1.15, 1] }}
+                            transition={{ duration: 0.8, repeat: Infinity, ease: 'easeInOut' }}
+                          >
+                            <Flame className="h-4 w-4" style={{ color: '#f97316' }} />
+                          </motion.div>
                           <span>{dailyStreak.current} day streak!</span>
+                        </motion.div>
+                      )}
+                      {dailyMultiplier > 1 && (
+                        <motion.div
+                          initial={{ scale: 0.8, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-xs font-bold text-amber-600 dark:text-amber-400"
+                        >
+                          <Zap className="h-3 w-3" />
+                          {dailyMultiplier}x multiplier
                         </motion.div>
                       )}
                     </div>
                   </div>
-                  <div className="text-right space-y-1">
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Clock className="h-3.5 w-3.5" />
-                      <span>Resets in</span>
-                    </div>
-                    <div className="font-mono text-lg font-bold tabular-nums">
-                      {String(dailyTimeLeft.hours).padStart(2, '0')}:{String(dailyTimeLeft.minutes).padStart(2, '0')}:{String(dailyTimeLeft.seconds).padStart(2, '0')}
+                  <div className="flex items-center gap-4">
+                    {/* Circular SVG Timer */}
+                    {!dailyShowResults && (
+                      <div className="relative">
+                        <svg width="64" height="64" className="-rotate-90">
+                          <circle
+                            cx="32"
+                            cy="32"
+                            r="28"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                            className="text-muted/20"
+                          />
+                          <motion.circle
+                            cx="32"
+                            cy="32"
+                            r="28"
+                            fill="none"
+                            stroke="url(#dailyTimerGrad)"
+                            strokeWidth="5"
+                            strokeLinecap="round"
+                            strokeDasharray={dailyTimerCircumference}
+                            animate={{ strokeDashoffset: dailyTimerStroke }}
+                            transition={{ duration: 0.5, ease: 'easeOut' }}
+                          />
+                          <defs>
+                            <linearGradient id="dailyTimerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                              <stop offset="0%" stopColor="#10b981" />
+                              <stop offset="100%" stopColor="#14b8a6" />
+                            </linearGradient>
+                          </defs>
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className={`text-xs font-mono font-bold ${dailyTimerLeft <= 30 ? 'text-destructive' : 'text-foreground'}`}>
+                            {formatTimer(dailyTimerLeft)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="text-right space-y-1">
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Clock className="h-3.5 w-3.5" />
+                        <span>Resets in</span>
+                      </div>
+                      <div className="font-mono text-lg font-bold tabular-nums">
+                        {String(dailyTimeLeft.hours).padStart(2, '0')}:{String(dailyTimeLeft.minutes).padStart(2, '0')}:{String(dailyTimeLeft.seconds).padStart(2, '0')}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1810,21 +1991,32 @@ export function QuizView() {
             transition={{ type: 'spring', stiffness: 200, damping: 20 }}
             className="flex flex-col items-center justify-center min-h-[50vh] gap-6"
           >
-            {/* Confetti for perfect score */}
+            {/* Confetti burst (30 particles always on completion) */}
             <AnimatePresence>
-              {dailyChallenge.score === dailyChallenge.total && (
-                <div className="fixed inset-0 pointer-events-none z-50">
-                  {Array.from({ length: 40 }).map((_, i) => (
-                    <ConfettiParticle
-                      key={`daily-confetti-${i}`}
-                      delay={i * 0.03}
-                      color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
-                    />
-                  ))}
-                </div>
-              )}
+              <div className="fixed inset-0 pointer-events-none z-50">
+                {Array.from({ length: 30 }).map((_, i) => (
+                  <ConfettiParticle
+                    key={`daily-confetti-${i}`}
+                    delay={i * 0.04}
+                    color={DAILY_CONFETTI_COLORS[i % DAILY_CONFETTI_COLORS.length]}
+                  />
+                ))}
+              </div>
             </AnimatePresence>
             <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full glow-emerald-strong">
+              {/* "Challenge Complete!" badge */}
+              <motion.div
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: 'spring', stiffness: 180, damping: 12, delay: 0.1 }}
+                className="mx-auto"
+              >
+                <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-lg bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-amber-400/30">
+                  <Trophy className="h-4 w-4" />
+                  Challenge Complete!
+                </div>
+              </motion.div>
+
               {/* Animated circular progress */}
               <div className="relative inline-flex">
                 <svg width="160" height="160" className="-rotate-90">
@@ -1871,15 +2063,27 @@ export function QuizView() {
                 </div>
               </div>
 
-              {/* Streak display */}
+              {/* Star rating */}
+              <div className="flex items-center justify-center gap-2">
+                <Star filled={dailyStars >= 1} delay={0.3} />
+                <Star filled={dailyStars >= 2} delay={0.5} />
+                <Star filled={dailyStars >= 3} delay={0.7} />
+              </div>
+
+              {/* Streak display with animated flame */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6 }}
+                transition={{ delay: 0.9 }}
                 className="flex items-center justify-center gap-2"
               >
                 <div className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-orange-500/10 border border-orange-500/20">
-                  <Flame className="h-5 w-5 text-orange-500" />
+                  <motion.div
+                    animate={{ scale: [1, 1.2, 1], rotate: [0, -5, 5, 0] }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                  >
+                    <Flame className="h-5 w-5 text-orange-500" />
+                  </motion.div>
                   <span className="font-bold text-orange-600 dark:text-orange-400">{dailyStreak.current} day streak</span>
                 </div>
               </motion.div>
@@ -1888,30 +2092,60 @@ export function QuizView() {
                 <motion.p
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ delay: 0.8 }}
+                  transition={{ delay: 1.1 }}
                   className="text-xs text-muted-foreground"
                 >
                   Best streak: {dailyStreak.best} days
                 </motion.p>
               )}
 
-              {/* Come back tomorrow message */}
+              {/* Result message */}
               <motion.div
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1 }}
+                transition={{ delay: 1.2 }}
                 className="text-center"
               >
                 <h2 className="text-xl font-bold">
                   {dailyChallenge.score === dailyChallenge.total
                     ? 'Perfect Score!'
-                    : dailyChallenge.score >= dailyChallenge.total * 0.6
+                    : dailyScorePercent >= 0.6
                       ? 'Great work!'
                       : 'Keep practicing!'}
                 </h2>
                 <p className="text-muted-foreground text-sm mt-1">
+                  {dailyMultiplier > 1 ? `Score multiplied by ${dailyMultiplier}x from your streak! ` : ''}
                   Come back tomorrow for a new challenge!
                 </p>
+              </motion.div>
+
+              {/* Tomorrow's Challenge teaser */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 1.4 }}
+                className="rounded-xl border border-border/50 bg-muted/30 p-4 space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium text-muted-foreground">Tomorrow's Challenge</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs font-mono tabular-nums text-muted-foreground">
+                    <Clock className="h-3 w-3" />
+                    {String(dailyTimeLeft.hours).padStart(2, '0')}:{String(dailyTimeLeft.minutes).padStart(2, '0')}:{String(dailyTimeLeft.seconds).padStart(2, '0')}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="h-2 flex-1 rounded-full bg-muted/50 overflow-hidden">
+                    <motion.div
+                      className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+                      animate={{ width: `${((24 * 60 - (dailyTimeLeft.hours * 60 + dailyTimeLeft.minutes)) / (24 * 60)) * 100}%` }}
+                      transition={{ duration: 1 }}
+                    />
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0">New questions at midnight</span>
+                </div>
               </motion.div>
 
               {/* Per-question breakdown */}
@@ -1970,7 +2204,7 @@ export function QuizView() {
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: -40, scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-              className="glass rounded-xl p-6 space-y-6 glow-emerald"
+              className={`glass rounded-xl p-6 space-y-6 glow-emerald ${dailyStreak.current > 3 ? 'ring-2 ring-orange-500/40' : ''}`}
             >
               {/* Concept tag */}
               {dailyCurrentQ.concept && (
@@ -2590,7 +2824,7 @@ export function QuizView() {
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: -40, scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-              className="glass rounded-xl p-6 space-y-6 glow-emerald"
+              className="glass rounded-xl p-6 space-y-6 glow-emerald gradient-border relative overflow-hidden"
             >
               {/* Concept tag + bookmark */}
               <div className="flex items-center justify-between">

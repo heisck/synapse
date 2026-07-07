@@ -2,8 +2,9 @@
 
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/stores/appStore'
-import { GraduationCap, Dumbbell, BookOpen, Smile } from 'lucide-react'
+import { GraduationCap, Dumbbell, BookOpen, Smile, Zap, Shirt, Hourglass, Sparkles, Crosshair, Coffee, Flame } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { useCallback, useMemo } from 'react'
 
 interface Persona {
   id: string
@@ -54,11 +55,72 @@ const PERSONAS: Persona[] = [
   },
 ]
 
+interface MoodSliderConfig {
+  key: 'energy' | 'formality' | 'patience' | 'humor'
+  label: string
+  icon: LucideIcon
+  lowLabel: string
+  highLabel: string
+}
+
+const MOOD_SLIDERS: MoodSliderConfig[] = [
+  { key: 'energy', label: 'Energy', icon: Zap, lowLabel: 'Calm', highLabel: 'Energetic' },
+  { key: 'formality', label: 'Formality', icon: Shirt, lowLabel: 'Casual', highLabel: 'Formal' },
+  { key: 'patience', label: 'Patience', icon: Hourglass, lowLabel: 'Quick', highLabel: 'Thorough' },
+  { key: 'humor', label: 'Humor', icon: Sparkles, lowLabel: 'Serious', highLabel: 'Playful' },
+]
+
+interface MoodPreset {
+  id: string
+  label: string
+  icon: LucideIcon
+  values: { energy: number; formality: number; patience: number; humor: number }
+}
+
+const MOOD_PRESETS: MoodPreset[] = [
+  { id: 'focused', label: 'Focused', icon: Crosshair, values: { energy: 25, formality: 80, patience: 40, humor: 10 } },
+  { id: 'chill', label: 'Chill', icon: Coffee, values: { energy: 20, formality: 25, patience: 85, humor: 20 } },
+  { id: 'fun', label: 'Fun', icon: Sparkles, values: { energy: 85, formality: 20, patience: 60, humor: 90 } },
+  { id: 'intense', label: 'Intense', icon: Flame, values: { energy: 90, formality: 75, patience: 25, humor: 15 } },
+]
+
+function getMoodLabel(config: MoodSliderConfig, value: number): string {
+  if (value <= 25) return config.lowLabel
+  if (value <= 50) {
+    if (value <= 37) return `Slightly ${config.lowLabel.toLowerCase()}`
+    return 'Balanced'
+  }
+  if (value <= 75) {
+    if (value <= 62) return 'Moderate'
+    return `Quite ${config.highLabel.toLowerCase()}`
+  }
+  return config.highLabel
+}
+
 export function PersonaSelector() {
   const activePersona = useAppStore((s) => s.activePersona)
   const setActivePersona = useAppStore((s) => s.setActivePersona)
+  const moodSettings = useAppStore((s) => s.moodSettings)
+  const setMoodSettings = useAppStore((s) => s.setMoodSettings)
 
   const currentPersona = PERSONAS.find((p) => p.id === activePersona) ?? PERSONAS[2]
+
+  const activePresetId = useMemo(() => {
+    return MOOD_PRESETS.find(
+      (p) =>
+        p.values.energy === moodSettings.energy &&
+        p.values.formality === moodSettings.formality &&
+        p.values.patience === moodSettings.patience &&
+        p.values.humor === moodSettings.humor,
+    )?.id ?? null
+  }, [moodSettings])
+
+  const handlePresetSelect = useCallback(
+    (preset: MoodPreset) => {
+      setMoodSettings(preset.values)
+    },
+    [setMoodSettings],
+  )
 
   return (
     <motion.div
@@ -172,6 +234,104 @@ export function PersonaSelector() {
           <p className="text-[11px] text-muted-foreground italic leading-relaxed">
             {currentPersona.preview}
           </p>
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Mood Tuning Panel */}
+      <AnimatePresence>
+        <motion.div
+          initial={{ opacity: 0, height: 0, marginTop: 0 }}
+          animate={{ opacity: 1, height: 'auto', marginTop: 4 }}
+          exit={{ opacity: 0, height: 0, marginTop: 0 }}
+          transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+          className="overflow-hidden"
+        >
+          <div className="glass rounded-xl p-3 space-y-3">
+            {/* Section label */}
+            <div className="flex items-center justify-between">
+              <h5 className="text-xs font-semibold text-foreground">Mood Tuning</h5>
+              <span className="text-[9px] text-muted-foreground">Fine-tune AI behavior</span>
+            </div>
+
+            {/* Quick presets */}
+            <div className="flex gap-1.5 flex-wrap">
+              {MOOD_PRESETS.map((preset) => {
+                const isActive = activePresetId === preset.id
+                const PresetIcon = preset.icon
+                return (
+                  <motion.button
+                    key={preset.id}
+                    onClick={() => handlePresetSelect(preset)}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors cursor-pointer border ${
+                      isActive
+                        ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                        : 'border-border bg-background text-muted-foreground hover:border-emerald-300 dark:hover:border-emerald-700 hover:text-foreground'
+                    }`}
+                    whileTap={{ scale: 0.95 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                    aria-label={`Apply ${preset.label} mood preset`}
+                    aria-pressed={isActive}
+                  >
+                    <PresetIcon className="w-3 h-3" />
+                    {preset.label}
+                  </motion.button>
+                )
+              })}
+            </div>
+
+            {/* Sliders */}
+            <div className="space-y-2.5">
+              {MOOD_SLIDERS.map((slider, idx) => {
+                const value = moodSettings[slider.key]
+                const SliderIcon = slider.icon
+                const label = getMoodLabel(slider, value)
+                const percentage = value / 100
+
+                return (
+                  <motion.div
+                    key={slider.key}
+                    className="space-y-1"
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{
+                      delay: idx * 0.06,
+                      type: 'spring',
+                      stiffness: 350,
+                      damping: 22,
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <SliderIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span className="text-[11px] font-medium text-foreground">{slider.label}</span>
+                      </div>
+                      <span className="text-[10px] font-medium text-emerald-700 dark:text-emerald-300 tabular-nums">
+                        {label}
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={value}
+                        onChange={(e) =>
+                          setMoodSettings({ [slider.key]: Number(e.target.value) })
+                        }
+                        className="mood-slider w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                        style={
+                          {
+                            '--slider-progress': `${percentage}`,
+                          } as React.CSSProperties
+                        }
+                        aria-label={`${slider.label}: ${label}`}
+                      />
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </div>
+          </div>
         </motion.div>
       </AnimatePresence>
     </motion.div>

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings, Achievement, StudySession } from '@/types';
+import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings, Achievement, StudySession, StudyGoal } from '@/types';
 
 interface AppState {
   // Navigation
@@ -83,6 +83,10 @@ interface AppState {
   activePersona: string;
   setActivePersona: (persona: string) => void;
 
+  // Mood Settings
+  moodSettings: { energy: number; formality: number; patience: number; humor: number };
+  setMoodSettings: (settings: Partial<{ energy: number; formality: number; patience: number; humor: number }>) => void;
+
   // Tutoring Mode
   tutorMode: 'text' | 'slide' | 'hybrid';
   setTutorMode: (mode: 'text' | 'slide' | 'hybrid') => void;
@@ -113,9 +117,26 @@ interface AppState {
   studySessions: StudySession[];
   addStudySession: (session: StudySession) => void;
 
+  // Study Goals
+  studyGoals: StudyGoal[];
+  addStudyGoal: (goal: Omit<StudyGoal, 'id' | 'currentProgress' | 'createdAt' | 'weekStart'>) => void;
+  updateStudyGoal: (id: string, updates: Partial<StudyGoal>) => void;
+  deleteStudyGoal: (id: string) => void;
+
   // Settings
   settings: AppSettings;
   updateSettings: (updates: Partial<AppSettings>) => void;
+
+  // Daily Challenge
+  dailyChallenge: {
+    lastCompletedDate: string | null;
+    streak: number;
+    bestScore: number;
+    totalCompleted: number;
+    todayResults: { score: number; total: number; timeTaken: number; stars: number } | null;
+  };
+  setDailyChallenge: (data: Partial<AppState['dailyChallenge']>) => void;
+  resetDailyStreak: () => void;
 
   // UI
   sidebarOpen: boolean;
@@ -194,7 +215,25 @@ export const useAppStore = create<AppState>((set) => ({
   setCurrentQuestions: (q) => set({ currentQuestions: q }),
   quizScore: null,
   quizTotal: null,
-  setQuizScore: (score, total) => set({ quizScore: score, quizTotal: total }),
+  setQuizScore: (score, total) => {
+    set({ quizScore: score, quizTotal: total });
+    // Auto-update 'quiz_score' study goals
+    if (total > 0) {
+      const state = useAppStore.getState();
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - mondayOffset);
+      const weekStartStr = monday.toISOString().split('T')[0];
+      const pct = Math.round((score / total) * 100);
+      state.studyGoals.forEach((g) => {
+        if (g.type === 'quiz_score' && g.weekStart === weekStartStr) {
+          useAppStore.getState().updateStudyGoal(g.id, { currentProgress: Math.max(g.currentProgress, pct) });
+        }
+      });
+    }
+  },
   tips: [],
   addTip: (tip) => set((s) => ({ tips: [...s.tips, tip] })),
   feedbackItems: [],
@@ -207,6 +246,8 @@ export const useAppStore = create<AppState>((set) => ({
   setAlwaysConfuses: (text) => set({ alwaysConfuses: text }),
   activePersona: 'storyteller',
   setActivePersona: (persona) => set({ activePersona: persona }),
+  moodSettings: { energy: 50, formality: 50, patience: 70, humor: 30 },
+  setMoodSettings: (settings) => set((s) => ({ moodSettings: { ...s.moodSettings, ...settings } })),
   tutorMode: 'hybrid',
   setTutorMode: (mode) => set({ tutorMode: mode }),
   notes: (() => {
@@ -613,13 +654,85 @@ export const useAppStore = create<AppState>((set) => ({
         localStorage.setItem('synapse-best-streak', String(currentStreak));
       }
     }
+    // Auto-increment 'sessions' study goals
+    const state = useAppStore.getState();
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - mondayOffset);
+    const weekStartStr = monday.toISOString().split('T')[0];
+    state.studyGoals.forEach((g) => {
+      if (g.type === 'sessions' && g.weekStart === weekStartStr) {
+        useAppStore.getState().updateStudyGoal(g.id, { currentProgress: g.currentProgress + 1 });
+      }
+      if (g.type === 'hours' && g.weekStart === weekStartStr) {
+        useAppStore.getState().updateStudyGoal(g.id, { currentProgress: g.currentProgress + session.duration / 60 });
+      }
+    });
     // Check achievements after adding a session
     setTimeout(() => useAppStore.getState().checkAchievements(), 100);
     return { studySessions: updated };
+  }),
+
+  // Study Goals
+  studyGoals: (() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem('synapse-study-goals');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  })(),
+  addStudyGoal: (goal) => set((s) => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - mondayOffset);
+    const weekStartStr = monday.toISOString().split('T')[0];
+    const newGoal: StudyGoal = {
+      ...goal,
+      id: `study-goal-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      currentProgress: 0,
+      createdAt: new Date().toISOString(),
+      weekStart: weekStartStr,
+    };
+    const updated = [...s.studyGoals, newGoal];
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-study-goals', JSON.stringify(updated));
+    }
+    return { studyGoals: updated };
+  }),
+  updateStudyGoal: (id, updates) => set((s) => {
+    const updated = s.studyGoals.map((g) => g.id === id ? { ...g, ...updates } : g);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-study-goals', JSON.stringify(updated));
+    }
+    return { studyGoals: updated };
+  }),
+  deleteStudyGoal: (id) => set((s) => {
+    const updated = s.studyGoals.filter((g) => g.id !== id);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-study-goals', JSON.stringify(updated));
+    }
+    return { studyGoals: updated };
   }),
 
   sidebarOpen: false,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   isLoading: false,
   setLoading: (loading) => set({ isLoading: loading }),
+
+  // Daily Challenge
+  dailyChallenge: {
+    lastCompletedDate: null,
+    streak: 0,
+    bestScore: 0,
+    totalCompleted: 0,
+    todayResults: null,
+  },
+  setDailyChallenge: (data) => set((s) => ({ dailyChallenge: { ...s.dailyChallenge, ...data } })),
+  resetDailyStreak: () => set({ dailyChallenge: { lastCompletedDate: null, streak: 0, bestScore: 0, totalCompleted: 0, todayResults: null } }),
 }));

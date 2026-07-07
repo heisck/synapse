@@ -687,6 +687,30 @@ export function AppShell() {
           >
             <AppSidebar />
             <main className={`relative flex-1 min-h-screen overflow-y-auto overflow-x-hidden ${currentView === 'tutor' ? '!p-0 !max-w-none' : ''}`}>
+              {/* Animated mesh-gradient background */}
+              <div
+                className="pointer-events-none fixed inset-0 -z-10 opacity-40 dark:opacity-20"
+                aria-hidden="true"
+              >
+                <div
+                  className="absolute inset-0 blur-3xl"
+                  style={{
+                    background: 'linear-gradient(135deg, oklch(0.627 0.194 149.214 / 0.15) 0%, oklch(0.687 0.159 177.89 / 0.1) 25%, oklch(0.565 0.194 149.214 / 0.08) 50%, oklch(0.627 0.194 149.214 / 0.12) 75%, oklch(0.687 0.159 177.89 / 0.15) 100%)',
+                    backgroundSize: '400% 400%',
+                    animation: 'meshBgShift 20s ease-in-out infinite',
+                  }}
+                />
+              </div>
+              {/* Noise texture overlay */}
+              <div
+                className="pointer-events-none fixed inset-0 -z-[9] opacity-[0.015] dark:opacity-[0.03]"
+                aria-hidden="true"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'repeat',
+                  backgroundSize: '128px 128px',
+                }}
+              />
               <TransitionIndicator show={transitioning} />
               <div className={`mx-auto max-w-6xl p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] lg:p-8 ${currentView === 'tutor' ? '!max-w-none !p-0' : ''}`}>
                 <Suspense fallback={<ViewLoader />}>

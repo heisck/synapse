@@ -564,7 +564,7 @@ export function UploadView() {
           onClick={() => inputRef.current?.click()}
           className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all overflow-hidden glass ${
             isDragOver
-              ? 'border-primary bg-primary/5 scale-[1.01] glow-emerald-strong pulse-glow'
+              ? 'border-primary bg-primary/5 scale-[1.01] glow-emerald-strong pulse-glow gradient-border'
               : 'border-border/60 hover:border-primary/40 hover:bg-accent/20'
           }`}
           style={isDragOver ? {
@@ -618,7 +618,7 @@ export function UploadView() {
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 20 }}
-                  transition={{ delay: idx * 0.06 }}
+                  transition={{ delay: idx * 0.08, type: 'spring', stiffness: 400, damping: 22 }}
                   className={`glass-hover rounded-lg p-3 flex items-center gap-3 ${f.status === 'done' ? 'glow-emerald' : ''}`}
                 >
                   <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${typeConfig?.bg || 'bg-muted'}`}>

@@ -169,6 +169,7 @@ export function TutorView() {
     setLoading,
     isLoading,
     activePersona,
+    moodSettings,
     tutorMode,
     setTutorMode,
     activeSlides,
@@ -467,6 +468,7 @@ export function TutorView() {
           masteryMap,
           history,
           persona: activePersona,
+          moodSettings,
         }),
       })
 

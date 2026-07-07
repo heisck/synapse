@@ -1,0 +1,2002 @@
+     1→'use client';
+     2→
+     3→import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+     4→import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
+     5→import {
+     6→  CheckCircle2,
+     7→  XCircle,
+     8→  ChevronRight,
+     9→  ChevronLeft,
+    10→  RotateCcw,
+    11→  ArrowLeft,
+    12→  Trophy,
+    13→  Sparkles,
+    14→  AlertTriangle,
+    15→  BookOpen,
+    16→  GripVertical,
+    17→  Flame,
+    18→  Zap,
+    19→  Shuffle,
+    20→  Layers,
+    21→  HelpCircle,
+    22→  Lightbulb,
+    23→  Clock,
+    24→  Copy,
+    25→  Calendar,
+    26→  Bookmark,
+    27→  BookmarkCheck,
+    28→  Brain,
+    29→} from 'lucide-react';
+    30→import { Button } from '@/components/ui/button';
+    31→import { Progress } from '@/components/ui/progress';
+    32→import { Input } from '@/components/ui/input';
+    33→import { Badge } from '@/components/ui/badge';
+    34→import { useAppStore } from '@/stores/appStore';
+    35→import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
+    36→import type { Question } from '@/types';
+    37→
+    38→type StudyMode = 'quiz' | 'flashcard' | 'daily' | 'review';
+    39→
+    40→// ---------- Typo-tolerance helper ----------
+    41→function levenshteinDistance(a: string, b: string): number {
+    42→  const matrix: number[][] = [];
+    43→  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    44→  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    45→  for (let i = 1; i <= b.length; i++) {
+    46→    for (let j = 1; j <= a.length; j++) {
+    47→      const cost = b[i - 1] === a[j - 1] ? 0 : 1;
+    48→      matrix[i][j] = Math.min(
+    49→        matrix[i - 1][j] + 1,
+    50→        matrix[i][j - 1] + 1,
+    51→        matrix[i - 1][j - 1] + cost,
+    52→      );
+    53→    }
+    54→  }
+    55→  return matrix[b.length][a.length];
+    56→}
+    57→
+    58→function isFuzzyMatch(userAnswer: string, correctAnswer: string, maxDistance: number = 2): boolean {
+    59→  const ua = userAnswer.trim().toLowerCase();
+    60→  const ca = correctAnswer.trim().toLowerCase();
+    61→  if (ua === ca) return true;
+    62→  if (ua.includes(ca) || ca.includes(ua)) return true;
+    63→  // Levenshtein distance for typo tolerance
+    64→  const dist = levenshteinDistance(ua, ca);
+    65→  // Allow 1 typo for short answers, 2 for longer ones
+    66→  const threshold = maxDistance || (ca.length <= 4 ? 1 : 2);
+    67→  if (dist <= threshold) return true;
+    68→  // Word-level check: all words of correct answer present in user answer (in any order)
+    69→  const correctWords = ca.split(/\s+/);
+    70→  const userWords = ua.split(/\s+/);
+    71→  if (correctWords.every((w) => userWords.some((uw) => uw.includes(w) || w.includes(uw)))) return true;
+    72→  return false;
+    73→}
+    74→
+    75→// ---------- Timer helper ----------
+    76→function formatTimer(seconds: number): string {
+    77→  const m = Math.floor(seconds / 60);
+    78→  const s = seconds % 60;
+    79→  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    80→}
+    81→
+    82→// ---------- Mock questions for all 6 types ----------
+    83→const MOCK_QUESTIONS: Question[] = [
+    84→  {
+    85→    id: 'mc-1',
+    86→    type: 'multiple_choice',
+    87→    question: 'What is the primary function of mitochondria in a cell?',
+    88→    options: ['Protein synthesis', 'Energy production (ATP)', 'Cell division', 'Waste removal'],
+    89→    answer: 'Energy production (ATP)',
+    90→    explanation: 'Mitochondria are known as the "powerhouse of the cell" because they generate most of the cell\'s supply of ATP, used as a source of chemical energy.',
+    91→    difficulty: 'easy',
+    92→    concept: 'Cell Biology',
+    93→    courseId: 'demo-course',
+    94→  },
+    95→  {
+    96→    id: 'tf-1',
+    97→    type: 'true_false',
+    98→    question: 'Photosynthesis occurs in the mitochondria of plant cells.',
+    99→    answer: 'False',
+   100→    explanation: 'Photosynthesis occurs in the chloroplasts, not the mitochondria. Chloroplasts contain chlorophyll and are the site of the light-dependent and light-independent reactions.',
+   101→    difficulty: 'easy',
+   102→    concept: 'Cell Biology',
+   103→    courseId: 'demo-course',
+   104→  },
+   105→  {
+   106→    id: 'sa-1',
+   107→    type: 'short_answer',
+   108→    question: 'What is the chemical equation for cellular respiration?',
+   109→    answer: 'C6H12O6 + 6O2 → 6CO2 + 6H2O + ATP',
+   110→    explanation: 'Cellular respiration converts glucose and oxygen into carbon dioxide, water, and energy in the form of ATP.',
+   111→    difficulty: 'medium',
+   112→    concept: 'Biochemistry',
+   113→    courseId: 'demo-course',
+   114→  },
+   115→  {
+   116→    id: 'fb-1',
+   117→    type: 'fill_blank',
+   118→    question: 'The ____ is the control center of the cell, containing the genetic material DNA.',
+   119→    answer: 'nucleus',
+   120→    explanation: 'The nucleus is a membrane-bound organelle that contains the cell\'s chromosomes and regulates gene expression.',
+   121→    difficulty: 'easy',
+   122→    concept: 'Cell Biology',
+   123→    courseId: 'demo-course',
+   124→  },
+   125→  {
+   126→    id: 'fb-2',
+   127→    type: 'fill_blank',
+   128→    question: '____ is the process by which cells divide to form two identical daughter cells.',
+   129→    answer: 'mitosis',
+   130→    explanation: 'Mitosis ensures that each daughter cell receives an exact copy of the parent cell\'s DNA.',
+   131→    difficulty: 'medium',
+   132→    concept: 'Cell Biology',
+   133→    courseId: 'demo-course',
+   134→  },
+   135→  {
+   136→    id: 'match-1',
+   137→    type: 'matching',
+   138→    question: 'Match each cell organelle to its primary function.',
+   139→    matchingPairs: [
+   140→      { left: 'Ribosome', right: 'Protein synthesis' },
+   141→      { left: 'Golgi apparatus', right: 'Packaging & shipping' },
+   142→      { left: 'Lysosome', right: 'Digestion & recycling' },
+   143→      { left: 'Endoplasmic reticulum', right: 'Lipid synthesis & transport' },
+   144→    ],
+   145→    answer: 'Ribosome-Protein synthesis, Golgi apparatus-Packaging & shipping, Lysosome-Digestion & recycling, Endoplasmic reticulum-Lipid synthesis & transport',
+   146→    explanation: 'Each organelle has a specialized function that contributes to the overall operation of the cell.',
+   147→    difficulty: 'medium',
+   148→    concept: 'Cell Biology',
+   149→    courseId: 'demo-course',
+   150→  },
+   151→  {
+   152→    id: 'ec-1',
+   153→    type: 'error_correction',
+   154→    question: 'Identify and correct the errors in the following statement:',
+   155→    errorText: 'Mitochondria are found only in animal cells. They are responsible for photosynthesis and converting sunlight into glucose. Plant cells do not have mitochondria.',
+   156→    answer: 'Mitochondria are found in both animal and plant cells. They are responsible for cellular respiration and converting glucose into ATP (energy).',
+   157→    explanation: 'The original text had three errors: (1) mitochondria are in both plant and animal cells, (2) they perform cellular respiration not photosynthesis, and (3) plant cells do have mitochondria.',
+   158→    difficulty: 'hard',
+   159→    concept: 'Cell Biology',
+   160→    courseId: 'demo-course',
+   161→  },
+   162→  {
+   163→    id: 'mc-2',
+   164→    type: 'multiple_choice',
+   165→    question: 'Which data structure uses LIFO (Last In, First Out) ordering?',
+   166→    options: ['Queue', 'Stack', 'Linked List', 'Tree'],
+   167→    answer: 'Stack',
+   168→    explanation: 'A Stack follows LIFO ordering — the last element pushed onto the stack is the first one popped off. Think of a stack of plates.',
+   169→    difficulty: 'easy',
+   170→    concept: 'Data Structures',
+   171→    courseId: 'cs-course',
+   172→  },
+   173→  {
+   174→    id: 'sa-2',
+   175→    type: 'short_answer',
+   176→    question: 'What is the time complexity of binary search?',
+   177→    answer: 'O(log n)',
+   178→    explanation: 'Binary search divides the search space in half each step, giving logarithmic time complexity.',
+   179→    difficulty: 'medium',
+   180→    concept: 'Algorithms',
+   181→    courseId: 'cs-course',
+   182→  },
+   183→];
+   184→
+   185→// ---------- Course filter ----------
+   186→interface DailyChallengeData {
+   187→  date: string;
+   188→  completed: boolean;
+   189→  score: number;
+   190→  total: number;
+   191→  questions: string[];
+   192→}
+   193→
+   194→const DAILY_STORAGE_KEY = 'synapse-daily-challenge';
+   195→const DAILY_STREAK_KEY = 'synapse-daily-streak';
+   196→const DAILY_QUESTION_COUNT = 5;
+   197→
+   198→function getTodayStr(): string {
+   199→  return new Date().toISOString().split('T')[0];
+   200→}
+   201→
+   202→function loadDailyChallenge(): DailyChallengeData | null {
+   203→  if (typeof window === 'undefined') return null;
+   204→  try {
+   205→    const raw = localStorage.getItem(DAILY_STORAGE_KEY);
+   206→    return raw ? JSON.parse(raw) : null;
+   207→  } catch {
+   208→    return null;
+   209→  }
+   210→}
+   211→
+   212→function saveDailyChallenge(data: DailyChallengeData): void {
+   213→  if (typeof window === 'undefined') return;
+   214→  try {
+   215→    localStorage.setItem(DAILY_STORAGE_KEY, JSON.stringify(data));
+   216→  } catch {
+   217→    // storage unavailable
+   218→  }
+   219→}
+   220→
+   221→function loadDailyStreak(): { current: number; best: number; lastDate: string } {
+   222→  if (typeof window === 'undefined') return { current: 0, best: 0, lastDate: '' };
+   223→  try {
+   224→    const raw = localStorage.getItem(DAILY_STREAK_KEY);
+   225→    return raw ? JSON.parse(raw) : { current: 0, best: 0, lastDate: '' };
+   226→  } catch {
+   227→    return { current: 0, best: 0, lastDate: '' };
+   228→  }
+   229→}
+   230→
+   231→function saveDailyStreak(data: { current: number; best: number; lastDate: string }): void {
+   232→  if (typeof window === 'undefined') return;
+   233→  try {
+   234→    localStorage.setItem(DAILY_STREAK_KEY, JSON.stringify(data));
+   235→  } catch {
+   236→    // storage unavailable
+   237→  }
+   238→}
+   239→
+   240→function updateDailyStreak(): { current: number; best: number; lastDate: string } {
+   241→  const streak = loadDailyStreak();
+   242→  const today = getTodayStr();
+   243→
+   244→  if (streak.lastDate === today) return streak;
+   245→
+   246→  const yesterday = new Date();
+   247→  yesterday.setDate(yesterday.getDate() - 1);
+   248→  const yesterdayStr = yesterday.toISOString().split('T')[0];
+   249→
+   250→  let newCurrent: number;
+   251→  if (streak.lastDate === yesterdayStr) {
+   252→    newCurrent = streak.current + 1;
+   253→  } else {
+   254→    newCurrent = 1;
+   255→  }
+   256→
+   257→  const newBest = Math.max(streak.best, newCurrent);
+   258→  const updated = { current: newCurrent, best: newBest, lastDate: today };
+   259→  saveDailyStreak(updated);
+   260→  return updated;
+   261→}
+   262→
+   263→function getTimeUntilMidnight(): { hours: number; minutes: number; seconds: number } {
+   264→  const now = new Date();
+   265→  const midnight = new Date(now);
+   266→  midnight.setHours(24, 0, 0, 0);
+   267→  const diff = midnight.getTime() - now.getTime();
+   268→  return {
+   269→    hours: Math.floor(diff / (1000 * 60 * 60)),
+   270→    minutes: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
+   271→    seconds: Math.floor((diff % (1000 * 60)) / 1000),
+   272→  };
+   273→}
+   274→
+   275→function selectDailyQuestions(allQs: Question[]): Question[] {
+   276→  const shuffled = [...allQs].sort(() => Math.random() - 0.5);
+   277→  return shuffled.slice(0, DAILY_QUESTION_COUNT);
+   278→}
+   279→
+   280→const COURSE_QUIZ_GROUPS = [
+   281→  { id: 'all', label: 'All Questions', icon: BookOpen },
+   282→  { id: 'demo-course', label: 'Cell Biology', icon: BookOpen },
+   283→  { id: 'cs-course', label: 'Computer Science', icon: BookOpen },
+   284→];
+   285→
+   286→// ---------- Confetti particle ----------
+   287→function ConfettiParticle({ delay, color }: { delay: number; color: string }) {
+   288→  const x = Math.random() * 300 - 150;
+   289→  const y = -(Math.random() * 200 + 100);
+   290→  const rotation = Math.random() * 720 - 360;
+   291→  const scale = Math.random() * 0.5 + 0.5;
+   292→
+   293→  return (
+   294→    <motion.div
+   295→      initial={{ opacity: 1, x: 0, y: 0, rotate: 0, scale }}
+   296→      animate={{
+   297→        opacity: 0,
+   298→        x,
+   299→        y,
+   300→        rotate: rotation,
+   301→        scale: scale * 0.3,
+   302→      }}
+   303→      transition={{ duration: 1.2, delay, ease: 'easeOut' }}
+   304→      className="absolute h-3 w-3 rounded-sm pointer-events-none"
+   305→      style={{ backgroundColor: color, top: '40%', left: '50%' }}
+   306→    />
+   307→  );
+   308→}
+   309→
+   310→const CONFETTI_COLORS = ['#10b981', '#14b8a6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#f97316', '#22c55e'];
+   311→
+   312→// ---------- Animated counter hook ----------
+   313→function useAnimatedCounter(target: number, duration: number = 1200) {
+   314→  const [count, setCount] = useState(0);
+   315→  const rafRef = useRef<number>(0);
+   316→  useEffect(() => {
+   317→    const start = performance.now();
+   318→    const tick = (now: number) => {
+   319→      const elapsed = now - start;
+   320→      const progress = Math.min(elapsed / duration, 1);
+   321→      const eased = 1 - Math.pow(1 - progress, 3);
+   322→      setCount(Math.round(eased * target));
+   323→      if (progress < 1) rafRef.current = requestAnimationFrame(tick);
+   324→    };
+   325→    rafRef.current = requestAnimationFrame(tick);
+   326→    return () => cancelAnimationFrame(rafRef.current);
+   327→  }, [target, duration]);
+   328→  return count;
+   329→}
+   330→
+   331→// ---------- Type badge gradient map ----------
+   332→const TYPE_BADGE_GRADIENT: Record<string, string> = {
+   333→  multiple_choice: 'bg-gradient-to-r from-emerald-500/15 to-teal-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+   334→  true_false: 'bg-gradient-to-r from-amber-500/15 to-orange-500/15 text-amber-700 dark:text-amber-300 border-amber-500/20',
+   335→  short_answer: 'bg-gradient-to-r from-cyan-500/15 to-sky-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/20',
+   336→  fill_blank: 'bg-gradient-to-r from-violet-500/15 to-purple-500/15 text-violet-700 dark:text-violet-300 border-violet-500/20',
+   337→  matching: 'bg-gradient-to-r from-rose-500/15 to-pink-500/15 text-rose-700 dark:text-rose-300 border-rose-500/20',
+   338→  error_correction: 'bg-gradient-to-r from-red-500/15 to-destructive/15 text-red-700 dark:text-red-300 border-red-500/20',
+   339→};
+   340→
+   341→// ---------- Error correction component ----------
+   342→function ErrorCorrectionInput({
+   343→  errorText,
+   344→  onAnswer,
+   345→}: {
+   346→  errorText: string;
+   347→  onAnswer: (answer: string) => void;
+   348→}) {
+   349→  const [correction, setCorrection] = useState('');
+   350→
+   351→  return (
+   352→    <div className="space-y-4">
+   353→      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+   354→        <div className="flex items-center gap-2 mb-2">
+   355→          <AlertTriangle className="h-4 w-4 text-destructive" />
+   356→          <span className="text-sm font-medium text-destructive">Statement with errors:</span>
+   357→        </div>
+   358→        <p className="text-sm leading-relaxed">{errorText}</p>
+   359→      </div>
+   360→      <div className="space-y-2">
+   361→        <p className="text-sm font-medium">Your corrected version:</p>
+   362→        <textarea
+   363→          value={correction}
+   364→          onChange={(e) => setCorrection(e.target.value)}
+   365→          rows={4}
+   366→          className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+   367→          placeholder="Type the corrected statement here..."
+   368→        />
+   369→        <Button
+   370→          onClick={() => onAnswer(correction)}
+   371→          disabled={!correction.trim()}
+   372→          size="sm"
+   373→          className="mt-2"
+   374→        >
+   375→          Submit Correction
+   376→        </Button>
+   377→      </div>
+   378→    </div>
+   379→  );
+   380→}
+   381→
+   382→// ---------- Matching question component (drag-and-drop with SVG connectors) ----------
+   383→function MatchingInput({
+   384→  pairs,
+   385→  onAnswer,
+   386→}: {
+   387→  pairs: Array<{ left: string; right: string }>;
+   388→  onAnswer: (answer: string) => void;
+   389→}) {
+   390→  const shuffledRight = useMemo(() => {
+   391→    const arr = [...pairs.map((p) => p.right)];
+   392→    for (let i = arr.length - 1; i > 0; i--) {
+   393→      const j = Math.floor(Math.random() * (i + 1));
+   394→      [arr[i], arr[j]] = [arr[j], arr[i]];
+   395→    }
+   396→    return arr;
+   397→  }, [pairs]);
+   398→
+   399→  const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
+   400→  const [matches, setMatches] = useState<Record<string, string>>({});
+   401→  const [dragItem, setDragItem] = useState<string | null>(null);
+   402→  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
+   403→  const [linePositions, setLinePositions] = useState<Array<{ id: string; x1: number; y1: number; x2: number; y2: number }>>([]);
+   404→  const containerRef = useRef<HTMLDivElement>(null);
+   405→
+   406→  // Build index maps for safe DOM queries
+   407→  const leftIdxMap = useMemo(() => {
+   408→    const map: Record<string, number> = {};
+   409→    pairs.forEach((p, i) => { map[p.left] = i; });
+   410→    return map;
+   411→  }, [pairs]);
+   412→
+   413→  const rightIdxMap = useMemo(() => {
+   414→    const map: Record<string, number> = {};
+   415→    shuffledRight.forEach((r, i) => { map[r] = i; });
+   416→    return map;
+   417→  }, [shuffledRight]);
+   418→
+   419→  // Compute SVG connector line positions
+   420→  const updateLinePositions = useCallback(() => {
+   421→    const container = containerRef.current;
+   422→    if (!container) return;
+   423→
+   424→    requestAnimationFrame(() => {
+   425→      if (!container) return;
+   426→      const containerRect = container.getBoundingClientRect();
+   427→      const positions: Array<{ id: string; x1: number; y1: number; x2: number; y2: number }> = [];
+   428→
+   429→      for (const [left, right] of Object.entries(matches)) {
+   430→        const lIdx = leftIdxMap[left];
+   431→        const rIdx = rightIdxMap[right];
+   432→        if (lIdx === undefined || rIdx === undefined) continue;
+   433→
+   434→        const leftEl = container.querySelector(`[data-left-idx="${lIdx}"]`);
+   435→        const rightEl = container.querySelector(`[data-right-idx="${rIdx}"]`);
+   436→
+   437→        if (leftEl && rightEl) {
+   438→          const leftRect = leftEl.getBoundingClientRect();
+   439→          const rightRect = rightEl.getBoundingClientRect();
+   440→
+   441→          positions.push({
+   442→            id: `${left}-${right}`,
+   443→            x1: leftRect.right - containerRect.left,
+   444→            y1: leftRect.top + leftRect.height / 2 - containerRect.top,
+   445→            x2: rightRect.left - containerRect.left,
+   446→            y2: rightRect.top + rightRect.height / 2 - containerRect.top,
+   447→          });
+   448→        }
+   449→      }
+   450→
+   451→      setLinePositions(positions);
+   452→    });
+   453→  }, [matches, leftIdxMap, rightIdxMap]);
+   454→
+   455→  // Recalculate on matches change
+   456→  useEffect(() => {
+   457→    updateLinePositions();
+   458→  }, [updateLinePositions]);
+   459→
+   460→  // Recalculate on resize
+   461→  useEffect(() => {
+   462→    const container = containerRef.current;
+   463→    if (!container) return;
+   464→
+   465→    const observer = new ResizeObserver(updateLinePositions);
+   466→    observer.observe(container);
+   467→
+   468→    return () => observer.disconnect();
+   469→  }, [updateLinePositions]);
+   470→
+   471→  const handleLeftClick = (left: string) => {
+   472→    if (matches[left]) {
+   473→      // Remove match by clicking connected left item
+   474→      setMatches((prev) => {
+   475→        const next = { ...prev };
+   476→        delete next[left];
+   477→        return next;
+   478→      });
+   479→      return;
+   480→    }
+   481→    setSelectedLeft(left);
+   482→  };
+   483→
+   484→  const handleRightClick = (right: string) => {
+   485→    if (!selectedLeft) return;
+   486→    setMatches((prev) => ({ ...prev, [selectedLeft]: right }));
+   487→    setSelectedLeft(null);
+   488→  };
+   489→
+   490→  const handleDragStart = (e: React.DragEvent, left: string) => {
+   491→    setDragItem(left);
+   492→    e.dataTransfer.setData('text/plain', left);
+   493→    e.dataTransfer.effectAllowed = 'link';
+   494→  };
+   495→
+   496→  const handleDragOver = (e: React.DragEvent, right: string) => {
+   497→    e.preventDefault();
+   498→    e.dataTransfer.dropEffect = 'link';
+   499→    const isUsedByOther = Object.entries(matches).some(
+   500→      ([k, v]) => v === right && k !== dragItem,
+   501→    );
+   502→    if (dragItem && !isUsedByOther) {
+   503→      setDragOverTarget(right);
+   504→    }
+   505→  };
+   506→
+   507→  const handleDragLeave = () => {
+   508→    setDragOverTarget(null);
+   509→  };
+   510→
+   511→  const handleDrop = (e: React.DragEvent, right: string) => {
+   512→    e.preventDefault();
+   513→    const left = e.dataTransfer.getData('text/plain') || dragItem;
+   514→    if (left) {
+   515→      // Remove any existing match for this left item first
+   516→      setMatches((prev) => {
+   517→        const next = { ...prev };
+   518→        delete next[left];
+   519→        next[left] = right;
+   520→        return next;
+   521→      });
+   522→    }
+   523→    setDragItem(null);
+   524→    setDragOverTarget(null);
+   525→  };
+   526→
+   527→  const handleDragEnd = () => {
+   528→    setDragItem(null);
+   529→    setDragOverTarget(null);
+   530→  };
+   531→
+   532→  const handleSubmit = () => {
+   533→    const answer = Object.entries(matches)
+   534→      .map(([l, r]) => `${l}-${r}`)
+   535→      .join(', ');
+   536→    onAnswer(answer);
+   537→  };
+   538→
+   539→  const allMatched = pairs.every((p) => matches[p.left]);
+   540→  const usedRights = new Set(Object.values(matches));
+   541→
+   542→  return (
+   543→    <div className="space-y-4">
+   544→      <p className="text-sm text-muted-foreground">
+   545→        Drag left items to their match on the right, or click to select. Click a connected left item to remove it.
+   546→      </p>
+   547→      <div ref={containerRef} className="relative grid grid-cols-2 gap-4">
+   548→        {/* SVG Connector Overlay */}
+   549→        <svg className="absolute inset-0 pointer-events-none z-10" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+   550→          <defs>
+   551→            <linearGradient id="connectorGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+   552→              <stop offset="0%" stopColor="#10b981" />
+   553→              <stop offset="50%" stopColor="#14b8a6" />
+   554→              <stop offset="100%" stopColor="#0d9488" />
+   555→            </linearGradient>
+   556→          </defs>
+   557→          <AnimatePresence>
+   558→            {linePositions.map((pos) => {
+   559→              const midX = (pos.x1 + pos.x2) / 2;
+   560→              return (
+   561→                <motion.path
+   562→                  key={pos.id}
+   563→                  d={`M ${pos.x1} ${pos.y1} C ${midX} ${pos.y1}, ${midX} ${pos.y2}, ${pos.x2} ${pos.y2}`}
+   564→                  fill="none"
+   565→                  stroke="url(#connectorGrad)"
+   566→                  strokeWidth="2.5"
+   567→                  strokeLinecap="round"
+   568→                  initial={{ pathLength: 0, opacity: 0 }}
+   569→                  animate={{ pathLength: 1, opacity: 0.85 }}
+   570→                  exit={{ pathLength: 0, opacity: 0 }}
+   571→                  transition={{ duration: 0.5, ease: 'easeOut' }}
+   572→                />
+   573→              );
+   574→            })}
+   575→          </AnimatePresence>
+   576→        </svg>
+   577→
+   578→        {/* Left column */}
+   579→        <div className="flex flex-col gap-2">
+   580→          {pairs.map((p) => {
+   581→            const isMatched = !!matches[p.left];
+   582→            const isDragging = dragItem === p.left;
+   583→            return (
+   584→              <motion.button
+   585→                key={p.left}
+   586→                data-left-idx={leftIdxMap[p.left]}
+   587→                draggable={!isMatched}
+   588→                whileTap={{ scale: 0.98 }}
+   589→                onClick={() => handleLeftClick(p.left)}
+   590→                onDragStart={(e) => handleDragStart(e, p.left)}
+   591→                onDragEnd={handleDragEnd}
+   592→                className={`rounded-lg border p-3 text-left text-sm font-medium transition-all ${
+   593→                  isDragging
+   594→                    ? 'border-primary/50 bg-primary/5 opacity-50 scale-95'
+   595→                    : selectedLeft === p.left
+   596→                      ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary/30 shadow-sm shadow-primary/10'
+   597→                      : isMatched
+   598→                        ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 shadow-sm shadow-emerald-500/5'
+   599→                        : 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-grab active:cursor-grabbing'
+   600→                }`}
+   601→              >
+   602→                <div className="flex items-center gap-2">
+   603→                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+   604→                  <span className="flex-1">{p.left}</span>
+   605→                  {isMatched && (
+   606→                    <motion.span
+   607→                      initial={{ opacity: 0, x: 10 }}
+   608→                      animate={{ opacity: 1, x: 0 }}
+   609→                      className="text-xs opacity-70 truncate max-w-[120px] text-emerald-600 dark:text-emerald-400"
+   610→                    >
+   611→                      {matches[p.left]}
+   612→                    </motion.span>
+   613→                  )}
+   614→                </div>
+   615→              </motion.button>
+   616→            );
+   617→          })}
+   618→        </div>
+   619→        {/* Right column */}
+   620→        <div className="flex flex-col gap-2">
+   621→          {shuffledRight.map((r) => {
+   622→            const isUsed = usedRights.has(r);
+   623→            const isDragOver = dragOverTarget === r && !isUsed;
+   624→            return (
+   625→              <motion.button
+   626→                key={r}
+   627→                data-right-idx={rightIdxMap[r]}
+   628→                whileTap={{ scale: 0.98 }}
+   629→                onClick={() => !isUsed && handleRightClick(r)}
+   630→                onDragOver={(e) => handleDragOver(e, r)}
+   631→                onDragLeave={handleDragLeave}
+   632→                onDrop={(e) => handleDrop(e, r)}
+   633→                disabled={isUsed}
+   634→                className={`rounded-lg border p-3 text-left text-sm transition-all ${
+   635→                  isDragOver
+   636→                    ? 'border-emerald-500/60 bg-emerald-500/10 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-500/20 scale-[1.02]'
+   637→                    : isUsed
+   638→                      ? 'border-border bg-muted/50 text-muted-foreground line-through opacity-50'
+   639→                      : selectedLeft
+   640→                        ? 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-pointer hover:shadow-sm hover:shadow-primary/5'
+   641→                        : 'border-border opacity-60'
+   642→                }`}
+   643→              >
+   644→                <div className="flex items-center gap-2">
+   645→                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+   646→                  <span className="flex-1">{r}</span>
+   647→                </div>
+   648→              </motion.button>
+   649→            );
+   650→          })}
+   651→        </div>
+   652→      </div>
+   653→      <div className="flex items-center justify-between">
+   654→        <div className="flex items-center gap-2">
+   655→          <div className="relative h-1.5 w-24 rounded-full bg-muted/50 overflow-hidden">
+   656→            <motion.div
+   657→              className="absolute inset-y-0 left-0 rounded-full"
+   658→              style={{ background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))' }}
+   659→              animate={{ width: `${(Object.keys(matches).length / pairs.length) * 100}%` }}
+   660→              transition={{ duration: 0.3 }}
+   661→            />
+   662→          </div>
+   663→          <span className="text-xs text-muted-foreground">
+   664→            {Object.keys(matches).length}/{pairs.length} matched
+   665→          </span>
+   666→        </div>
+   667→        <motion.div
+   668→          whileHover={{ scale: 1.05 }}
+   669→          whileTap={{ scale: 0.95 }}
+   670→        >
+   671→          <Button onClick={handleSubmit} disabled={!allMatched} size="sm" className={allMatched ? 'glow-emerald' : ''}>
+   672→            Submit Matches
+   673→          </Button>
+   674→        </motion.div>
+   675→      </div>
+   676→    </div>
+   677→  );
+   678→}
+   679→
+   680→// ---------- Main QuizView ----------
+   681→export function QuizView() {
+   682→  const { navigate, currentQuestions, activeCourse, updateMastery } = useAppStore();
+   683→
+   684→  const allQuestions = currentQuestions.length > 0 ? currentQuestions : MOCK_QUESTIONS;
+   685→
+   686→  const [studyMode, setStudyMode] = useState<StudyMode>('quiz');
+   687→  const [selectedCourse, setSelectedCourse] = useState<string>('all');
+   688→  const [showBookmarked, setShowBookmarked] = useState(false);
+   689→  const [bookmarkedQuestions, setBookmarkedQuestions] = useState<Set<string>>(new Set());
+   690→  const [currentIndex, setCurrentIndex] = useState(0);
+   691→  const [answers, setAnswers] = useState<Record<string, string>>({});
+   692→  const [answered, setAnswered] = useState<Record<string, boolean>>({});
+   693→  const [showExplanation, setShowExplanation] = useState(false);
+   694→  const [showConfetti, setShowConfetti] = useState(false);
+   695→  const [showResults, setShowResults] = useState(false);
+   696→  const [streak, setStreak] = useState(0);
+   697→  const [bestStreak, setBestStreak] = useState(0);
+   698→  const [showStreakPopup, setShowStreakPopup] = useState(false);
+   699→  const animatedScore = useAnimatedCounter(showResults ? score : 0, 1500);
+   700→
+   701→  // Spaced Repetition
+   702→  const { dueItems, reviewItem, overdueCount } = useSpacedRepetition();
+   703→  const [reviewShowResults, setReviewShowResults] = useState(false);
+   704→  const [reviewedCount, setReviewedCount] = useState(0);
+   705→
+   706→  // Review questions: match dueItems to actual questions by concept
+   707→  const reviewQuestions = useMemo<Question[]>(() => {
+   708→    const dueConcepts = new Set(dueItems.map((item) => item.questionId));
+   709→    return allQuestions.filter((q) => q.concept && dueConcepts.has(q.concept));
+   710→  }, [dueItems, allQuestions]);
+   711→
+   712→  const reviewCurrentQ = reviewQuestions[currentIndex];
+   713→  const reviewProgress = reviewQuestions.length > 0
+   714→    ? (reviewedCount / reviewQuestions.length) * 100
+   715→    : 0;
+   716→
+   717→  // Listen for start-spaced-review custom event
+   718→  useEffect(() => {
+   719→    const handler = () => setStudyMode('review');
+   720→    window.addEventListener('start-spaced-review', handler);
+   721→    return () => window.removeEventListener('start-spaced-review', handler);
+   722→  }, []);
+   723→
+   724→  // Daily Challenge state
+   725→  const [dailyChallenge, setDailyChallenge] = useState<DailyChallengeData | null>(null);
+   726→  const [dailyStreak, setDailyStreak] = useState({ current: 0, best: 0, lastDate: '' });
+   727→  const [dailyTimeLeft, setDailyTimeLeft] = useState({ hours: 0, minutes: 0, seconds: 0 });
+   728→  const [dailyShowResults, setDailyShowResults] = useState(false);
+   729→  const [dailyShareCopied, setDailyShareCopied] = useState(false);
+   730→  const dailyQuestions = useMemo<Question[]>(() => {
+   731→    if (dailyChallenge?.questions) {
+   732→      return dailyChallenge.questions
+   733→        .map((id) => allQuestions.find((q) => q.id === id))
+   734→        .filter((q): q is Question => !!q);
+   735→    }
+   736→    return [];
+   737→  }, [dailyChallenge, allQuestions]);
+   738→  const dailyCurrentQ = dailyQuestions[currentIndex];
+   739→  const dailyProgress = dailyQuestions.length > 0
+   740→    ? ((currentIndex + 1) / dailyQuestions.length) * 100
+   741→    : 0;
+   742→  const dailyScore = useMemo(() => {
+   743→    return dailyQuestions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+   744→  }, [dailyQuestions, answered, answers, isCorrect]);
+   745→  const dailyCircumference = 2 * Math.PI * 62;
+   746→  const dailyScorePercent = dailyQuestions.length > 0 ? dailyScore / dailyQuestions.length : 0;
+   747→  const dailyStrokeDashoffset = dailyCircumference * (1 - dailyScorePercent);
+   748→  const dailyAnimatedScore = useAnimatedCounter(dailyShowResults ? dailyScore : 0, 1500);
+   749→
+   750→  // Load daily challenge data on mount and when mode changes
+   751→  useEffect(() => {
+   752→    if (studyMode !== 'daily') return;
+   753→    const today = getTodayStr();
+   754→    const saved = loadDailyChallenge();
+   755→    const streakData = loadDailyStreak();
+   756→
+   757→    if (saved && saved.date === today) {
+   758→      setDailyChallenge(saved);
+   759→      setDailyStreak(streakData);
+   760→      if (saved.completed) {
+   761→        setDailyShowResults(true);
+   762→      }
+   763→    } else {
+   764→      // New day, new challenge
+   765→      const selected = selectDailyQuestions(allQuestions);
+   766→      const newChallenge: DailyChallengeData = {
+   767→        date: today,
+   768→        completed: false,
+   769→        score: 0,
+   770→        total: DAILY_QUESTION_COUNT,
+   771→        questions: selected.map((q) => q.id),
+   772→      };
+   773→      saveDailyChallenge(newChallenge);
+   774→      setDailyChallenge(newChallenge);
+   775→      setDailyStreak(streakData);
+   776→      setDailyShowResults(false);
+   777→    }
+   778→  }, [studyMode, allQuestions]);
+   779→
+   780→  // Update daily countdown timer
+   781→  useEffect(() => {
+   782→    if (studyMode !== 'daily') return;
+   783→    setDailyTimeLeft(getTimeUntilMidnight());
+   784→    const interval = setInterval(() => {
+   785→      setDailyTimeLeft(getTimeUntilMidnight());
+   786→    }, 1000);
+   787→    return () => clearInterval(interval);
+   788→  }, [studyMode]);
+   789→
+   790→  const handleDailyAnswer = useCallback(
+   791→    (answer: string) => {
+   792→      if (!dailyCurrentQ || answered[dailyCurrentQ.id]) return;
+   793→
+   794→      if (!timerStarted) setTimerStarted(true);
+   795→
+   796→      const newAnswers = { ...answers, [dailyCurrentQ.id]: answer };
+   797→      const newAnswered = { ...answered, [dailyCurrentQ.id]: true };
+   798→      setAnswers(newAnswers);
+   799→      setAnswered(newAnswered);
+   800→      setShowExplanation(true);
+   801→
+   802→      if (isCorrect(dailyCurrentQ, answer)) {
+   803→        setShowConfetti(true);
+   804→        setTimeout(() => setShowConfetti(false), 1500);
+   805→        const newStreak = streak + 1;
+   806→        setStreak(newStreak);
+   807→        if (newStreak > bestStreak) setBestStreak(newStreak);
+   808→        if (newStreak >= 3) {
+   809→          setShowStreakPopup(true);
+   810→          setTimeout(() => setShowStreakPopup(false), 1200);
+   811→        }
+   812→      } else {
+   813→        setStreak(0);
+   814→      }
+   815→    },
+   816→    [answered, answers, dailyCurrentQ, isCorrect, streak, bestStreak, timerStarted],
+   817→  );
+   818→
+   819→  const handleDailyNext = useCallback(() => {
+   820→    setShowExplanation(false);
+   821→    if (currentIndex < dailyQuestions.length - 1) {
+   822→      setCurrentIndex(currentIndex + 1);
+   823→    } else {
+   824→      // Challenge complete — save results
+   825→      const finalScore = dailyQuestions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+   826→      const updatedStreak = updateDailyStreak();
+   827→      setDailyStreak(updatedStreak);
+   828→
+   829→      const completedData: DailyChallengeData = {
+   830→        date: getTodayStr(),
+   831→        completed: true,
+   832→        score: finalScore,
+   833→        total: dailyQuestions.length,
+   834→        questions: dailyQuestions.map((q) => q.id),
+   835→      };
+   836→      saveDailyChallenge(completedData);
+   837→      setDailyChallenge(completedData);
+   838→      setDailyShowResults(true);
+   839→    }
+   840→  }, [currentIndex, dailyQuestions, answered, answers, isCorrect]);
+   841→
+   842→  const handleDailyShare = useCallback(async () => {
+   843→    const text = `SynapseLearn Daily Challenge - ${dailyScore}/${dailyQuestions.length} - ${dailyStreak.current} day streak`;
+   844→    try {
+   845→      await navigator.clipboard.writeText(text);
+   846→      setDailyShareCopied(true);
+   847→      setTimeout(() => setDailyShareCopied(false), 2000);
+   848→    } catch {
+   849→      // fallback
+   850→    }
+   851→  }, [dailyScore, dailyQuestions.length, dailyStreak.current]);
+   852→
+   853→  // Timer state
+   854→  const [timerStarted, setTimerStarted] = useState(false);
+   855→  const [timerSeconds, setTimerSeconds] = useState(0);
+   856→
+   857→  // Flashcard state
+   858→  const [flipped, setFlipped] = useState(false);
+   859→  const [knownCards, setKnownCards] = useState<Set<string>>(new Set());
+   860→  const [stillLearningCards, setStillLearningCards] = useState<Set<string>>(new Set());
+   861→  const [flashcardReviewed, setFlashcardReviewed] = useState<Set<string>>(new Set());
+   862→  const [showFlashcardSummary, setShowFlashcardSummary] = useState(false);
+   863→  const [hasEverFlipped, setHasEverFlipped] = useState(false);
+   864→
+   865→  // Swipe motion values for flashcard (no re-renders)
+   866→  const dragXMotion = useMotionValue(0);
+   867→
+   868→  // Bookmark persistence
+   869→  useEffect(() => {
+   870→    try {
+   871→      const stored = localStorage.getItem('synapse-bookmarked-questions');
+   872→      if (stored) {
+   873→        setBookmarkedQuestions(new Set(JSON.parse(stored) as string[]));
+   874→      }
+   875→    } catch { /* ignore */ }
+   876→  }, []);
+   877→
+   878→  useEffect(() => {
+   879→    try {
+   880→      localStorage.setItem('synapse-bookmarked-questions', JSON.stringify([...bookmarkedQuestions]));
+   881→    } catch { /* ignore */ }
+   882→  }, [bookmarkedQuestions]);
+   883→
+   884→  const toggleBookmark = useCallback((questionId: string) => {
+   885→    setBookmarkedQuestions((prev) => {
+   886→      const next = new Set(prev);
+   887→      if (next.has(questionId)) {
+   888→        next.delete(questionId);
+   889→      } else {
+   890→        next.add(questionId);
+   891→      }
+   892→      return next;
+   893→    });
+   894→  }, []);
+   895→
+   896→  // checkOpacity and crossOpacity use the existing dragXMotion (defined above for flashcard swipe)
+   897→  const checkOpacity = useTransform(dragXMotion, [0, 100], [0, 0.7]);
+   898→  const crossOpacity = useTransform(dragXMotion, [-100, 0], [0.7, 0]);
+   899→  const hasDraggedRef = useRef(false);
+   900→
+   901→  // Timer effect
+   902→  useEffect(() => {
+   903→    if (!timerStarted || showResults) return;
+   904→    const interval = setInterval(() => {
+   905→      setTimerSeconds((s) => s + 1);
+   906→    }, 1000);
+   907→    return () => clearInterval(interval);
+   908→  }, [timerStarted, showResults]);
+   909→
+   910→  const flashcardQuestions = useMemo(() => {
+   911→    if (selectedCourse === 'all') return allQuestions;
+   912→    return allQuestions.filter((q) => q.courseId === selectedCourse);
+   913→  }, [allQuestions, selectedCourse]);
+   914→
+   915→  const flashcardProgress = flashcardQuestions.length > 0
+   916→    ? (flashcardReviewed.size / flashcardQuestions.length) * 100
+   917→    : 0;
+   918→
+   919→  // Difficulty distribution
+   920→  const difficultyCounts = useMemo(() => {
+   921→    if (studyMode === 'daily') return { easy: 0, medium: 0, hard: 0 };
+   922→    const targetQuestions = studyMode === 'quiz' ? questions : flashcardQuestions;
+   923→    return {
+   924→      easy: targetQuestions.filter((q) => q.difficulty === 'easy').length,
+   925→      medium: targetQuestions.filter((q) => q.difficulty === 'medium').length,
+   926→      hard: targetQuestions.filter((q) => q.difficulty === 'hard').length,
+   927→    };
+   928→  }, [studyMode, questions, flashcardQuestions]);
+   929→
+   930→  const handleShuffle = useCallback(() => {
+   931→    setCurrentIndex(0);
+   932→    setFlipped(false);
+   933→  }, []);
+   934→
+   935→  const handleFlashcardMark = useCallback((type: 'known' | 'learning') => {
+   936→    if (!flashcardQuestions[currentIndex]) return;
+   937→    const id = flashcardQuestions[currentIndex].id;
+   938→    const newReviewed = new Set(flashcardReviewed);
+   939→    newReviewed.add(id);
+   940→    setFlashcardReviewed(newReviewed);
+   941→
+   942→    if (type === 'known') {
+   943→      setKnownCards((prev) => new Set(prev).add(id));
+   944→      setStillLearningCards((prev) => {
+   945→        const next = new Set(prev);
+   946→        next.delete(id);
+   947→        return next;
+   948→      });
+   949→    } else {
+   950→      setStillLearningCards((prev) => new Set(prev).add(id));
+   951→      setKnownCards((prev) => {
+   952→        const next = new Set(prev);
+   953→        next.delete(id);
+   954→        return next;
+   955→      });
+   956→    }
+   957→
+   958→    setFlipped(false);
+   959→    if (currentIndex < flashcardQuestions.length - 1) {
+   960→      setCurrentIndex((prev) => prev + 1);
+   961→    } else {
+   962→      setShowFlashcardSummary(true);
+   963→    }
+   964→  }, [currentIndex, flashcardQuestions, flashcardReviewed]);
+   965→
+   966→  const handleFlashcardPrev = useCallback(() => {
+   967→    setFlipped(false);
+   968→    setCurrentIndex((prev) => Math.max(0, prev - 1));
+   969→  }, []);
+   970→
+   971→  const handleFlashcardNext = useCallback(() => {
+   972→    setFlipped(false);
+   973→    if (currentIndex < flashcardQuestions.length - 1) {
+   974→      setCurrentIndex((prev) => prev + 1);
+   975→    }
+   976→  }, [currentIndex, flashcardQuestions.length]);
+   977→
+   978→  const handleFlashcardReset = useCallback(() => {
+   979→    setCurrentIndex(0);
+   980→    setFlipped(false);
+   981→    setKnownCards(new Set());
+   982→    setStillLearningCards(new Set());
+   983→    setFlashcardReviewed(new Set());
+   984→    setShowFlashcardSummary(false);
+   985→    setHasEverFlipped(false);
+   986→  }, []);
+   987→
+   988→  const handleCourseChange = (courseId: string) => {
+   989→    setSelectedCourse(courseId);
+   990→    setCurrentIndex(0);
+   991→    setAnswers({});
+   992→    setAnswered({});
+   993→    setShowExplanation(false);
+   994→    setShowResults(false);
+   995→    setStreak(0);
+   996→    setBestStreak(0);
+   997→    setFlipped(false);
+   998→    setKnownCards(new Set());
+   999→    setStillLearningCards(new Set());
+  1000→    setFlashcardReviewed(new Set());
+  1001→    setShowFlashcardSummary(false);
+  1002→    setHasEverFlipped(false);
+  1003→    setTimerStarted(false);
+  1004→    setTimerSeconds(0);
+  1005→  };
+  1006→
+  1007→  const handleModeChange = (mode: StudyMode) => {
+  1008→    setStudyMode(mode);
+  1009→    setCurrentIndex(0);
+  1010→    setAnswers({});
+  1011→    setAnswered({});
+  1012→    setShowExplanation(false);
+  1013→    setShowResults(false);
+  1014→    setStreak(0);
+  1015→    setBestStreak(0);
+  1016→    setFlipped(false);
+  1017→    setKnownCards(new Set());
+  1018→    setStillLearningCards(new Set());
+  1019→    setFlashcardReviewed(new Set());
+  1020→    setShowFlashcardSummary(false);
+  1021→    setHasEverFlipped(false);
+  1022→    setTimerStarted(false);
+  1023→    setTimerSeconds(0);
+  1024→    setDailyShowResults(false);
+  1025→    setDailyShareCopied(false);
+  1026→    setReviewShowResults(false);
+  1027→    setReviewedCount(0);
+  1028→  };
+  1029→
+  1030→  // Filter questions by selected course and bookmarked
+  1031→  const questions = useMemo(() => {
+  1032→    let filtered = selectedCourse === 'all' ? allQuestions : allQuestions.filter((q) => q.courseId === selectedCourse);
+  1033→    if (showBookmarked) {
+  1034→      filtered = filtered.filter((q) => bookmarkedQuestions.has(q.id));
+  1035→    }
+  1036→    return filtered;
+  1037→  }, [allQuestions, selectedCourse, showBookmarked, bookmarkedQuestions]);
+  1038→
+  1039→  const currentQ = questions[currentIndex];
+  1040→  const progress = questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0;
+  1041→
+  1042→  const isCorrect = useCallback(
+  1043→    (q: Question, userAnswer: string): boolean => {
+  1044→      const ua = userAnswer.trim().toLowerCase();
+  1045→      const ca = q.answer.trim().toLowerCase();
+  1046→      if (q.type === 'short_answer' || q.type === 'error_correction') {
+  1047→        return isFuzzyMatch(userAnswer, q.answer, 3);
+  1048→      }
+  1049→      if (q.type === 'fill_blank') {
+  1050→        return isFuzzyMatch(userAnswer, q.answer, 2);
+  1051→      }
+  1052→      return ua === ca;
+  1053→    },
+  1054→    [],
+  1055→  );
+  1056→
+  1057→  const handleAnswer = useCallback(
+  1058→    (answer: string) => {
+  1059→      if (!currentQ || answered[currentQ.id]) return;
+  1060→
+  1061→      // Start timer on first answer
+  1062→      if (!timerStarted) setTimerStarted(true);
+  1063→
+  1064→      const newAnswers = { ...answers, [currentQ.id]: answer };
+  1065→      const newAnswered = { ...answered, [currentQ.id]: true };
+  1066→      setAnswers(newAnswers);
+  1067→      setAnswered(newAnswered);
+  1068→      setShowExplanation(true);
+  1069→
+  1070→      if (isCorrect(currentQ, answer)) {
+  1071→        setShowConfetti(true);
+  1072→        setTimeout(() => setShowConfetti(false), 1500);
+  1073→        const newStreak = streak + 1;
+  1074→        setStreak(newStreak);
+  1075→        if (newStreak > bestStreak) setBestStreak(newStreak);
+  1076→        if (newStreak >= 3) {
+  1077→          setShowStreakPopup(true);
+  1078→          setTimeout(() => setShowStreakPopup(false), 1200);
+  1079→        }
+  1080→      } else {
+  1081→        setStreak(0);
+  1082→      }
+  1083→    },
+  1084→    [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted],
+  1085→  );
+  1086→
+  1087→  // Review mode answer handler
+  1088→  const handleReviewAnswer = useCallback(
+  1089→    (answer: string) => {
+  1090→      if (!reviewCurrentQ || answered[reviewCurrentQ.id]) return;
+  1091→
+  1092→      const newAnswers = { ...answers, [reviewCurrentQ.id]: answer };
+  1093→      const newAnswered = { ...answered, [reviewCurrentQ.id]: true };
+  1094→      setAnswers(newAnswers);
+  1095→      setAnswered(newAnswered);
+  1096→      setShowExplanation(true);
+  1097→
+  1098→      const correct = isCorrect(reviewCurrentQ, answer);
+  1099→      const quality = correct ? 5 : 0;
+  1100→
+  1101→      // Update spaced repetition
+  1102→      if (reviewCurrentQ.concept) {
+  1103→        reviewItem(reviewCurrentQ.concept, quality);
+  1104→      }
+  1105→
+  1106→      // Update mastery in app store
+  1107→      if (reviewCurrentQ.concept) {
+  1108→        const newLevel = correct ? 5 : 1;
+  1109→        updateMastery(
+  1110→          reviewCurrentQ.concept,
+  1111→          newLevel,
+  1112→          `Spaced review: ${correct ? 'correct' : 'incorrect'}`,
+  1113→        );
+  1114→      }
+  1115→
+  1116→      // Show confetti on correct
+  1117→      if (correct) {
+  1118→        setShowConfetti(true);
+  1119→        setTimeout(() => setShowConfetti(false), 1500);
+  1120→      }
+  1121→
+  1122→      // Track reviewed count
+  1123→      setReviewedCount((prev) => prev + 1);
+  1124→    },
+  1125→    [reviewCurrentQ, answered, answers, isCorrect, reviewItem, updateMastery],
+  1126→  );
+  1127→
+  1128→  const handleNext = () => {
+  1129→    setShowExplanation(false);
+  1130→    if (studyMode === 'review') {
+  1131→      if (currentIndex < reviewQuestions.length - 1) {
+  1132→        setCurrentIndex(currentIndex + 1);
+  1133→      } else {
+  1134→        setReviewShowResults(true);
+  1135→      }
+  1136→    } else if (currentIndex < questions.length - 1) {
+  1137→      setCurrentIndex(currentIndex + 1);
+  1138→    } else {
+  1139→      setShowResults(true);
+  1140→    }
+  1141→  };
+  1142→
+  1143→  const handleRetry = () => {
+  1144→    setCurrentIndex(0);
+  1145→    setAnswers({});
+  1146→    setAnswered({});
+  1147→    setShowExplanation(false);
+  1148→    setShowResults(false);
+  1149→    setShowConfetti(false);
+  1150→    setStreak(0);
+  1151→    setBestStreak(0);
+  1152→    setTimerStarted(false);
+  1153→    setTimerSeconds(0);
+  1154→    setShowBookmarked(false);
+  1155→  };
+  1156→
+  1157→  const score = useMemo(() => {
+  1158→    return questions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+  1159→  }, [questions, answered, answers, isCorrect]);
+  1160→
+  1161→  const circumference = 2 * Math.PI * 62;
+  1162→  const scorePercent = questions.length > 0 ? score / questions.length : 0;
+  1163→  const strokeDashoffset = circumference * (1 - scorePercent);
+  1164→
+  1165→  const difficultyTotal = difficultyCounts.easy + difficultyCounts.medium + difficultyCounts.hard;
+  1166→
+  1167→  // ---------- Empty State ----------
+  1168→  if (studyMode !== 'daily' && studyMode !== 'review' && questions.length === 0 && flashcardQuestions.length === 0) {
+  1169→    return (
+  1170→      <motion.div
+  1171→        initial={{ opacity: 0, y: 20 }}
+  1172→        animate={{ opacity: 1, y: 0 }}
+  1173→        className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
+  1174→      >
+  1175→        <div className="glass rounded-2xl p-8 text-center space-y-4 max-w-md">
+  1176→          <BookOpen className="h-16 w-16 text-primary/30 mx-auto" />
+  1177→          <h2 className="text-xl font-bold">No questions available</h2>
+  1178→          <p className="text-muted-foreground text-sm">
+  1179→            {selectedCourse !== 'all'
+  1180→              ? `No questions found for this course. Try selecting a different category.`
+  1181→              : 'Upload some study materials or generate questions from your courses to start practicing.'}
+  1182→          </p>
+  1183→          <div className="flex justify-center gap-3">
+  1184→            <Button onClick={() => navigate('upload')}>
+  1185→              <BookOpen className="h-4 w-4 mr-2" />
+  1186→              Upload Slides
+  1187→            </Button>
+  1188→            <Button variant="outline" onClick={() => navigate('dashboard')}>
+  1189→              <ArrowLeft className="h-4 w-4 mr-2" />
+  1190→              Back to Dashboard
+  1191→            </Button>
+  1192→          </div>
+  1193→        </div>
+  1194→      </motion.div>
+  1195→    );
+  1196→  }
+  1197→
+  1198→  // ---------- Results Screen ----------
+  1199→  if (showResults) {
+  1200→    return (
+  1201→      <motion.div
+  1202→        initial={{ opacity: 0, scale: 0.9 }}
+  1203→        animate={{ opacity: 1, scale: 1 }}
+  1204→        transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+  1205→        className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
+  1206→      >
+  1207→        {/* Confetti burst for high scores */}
+  1208→        <AnimatePresence>
+  1209→          {scorePercent >= 0.8 && (
+  1210→            <div className="fixed inset-0 pointer-events-none z-50">
+  1211→              {Array.from({ length: 32 }).map((_, i) => (
+  1212→                <ConfettiParticle
+  1213→                  key={`result-${i}`}
+  1214→                  delay={i * 0.04}
+  1215→                  color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
+  1216→                />
+  1217→              ))}
+  1218→            </div>
+  1219→          )}
+  1220→        </AnimatePresence>
+  1221→        <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full glow-emerald-strong">
+  1222→          {/* Animated grade badge */}
+  1223→          <motion.div
+  1224→            initial={{ scale: 0, rotate: -180 }}
+  1225→            animate={{ scale: 1, rotate: 0 }}
+  1226→            transition={{ type: 'spring', stiffness: 180, damping: 12, delay: 0.2 }}
+  1227→            className="mx-auto"
+  1228→          >
+  1229→            <div className={`inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-lg ${
+  1230→              scorePercent >= 0.9
+  1231→                ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-white shadow-amber-400/30'
+  1232→                : scorePercent >= 0.7
+  1233→                  ? 'bg-gradient-to-r from-emerald-400 to-teal-500 text-white shadow-emerald-400/30'
+  1234→                  : scorePercent >= 0.5
+  1235→                    ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-white shadow-cyan-400/30'
+  1236→                    : 'bg-gradient-to-r from-orange-400 to-red-400 text-white shadow-orange-400/30'
+  1237→            }`}>
+  1238→              {scorePercent >= 0.9 ? <Trophy className="h-4 w-4" /> : scorePercent >= 0.7 ? <Zap className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+  1239→              {scorePercent >= 0.9 ? 'Outstanding' : scorePercent >= 0.7 ? 'Well Done' : scorePercent >= 0.5 ? 'Good Try' : 'Keep Going'}
+  1240→            </div>
+  1241→          </motion.div>
+  1242→          <div className="relative inline-flex">
+  1243→            <svg width="160" height="160" className="-rotate-90">
+  1244→              <circle
+  1245→                cx="80"
+  1246→                cy="80"
+  1247→                r="62"
+  1248→                fill="none"
+  1249→                stroke="currentColor"
+  1250→                strokeWidth="10"
+  1251→                className="text-muted/20"
+  1252→              />
+  1253→              <motion.circle
+  1254→                cx="80"
+  1255→                cy="80"
+  1256→                r="62"
+  1257→                fill="none"
+  1258→                stroke="url(#scoreGrad)"
+  1259→                strokeWidth="12"
+  1260→                strokeLinecap="round"
+  1261→                strokeDasharray={circumference}
+  1262→                initial={{ strokeDashoffset: circumference }}
+  1263→                animate={{ strokeDashoffset }}
+  1264→                transition={{ duration: 1.5, ease: 'easeOut' }}
+  1265→              />
+  1266→              <defs>
+  1267→                <linearGradient id="scoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+  1268→                  <stop offset="0%" stopColor="#10b981" />
+  1269→                  <stop offset="50%" stopColor="#14b8a6" />
+  1270→                  <stop offset="100%" stopColor="#06b6d4" />
+  1271→                </linearGradient>
+  1272→              </defs>
+  1273→            </svg>
+  1274→            <div className="absolute inset-0 flex flex-col items-center justify-center">
+  1275→              <motion.span
+  1276→                className="text-4xl font-bold gradient-text"
+  1277→                key={animatedScore}
+  1278→              >
+  1279→                {animatedScore}<span className="text-lg font-normal text-muted-foreground">/{questions.length}</span>
+  1280→              </motion.span>
+  1281→              <span className="text-xs text-muted-foreground mt-1">
+  1282→                {Math.round(scorePercent * 100)}% correct
+  1283→              </span>
+  1284→            </div>
+  1285→          </div>
+  1286→          {/* Best streak */}
+  1287→          {bestStreak >= 2 && (
+  1288→            <motion.div
+  1289→              initial={{ opacity: 0, y: 10 }}
+  1290→              animate={{ opacity: 1, y: 0 }}
+  1291→              transition={{ delay: 0.8 }}
+  1292→              className="flex items-center justify-center gap-1.5 text-sm"
+  1293→            >
+  1294→              <Flame className="h-4 w-4 text-orange-500" />
+  1295→              <span className="text-muted-foreground">Best streak: <span className="font-bold text-foreground">{bestStreak} in a row</span></span>
+  1296→            </motion.div>
+  1297→          )}
+  1298→
+  1299→          <div>
+  1300→            <h2 className="text-2xl font-bold">
+  1301→              {scorePercent >= 0.8
+  1302→                ? 'Excellent!'
+  1303→                : scorePercent >= 0.6
+  1304→                  ? 'Good effort!'
+  1305→                  : 'Keep practicing!'}
+  1306→            </h2>
+  1307→            <p className="text-muted-foreground text-sm mt-1">
+  1308→              You answered {score} out of {questions.length} questions correctly
+  1309→            </p>
+  1310→          </div>
+  1311→
+  1312→          {/* Per-question breakdown */}
+  1313→          <div className="space-y-2 text-left">
+  1314→            <h3 className="text-sm font-semibold">Question Breakdown</h3>
+  1315→            <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+  1316→              {questions.map((q, i) => {
+  1317→                const wasCorrect = answered[q.id] && isCorrect(q, answers[q.id] || '');
+  1318→                return (
+  1319→                  <motion.div
+  1320→                    key={q.id}
+  1321→                    initial={{ opacity: 0, x: -10 }}
+  1322→                    animate={{ opacity: 1, x: 0 }}
+  1323→                    transition={{ delay: i * 0.05 }}
+  1324→                    className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md ${wasCorrect ? 'bg-emerald-500/5' : 'bg-destructive/5'}`}
+  1325→                  >
+  1326→                    <motion.span
+  1327→                      initial={{ scale: 0 }}
+  1328→                      animate={{ scale: 1 }}
+  1329→                      transition={{ type: 'spring', stiffness: 300, delay: i * 0.05 }}
+  1330→                      className={`flex h-5 w-5 items-center justify-center rounded-full ${wasCorrect ? 'bg-emerald-500 text-white' : 'bg-destructive/20 text-destructive'}`}
+  1331→                    >
+  1332→                      {wasCorrect ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+  1333→                    </motion.span>
+  1334→                    <span className="flex-1 truncate">{q.question.slice(0, 60)}{q.question.length > 60 ? '...' : ''}</span>
+  1335→                    <span className={`text-[9px] px-1.5 py-0 rounded-full font-medium border ${TYPE_BADGE_GRADIENT[q.type] || 'bg-muted text-muted-foreground border-border'}`}>
+  1336→                      {q.type.replace('_', ' ')}
+  1337→                    </span>
+  1338→                  </motion.div>
+  1339→                );
+  1340→              })}
+  1341→            </div>
+  1342→          </div>
+  1343→
+  1344→          <div className="flex justify-center gap-3">
+  1345→            <Button onClick={handleRetry} variant="outline">
+  1346→              <RotateCcw className="h-4 w-4 mr-2" />
+  1347→              Try Again
+  1348→            </Button>
+  1349→            {bookmarkedQuestions.size > 0 && (
+  1350→              <motion.div
+  1351→                initial={{ opacity: 0, scale: 0.8 }}
+  1352→                animate={{ opacity: 1, scale: 1 }}
+  1353→                transition={{ delay: 0.5 }}
+  1354→              >
+  1355→                <Button
+  1356→                  onClick={() => { setShowResults(false); setShowBookmarked(true); setCurrentIndex(0); setAnswers({}); setAnswered({}); setStreak(0); setBestStreak(0); setTimerStarted(false); setTimerSeconds(0); }}
+  1357→                  variant="outline"
+  1358→                  className="border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
+  1359→                >
+  1360→                  <BookmarkCheck className="h-4 w-4 mr-2" />
+  1361→                  Review Bookmarked ({bookmarkedQuestions.size})
+  1362→                </Button>
+  1363→              </motion.div>
+  1364→            )}
+  1365→            <Button onClick={() => navigate('dashboard')}>
+  1366→              <ArrowLeft className="h-4 w-4 mr-2" />
+  1367→              Back to Dashboard
+  1368→            </Button>
+  1369→          </div>
+  1370→        </div>
+  1371→      </motion.div>
+  1372→    );
+  1373→  }
+  1374→
+  1375→  // ---------- Flashcard Summary ----------
+  1376→  if (studyMode === 'flashcard' && showFlashcardSummary) {
+  1377→    const knownCount = knownCards.size;
+  1378→    const learningCount = stillLearningCards.size;
+  1379→    return (
+  1380→      <motion.div
+  1381→        initial={{ opacity: 0, scale: 0.9 }}
+  1382→        animate={{ opacity: 1, scale: 1 }}
+  1383→        transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+  1384→        className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
+  1385→      >
+  1386→        <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full">
+  1387→          <motion.div
+  1388→            initial={{ scale: 0, rotate: -180 }}
+  1389→            animate={{ scale: 1, rotate: 0 }}
+  1390→            transition={{ type: 'spring', stiffness: 180, damping: 12, delay: 0.2 }}
+  1391→            className="mx-auto"
+  1392→          >
+  1393→            <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-lg bg-gradient-to-r from-emerald-400 to-teal-500 text-white shadow-emerald-400/30">
+  1394→              <Layers className="h-4 w-4" />
+  1395→              Study Complete
+  1396→            </div>
+  1397→          </motion.div>
+  1398→
+  1399→          <div>
+  1400→            <h2 className="text-2xl font-bold">
+  1401→              {knownCount === flashcardQuestions.length
+  1402→                ? 'Perfect recall!'
+  1403→                : knownCount >= flashcardQuestions.length * 0.7
+  1404→                  ? 'Great progress!'
+  1405→                  : 'Keep practicing!'}
+  1406→            </h2>
+  1407→            <p className="text-muted-foreground text-sm mt-1">
+  1408→              You knew <span className="font-bold text-emerald-600 dark:text-emerald-400">{knownCount}</span> out of <span className="font-bold">{flashcardQuestions.length}</span> cards
+  1409→            </p>
+  1410→          </div>
+  1411→
+  1412→          <div className="flex items-center justify-center gap-6">
+  1413→            <div className="text-center">
+  1414→              <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{knownCount}</div>
+  1415→              <div className="text-xs text-muted-foreground mt-1">Known</div>
+  1416→            </div>
+  1417→            <div className="h-10 w-px bg-border" />
+  1418→            <div className="text-center">
+  1419→              <div className="text-3xl font-bold text-amber-600 dark:text-amber-400">{learningCount}</div>
+  1420→              <div className="text-xs text-muted-foreground mt-1">Still Learning</div>
+  1421→            </div>
+  1422→          </div>
+  1423→
+  1424→          {learningCount > 0 && (
+  1425→            <div className="text-left space-y-2">
+  1426→              <h3 className="text-sm font-semibold">Cards to review</h3>
+  1427→              <div className="max-h-32 overflow-y-auto space-y-1">
+  1428→                {flashcardQuestions
+  1429→                  .filter((q) => stillLearningCards.has(q.id))
+  1430→                  .map((q) => (
+  1431→                    <div key={q.id} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-md bg-amber-500/5 border border-amber-500/10">
+  1432→                      <Lightbulb className="h-3 w-3 text-amber-500 shrink-0" />
+  1433→                      <span className="flex-1 truncate">{q.question.slice(0, 60)}{q.question.length > 60 ? '...' : ''}</span>
+  1434→                    </div>
+  1435→                  ))}
+  1436→              </div>
+  1437→            </div>
+  1438→          )}
+  1439→
+  1440→          <div className="flex justify-center gap-3">
+  1441→            <Button onClick={handleFlashcardReset} variant="outline">
+  1442→              <RotateCcw className="h-4 w-4 mr-2" />
+  1443→              Study Again
+  1444→            </Button>
+  1445→            <Button onClick={() => navigate('dashboard')}>
+  1446→              <ArrowLeft className="h-4 w-4 mr-2" />
+  1447→              Back to Dashboard
+  1448→            </Button>
+  1449→          </div>
+  1450→        </div>
+  1451→      </motion.div>
+  1452→    );
+  1453→  }
+  1454→
+  1455→  // ---------- Question Screen ----------
+  1456→  return (
+  1457→    <div className="pl-14 lg:pl-0">
+  1458→      <div className="relative">
+  1459→        {/* Streak popup */}
+  1460→        <AnimatePresence>
+  1461→          {showStreakPopup && (
+  1462→            <motion.div
+  1463→              initial={{ opacity: 0, y: 20, scale: 0.8 }}
+  1464→              animate={{ opacity: 1, y: 0, scale: 1 }}
+  1465→              exit={{ opacity: 0, y: -20, scale: 0.8 }}
+  1466→              transition={{ type: 'spring', stiffness: 300, damping: 15 }}
+  1467→              className="fixed top-1/4 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+  1468→            >
+  1469→              <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold text-sm shadow-lg shadow-orange-500/30">
+  1470→                <motion.span
+  1471→                  animate={{ scale: [1, 1.3, 1] }}
+  1472→                  transition={{ duration: 0.4, repeat: 2 }}
+  1473→                >
+  1474→                  <Flame className="h-5 w-5" />
+  1475→                </motion.span>
+  1476→                {streak} in a row!
+  1477→              </div>
+  1478→            </motion.div>
+  1479→          )}
+  1480→        </AnimatePresence>
+  1481→
+  1482→        {/* Confetti */}
+  1483→        <AnimatePresence>
+  1484→          {showConfetti && (
+  1485→            <div className="fixed inset-0 pointer-events-none z-50">
+  1486→              {Array.from({ length: 16 }).map((_, i) => (
+  1487→                <ConfettiParticle
+  1488→                  key={i}
+  1489→                  delay={i * 0.03}
+  1490→                  color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
+  1491→                />
+  1492→              ))}
+  1493→            </div>
+  1494→          )}
+  1495→        </AnimatePresence>
+  1496→
+  1497→        {/* Animated header */}
+  1498→        <motion.div
+  1499→          initial={{ opacity: 0, y: -10 }}
+  1500→          animate={{ opacity: 1, y: 0 }}
+  1501→          className="mb-6 rounded-xl p-5 mesh-gradient gradient-border relative overflow-hidden"
+  1502→        >
+  1503→          <div className="relative z-10">
+  1504→            <div className="flex items-center justify-between mb-3">
+  1505→              <div className="flex items-center gap-3">
+  1506→                <h1 className="text-xl font-bold gradient-text">{studyMode === 'quiz' ? 'Quiz Practice' : studyMode === 'flashcard' ? 'Flashcard Study' : studyMode === 'review' ? 'Spaced Review' : 'Daily Challenge'}</h1>
+  1507→                {/* Mode toggle */}
+  1508→                <div className="flex items-center rounded-lg border border-border bg-background/50 p-0.5">
+  1509→                  <button
+  1510→                    onClick={() => handleModeChange('quiz')}
+  1511→                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+  1512→                      studyMode === 'quiz'
+  1513→                        ? 'bg-primary text-primary-foreground shadow-sm'
+  1514→                        : 'text-muted-foreground hover:text-foreground'
+  1515→                    }`}
+  1516→                  >
+  1517→                    <HelpCircle className="w-3.5 h-3.5" />
+  1518→                    Quiz
+  1519→                  </button>
+  1520→                  <button
+  1521→                    onClick={() => handleModeChange('flashcard')}
+  1522→                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+  1523→                      studyMode === 'flashcard'
+  1524→                        ? 'bg-primary text-primary-foreground shadow-sm'
+  1525→                        : 'text-muted-foreground hover:text-foreground'
+  1526→                    }`}
+  1527→                  >
+  1528→                    <Layers className="w-3.5 h-3.5" />
+  1529→                    Flashcard
+  1530→                  </button>
+  1531→                  <button
+  1532→                    onClick={() => handleModeChange('daily')}
+  1533→                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+  1534→                      studyMode === 'daily'
+  1535→                        ? 'bg-primary text-primary-foreground shadow-sm'
+  1536→                        : 'text-muted-foreground hover:text-foreground'
+  1537→                    }`}
+  1538→                  >
+  1539→                    <Flame className="w-3.5 h-3.5" />
+  1540→                    Daily
+  1541→                  </button>
+  1542→                  <button
+  1543→                    onClick={() => handleModeChange('review')}
+  1544→                    className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+  1545→                      studyMode === 'review'
+  1546→                        ? 'bg-primary text-primary-foreground shadow-sm'
+  1547→                        : 'text-muted-foreground hover:text-foreground'
+  1548→                    }`}
+  1549→                  >
+  1550→                    <Brain className="w-3.5 h-3.5" />
+  1551→                    Review
+  1552→                    {overdueCount > 0 && (
+  1553→                      <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-white px-1">
+  1554→                        {overdueCount}
+  1555→                      </span>
+  1556→                    )}
+  1557→                  </button>
+  1558→                </div>
+  1559→              </div>
+  1560→              <div className="flex items-center gap-2">
+  1561→                {/* Timer display (quiz mode only) */}
+  1562→                {studyMode === 'quiz' && timerStarted && (
+  1563→                  <motion.div
+  1564→                    initial={{ opacity: 0, scale: 0.8 }}
+  1565→                    animate={{ opacity: 1, scale: 1 }}
+  1566→                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-background/60 border border-border text-xs font-mono text-muted-foreground"
+  1567→                  >
+  1568→                    <motion.div
+  1569→                      animate={showResults ? {} : { opacity: [1, 0.5, 1] }}
+  1570→                      transition={showResults ? {} : { duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+  1571→                    >
+  1572→                      <Clock className="h-3.5 w-3.5 text-primary/60" />
+  1573→                    </motion.div>
+  1574→                    <span>{formatTimer(timerSeconds)}</span>
+  1575→                  </motion.div>
+  1576→                )}
+  1577→                {studyMode === 'quiz' && streak >= 2 && (
+  1578→                  <motion.div
+  1579→                    key={streak}
+  1580→                    initial={{ scale: 0.8, opacity: 0 }}
+  1581→                    animate={{ scale: 1, opacity: 1 }}
+  1582→                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20"
+  1583→                  >
+  1584→                    <Flame className="h-4 w-4 text-orange-500" />
+  1585→                    <span className="text-xs font-bold text-orange-600 dark:text-orange-400">{streak} streak</span>
+  1586→                  </motion.div>
+  1587→                )}
+  1588→              </div>
+  1589→            </div>
+  1590→            {/* Course filter tabs (not shown in daily mode) */}
+  1591→            {studyMode !== 'daily' && studyMode !== 'review' && (
+  1592→            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+  1593→            {COURSE_QUIZ_GROUPS.map((group) => (
+  1594→              <button
+  1595→                key={group.id}
+  1596→                onClick={() => { handleCourseChange(group.id); if (showBookmarked) setShowBookmarked(false); }}
+  1597→                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all ${
+  1598→                  selectedCourse === group.id
+  1599→                    ? 'bg-primary text-primary-foreground shadow-sm'
+  1600→                    : 'border border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
+  1601→                }`}
+  1602→              >
+  1603→                <group.icon className="h-3.5 w-3.5" />
+  1604→                {group.label}
+  1605→                <span className={`ml-0.5 text-[10px] ${selectedCourse === group.id ? 'bg-white/20 px-1 rounded' : 'text-muted-foreground'}`}>
+  1606→                  {group.id === 'all'
+  1607→                    ? allQuestions.length
+  1608→                    : allQuestions.filter((q) => q.courseId === group.id).length}
+  1609→                </span>
+  1610→              </button>
+  1611→            ))}
+  1612→            {/* Bookmarked filter chip */}
+  1613→            {bookmarkedQuestions.size > 0 && (
+  1614→              <motion.button
+  1615→                initial={{ scale: 0.8, opacity: 0 }}
+  1616→                animate={{ scale: 1, opacity: 1 }}
+  1617→                whileHover={{ scale: 1.05 }}
+  1618→                whileTap={{ scale: 0.95 }}
+  1619→                onClick={() => { setShowBookmarked(!showBookmarked); if (showBookmarked) setCurrentIndex(0); else setCurrentIndex(0); }}
+  1620→                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all ${
+  1621→                  showBookmarked
+  1622→                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 glass shadow-sm'
+  1623→                    : 'border border-border text-muted-foreground hover:text-foreground hover:border-emerald-500/30 glass-hover'
+  1624→                }`}
+  1625→              >
+  1626→                <BookmarkCheck className="h-3.5 w-3.5" />
+  1627→                Bookmarked
+  1628→                <span className={`ml-0.5 text-[10px] ${showBookmarked ? 'bg-emerald-500/20 px-1 rounded' : 'text-muted-foreground'}`}>
+  1629→                  {bookmarkedQuestions.size}
+  1630→                </span>
+  1631→              </motion.button>
+  1632→            )}
+  1633→          </div>
+  1634→            )}
+  1635→          {studyMode !== 'daily' && studyMode !== 'review' && difficultyTotal > 0 && (
+  1636→            <div className="flex items-center gap-3 mt-2">
+  1637→              <div className="flex-1 flex h-1.5 rounded-full overflow-hidden bg-muted/40">
+  1638→                {difficultyCounts.easy > 0 && (
+  1639→                  <motion.div
+  1640→                    className="bg-emerald-500"
+  1641→                    initial={{ width: 0 }}
+  1642→                    animate={{ width: `${(difficultyCounts.easy / difficultyTotal) * 100}%` }}
+  1643→                    transition={{ duration: 0.5, ease: 'easeOut' }}
+  1644→                  />
+  1645→                )}
+  1646→                {difficultyCounts.medium > 0 && (
+  1647→                  <motion.div
+  1648→                    className="bg-amber-500"
+  1649→                    initial={{ width: 0 }}
+  1650→                    animate={{ width: `${(difficultyCounts.medium / difficultyTotal) * 100}%` }}
+  1651→                    transition={{ duration: 0.5, ease: 'easeOut', delay: 0.1 }}
+  1652→                  />
+  1653→                )}
+  1654→                {difficultyCounts.hard > 0 && (
+  1655→                  <motion.div
+  1656→                    className="bg-rose-500"
+  1657→                    initial={{ width: 0 }}
+  1658→                    animate={{ width: `${(difficultyCounts.hard / difficultyTotal) * 100}%` }}
+  1659→                    transition={{ duration: 0.5, ease: 'easeOut', delay: 0.2 }}
+  1660→                  />
+  1661→                )}
+  1662→              </div>
+  1663→              <div className="flex items-center gap-2 text-[10px] text-muted-foreground shrink-0">
+  1664→                {difficultyCounts.easy > 0 && (
+  1665→                  <span className="flex items-center gap-1">
+  1666→                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block" />
+  1667→                    {difficultyCounts.easy} Easy
+  1668→                  </span>
+  1669→                )}
+  1670→                {difficultyCounts.medium > 0 && (
+  1671→                  <span className="flex items-center gap-1">
+  1672→                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500 inline-block" />
+  1673→                    {difficultyCounts.medium} Med
+  1674→                  </span>
+  1675→                )}
+  1676→                {difficultyCounts.hard > 0 && (
+  1677→                  <span className="flex items-center gap-1">
+  1678→                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500 inline-block" />
+  1679→                    {difficultyCounts.hard} Hard
+  1680→                  </span>
+  1681→                )}
+  1682→              </div>
+  1683→            </div>
+  1684→          )}
+  1685→          {studyMode !== 'daily' && studyMode !== 'review' && (
+  1686→          <div className="flex items-center justify-between mb-2 mt-1">
+  1687→            <span className="text-sm font-medium">
+  1688→              {studyMode === 'quiz'
+  1689→                ? `Question ${currentIndex + 1} of ${questions.length}`
+  1690→                : `Card ${currentIndex + 1} of ${flashcardQuestions.length}`}
+  1691→            </span>
+  1692→            <div className="flex items-center gap-2">
+  1693→              {studyMode === 'quiz' && (
+  1694→                <>
+  1695→                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${
+  1696→                    currentQ?.difficulty === 'easy'
+  1697→                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+  1698→                      : currentQ?.difficulty === 'medium'
+  1699→                        ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
+  1700→                        : 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20'
+  1701→                  }`}>
+  1702→                    {currentQ?.difficulty}
+  1703→                  </span>
+  1704→                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${TYPE_BADGE_GRADIENT[currentQ?.type || ''] || 'bg-muted text-muted-foreground border-border'}`}>
+  1705→                    {currentQ?.type.replace('_', ' ')}
+  1706→                  </span>
+  1707→                </>
+  1708→              )}
+  1709→              {studyMode === 'flashcard' && (
+  1710→                <span className="text-xs text-muted-foreground">
+  1711→                  {flashcardReviewed.size} of {flashcardQuestions.length} reviewed
+  1712→                </span>
+  1713→              )}
+  1714→            </div>
+  1715→          </div>
+  1716→          )}
+  1717→          {/* Custom gradient progress bar (not shown in daily/review mode) */}
+  1718→          {studyMode !== 'daily' && studyMode !== 'review' && (
+  1719→          <div className="relative h-2.5 w-full rounded-full bg-muted/50 overflow-hidden">
+  1720→            <motion.div
+  1721→              className="absolute inset-y-0 left-0 rounded-full"
+  1722→              style={{
+  1723→                background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214) 0%, oklch(0.687 0.159 177.89) 50%, oklch(0.565 0.194 149.214) 100%)',
+  1724→              }}
+  1725→              initial={{ width: 0 }}
+  1726→              animate={{ width: `${studyMode === 'quiz' ? progress : flashcardProgress}%` }}
+  1727→              transition={{ duration: 0.5, ease: 'easeOut' }}
+  1728→            />
+  1729→            <motion.div
+  1730→              className="absolute top-1/2 -translate-y-1/2 text-[9px] font-bold text-white drop-shadow-sm"
+  1731→              animate={{ left: `${Math.max(studyMode === 'quiz' ? progress : flashcardProgress, 5)}%` }}
+  1732→              transition={{ duration: 0.5, ease: 'easeOut' }}
+  1733→            >
+  1734→              {Math.round(studyMode === 'quiz' ? progress : flashcardProgress)}%
+  1735→            </motion.div>
+  1736→          </div>
+  1737→          )}
+  1738→          </div>
+  1739→        </motion.div>
+  1740→
+  1741→        {/* Daily Challenge Hero Banner */}
+  1742→        {studyMode === 'daily' && (
+  1743→          <motion.div
+  1744→            initial={{ opacity: 0, y: 10 }}
+  1745→            animate={{ opacity: 1, y: 0 }}
+  1746→            className="mb-6"
+  1747→          >
+  1748→            <div className="glass-accent-top rounded-2xl p-6 animated-border relative overflow-hidden">
+  1749→              <div className="relative z-10">
+  1750→                <div className="flex items-center justify-between">
+  1751→                  <div className="space-y-2">
+  1752→                    <h2 className="text-2xl font-bold gradient-text-animated">Daily Challenge</h2>
+  1753→                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+  1754→                      <div className="flex items-center gap-1.5">
+  1755→                        <Calendar className="h-4 w-4" />
+  1756→                        <span>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
+  1757→                      </div>
+  1758→                      {dailyStreak.current > 0 && (
+  1759→                        <motion.div
+  1760→                          initial={{ scale: 0.9 }}
+  1761→                          animate={{ scale: 1 }}
+  1762→                          className="flex items-center gap-1.5 text-orange-600 dark:text-orange-400 font-semibold"
+  1763→                        >
+  1764→                          <Flame className="h-4 w-4" />
+  1765→                          <span>{dailyStreak.current} day streak!</span>
+  1766→                        </motion.div>
+  1767→                      )}
+  1768→                    </div>
+  1769→                  </div>
+  1770→                  <div className="text-right space-y-1">
+  1771→                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+  1772→                      <Clock className="h-3.5 w-3.5" />
+  1773→                      <span>Resets in</span>
+  1774→                    </div>
+  1775→                    <div className="font-mono text-lg font-bold tabular-nums">
+  1776→                      {String(dailyTimeLeft.hours).padStart(2, '0')}:{String(dailyTimeLeft.minutes).padStart(2, '0')}:{String(dailyTimeLeft.seconds).padStart(2, '0')}
+  1777→                    </div>
+  1778→                  </div>
+  1779→                </div>
+  1780→                {/* Daily progress bar */}
+  1781→                {!dailyShowResults && (
+  1782→                  <div className="mt-4">
+  1783→                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+  1784→                      <span>Question {Math.min(currentIndex + 1, dailyQuestions.length)} of {dailyQuestions.length}</span>
+  1785→                      <span>{dailyScore} correct</span>
+  1786→                    </div>
+  1787→                    <div className="relative h-2 w-full rounded-full bg-muted/50 overflow-hidden">
+  1788→                      <motion.div
+  1789→                        className="absolute inset-y-0 left-0 rounded-full"
+  1790→                        style={{
+  1791→                          background: 'linear-gradient(90deg, #f59e0b 0%, #ef4444 50%, #ec4899 100%)',
+  1792→                        }}
+  1793→                        initial={{ width: 0 }}
+  1794→                        animate={{ width: `${dailyProgress}%` }}
+  1795→                        transition={{ duration: 0.5, ease: 'easeOut' }}
+  1796→                      />
+  1797→                    </div>
+  1798→                  </div>
+  1799→                )}
+  1800→              </div>
+  1801→            </div>
+  1802→          </motion.div>
+  1803→        )}
+  1804→
+  1805→        {/* Daily Challenge Results Screen */}
+  1806→        {studyMode === 'daily' && dailyShowResults && dailyChallenge?.completed && (
+  1807→          <motion.div
+  1808→            initial={{ opacity: 0, scale: 0.9 }}
+  1809→            animate={{ opacity: 1, scale: 1 }}
+  1810→            transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+  1811→            className="flex flex-col items-center justify-center min-h-[50vh] gap-6"
+  1812→          >
+  1813→            {/* Confetti for perfect score */}
+  1814→            <AnimatePresence>
+  1815→              {dailyChallenge.score === dailyChallenge.total && (
+  1816→                <div className="fixed inset-0 pointer-events-none z-50">
+  1817→                  {Array.from({ length: 40 }).map((_, i) => (
+  1818→                    <ConfettiParticle
+  1819→                      key={`daily-confetti-${i}`}
+  1820→                      delay={i * 0.03}
+  1821→                      color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
+  1822→                    />
+  1823→                  ))}
+  1824→                </div>
+  1825→              )}
+  1826→            </AnimatePresence>
+  1827→            <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full glow-emerald-strong">
+  1828→              {/* Animated circular progress */}
+  1829→              <div className="relative inline-flex">
+  1830→                <svg width="160" height="160" className="-rotate-90">
+  1831→                  <circle
+  1832→                    cx="80"
+  1833→                    cy="80"
+  1834→                    r="62"
+  1835→                    fill="none"
+  1836→                    stroke="currentColor"
+  1837→                    strokeWidth="10"
+  1838→                    className="text-muted/20"
+  1839→                  />
+  1840→                  <motion.circle
+  1841→                    cx="80"
+  1842→                    cy="80"
+  1843→                    r="62"
+  1844→                    fill="none"
+  1845→                    stroke="url(#dailyScoreGrad)"
+  1846→                    strokeWidth="12"
+  1847→                    strokeLinecap="round"
+  1848→                    strokeDasharray={dailyCircumference}
+  1849→                    initial={{ strokeDashoffset: dailyCircumference }}
+  1850→                    animate={{ strokeDashoffset: dailyStrokeDashoffset }}
+  1851→                    transition={{ duration: 1.5, ease: 'easeOut' }}
+  1852→                  />
+  1853→                  <defs>
+  1854→                    <linearGradient id="dailyScoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+  1855→                      <stop offset="0%" stopColor="#f59e0b" />
+  1856→                      <stop offset="50%" stopColor="#ef4444" />
+  1857→                      <stop offset="100%" stopColor="#ec4899" />
+  1858→                    </linearGradient>
+  1859→                  </defs>
+  1860→                </svg>
+  1861→                <div className="absolute inset-0 flex flex-col items-center justify-center">
+  1862→                  <motion.span
+  1863→                    className="text-4xl font-bold gradient-text"
+  1864→                    key={dailyAnimatedScore}
+  1865→                  >
+  1866→                    {dailyAnimatedScore}<span className="text-lg font-normal text-muted-foreground">/{dailyChallenge.total}</span>
+  1867→                  </motion.span>
+  1868→                  <span className="text-xs text-muted-foreground mt-1">
+  1869→                    {Math.round(dailyScorePercent * 100)}% correct
+  1870→                  </span>
+  1871→                </div>
+  1872→              </div>
+  1873→
+  1874→              {/* Streak display */}
+  1875→              <motion.div
+  1876→                initial={{ opacity: 0, y: 10 }}
+  1877→                animate={{ opacity: 1, y: 0 }}
+  1878→                transition={{ delay: 0.6 }}
+  1879→                className="flex items-center justify-center gap-2"
+  1880→              >
+  1881→                <div className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-orange-500/10 border border-orange-500/20">
+  1882→                  <Flame className="h-5 w-5 text-orange-500" />
+  1883→                  <span className="font-bold text-orange-600 dark:text-orange-400">{dailyStreak.current} day streak</span>
+  1884→                </div>
+  1885→              </motion.div>
+  1886→
+  1887→              {dailyStreak.best > 1 && (
+  1888→                <motion.p
+  1889→                  initial={{ opacity: 0 }}
+  1890→                  animate={{ opacity: 1 }}
+  1891→                  transition={{ delay: 0.8 }}
+  1892→                  className="text-xs text-muted-foreground"
+  1893→                >
+  1894→                  Best streak: {dailyStreak.best} days
+  1895→                </motion.p>
+  1896→              )}
+  1897→
+  1898→              {/* Come back tomorrow message */}
+  1899→              <motion.div
+  1900→                initial={{ opacity: 0, y: 5 }}
+  1901→                animate={{ opacity: 1, y: 0 }}
+  1902→                transition={{ delay: 1 }}
+  1903→                className="text-center"
+  1904→              >
+  1905→                <h2 className="text-xl font-bold">
+  1906→                  {dailyChallenge.score === dailyChallenge.total
+  1907→                    ? 'Perfect Score!'
+  1908→                    : dailyChallenge.score >= dailyChallenge.total * 0.6
+  1909→                      ? 'Great work!'
+  1910→                      : 'Keep practicing!'}
+  1911→                </h2>
+  1912→                <p className="text-muted-foreground text-sm mt-1">
+  1913→                  Come back tomorrow for a new challenge!
+  1914→                </p>
+  1915→              </motion.div>
+  1916→
+  1917→              {/* Per-question breakdown */}
+  1918→              <div className="space-y-2 text-left">
+  1919→                <h3 className="text-sm font-semibold">Question Breakdown</h3>
+  1920→                <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+  1921→                  {dailyQuestions.map((q, i) => {
+  1922→                    const wasCorrect = answered[q.id] && isCorrect(q, answers[q.id] || '');
+  1923→                    return (
+  1924→                      <motion.div
+  1925→                        key={q.id}
+  1926→                        initial={{ opacity: 0, x: -10 }}
+  1927→                        animate={{ opacity: 1, x: 0 }}
+  1928→                        transition={{ delay: i * 0.05 + 0.3 }}
+  1929→                        className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md ${wasCorrect ? 'bg-emerald-500/5' : 'bg-destructive/5'}`}
+  1930→                      >
+  1931→                        <motion.span
+  1932→                          initial={{ scale: 0 }}
+  1933→                          animate={{ scale: 1 }}
+  1934→                          transition={{ type: 'spring', stiffness: 300, delay: i * 0.05 + 0.3 }}
+  1935→                          className={`flex h-5 w-5 items-center justify-center rounded-full ${wasCorrect ? 'bg-emerald-500 text-white' : 'bg-destructive/20 text-destructive'}`}
+  1936→                        >
+  1937→                          {wasCorrect ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+  1938→                        </motion.span>
+  1939→                        <span className="flex-1 truncate">{q.question.slice(0, 60)}{q.question.length > 60 ? '...' : ''}</span>
+  1940→                        <span className={`text-[9px] px-1.5 py-0 rounded-full font-medium border ${TYPE_BADGE_GRADIENT[q.type] || 'bg-muted text-muted-foreground border-border'}`}>
+  1941→                          {q.type.replace('_', ' ')}
+  1942→                        </span>
+  1943→                      </motion.div>
+  1944→                    );
+  1945→                  })}
+  1946→                </div>
+  1947→              </div>
+  1948→
+  1949→              <div className="flex flex-col sm:flex-row justify-center gap-3">
+  1950→                <Button onClick={handleDailyShare} variant="outline">
+  1951→                  <Copy className="h-4 w-4 mr-2" />
+  1952→                  {dailyShareCopied ? 'Copied!' : 'Share Results'}
+  1953→                </Button>
+  1954→                <Button onClick={() => navigate('dashboard')}>
+  1955→                  <ArrowLeft className="h-4 w-4 mr-2" />
+  1956→                  Back to Dashboard
+  1957→                </Button>
+  1958→              </div>
+  1959→            </div>
+  1960→          </motion.div>
+  1961→        )}
+  1962→
+  1963→        {/* Daily Challenge Question Card */}
+  1964→        {studyMode === 'daily' && !dailyShowResults && dailyCurrentQ && (
+  1965→        <AnimatePresence mode="wait">
+  1966→          {dailyCurrentQ && (
+  1967→            <motion.div
+  1968→              key={dailyCurrentQ.id}
+  1969→              initial={{ opacity: 0, x: 40, scale: 0.98 }}
+  1970→              animate={{ opacity: 1, x: 0, scale: 1 }}
+  1971→              exit={{ opacity: 0, x: -40, scale: 0.98 }}
+  1972→              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+  1973→              className="glass rounded-xl p-6 space-y-6 glow-emerald"
+  1974→            >
+  1975→              {/* Concept tag */}
+  1976→              {dailyCurrentQ.concept && (
+  1977→                <motion.div
+  1978→                  initial={{ opacity: 0, x: -10 }}
+  1979→                  animate={{ opacity: 1, x: 0 }}
+  1980→                  className="flex items-center gap-2"
+  1981→                >
+  1982→                  <Badge variant="secondary" className="text-xs bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/10">
+  1983→                    {dailyCurrentQ.concept}
+  1984→                  </Badge>
+  1985→                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${
+  1986→                    dailyCurrentQ.difficulty === 'easy'
+  1987→                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+  1988→                      : dailyCurrentQ.difficulty === 'medium'
+  1989→                        ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
+  1990→                        : 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20'
+  1991→                  }`}>
+  1992→                    {dailyCurrentQ.difficulty}
+  1993→                  </span>
+  1994→                </motion.div>
+  1995→              )}
+  1996→
+  1997→              {/* Question text */}
+  1998→              <h2 className="text-lg font-semibold leading-relaxed">{dailyCurrentQ.question}</h2>
+  1999→
+  2000→              {/* Question type renderers — reuse the same pattern as quiz mode */}
+
+[showing lines 1-2000 of 3198; use offset=2001 with limit to continue reading]

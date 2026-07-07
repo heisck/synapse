@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '@/stores/appStore';
-import type { LearnerProfile, MasteryMap, ChatMessage, Course } from '@/types';
+import type { LearnerProfile, MasteryMap, ChatMessage, Course, StudyGoal } from '@/types';
 
 const STORAGE_KEY_PREFIX = 'synapselearn_';
 const KEYS = {
@@ -19,6 +19,9 @@ const KEYS = {
   alwaysConfuses: `${STORAGE_KEY_PREFIX}always_confuses`,
   activePersona: `${STORAGE_KEY_PREFIX}active_persona`,
   tutorMode: `${STORAGE_KEY_PREFIX}tutor_mode`,
+  moodSettings: `${STORAGE_KEY_PREFIX}mood_settings`,
+  dailyChallenge: `${STORAGE_KEY_PREFIX}daily_challenge`,
+  studyGoals: 'synapse-study-goals',
 } as const;
 
 // Safely write to localStorage with quota handling
@@ -100,6 +103,15 @@ export function useSessionPersistence(): void {
     const savedAlwaysConfuses: string = safeGetItem(KEYS.alwaysConfuses, '');
     const savedPersona: string = safeGetItem(KEYS.activePersona, 'storyteller');
     const savedTutorMode: 'text' | 'slide' | 'hybrid' = safeGetItem(KEYS.tutorMode, 'hybrid');
+    const savedDailyChallenge = safeGetItem<{
+      lastCompletedDate: string | null;
+      streak: number;
+      bestScore: number;
+      totalCompleted: number;
+      todayResults: { score: number; total: number; timeTaken: number; stars: number } | null;
+    } | null>(KEYS.dailyChallenge, null);
+    const savedMoodSettings: { energy: number; formality: number; patience: number; humor: number } = safeGetItem(KEYS.moodSettings, { energy: 50, formality: 50, patience: 70, humor: 30 });
+    const savedStudyGoals: StudyGoal[] = safeGetItem(KEYS.studyGoals, []);
 
     // Only restore if there is meaningful persisted data
     const hasData =
@@ -107,7 +119,9 @@ export function useSessionPersistence(): void {
       savedProfile !== null ||
       savedCourses.length > 0 ||
       Object.keys(savedMasteryMap).length > 0 ||
-      savedOnboarding;
+      savedOnboarding ||
+      savedDailyChallenge !== null ||
+      savedStudyGoals.length > 0;
 
     if (!hasData) return;
 
@@ -126,6 +140,9 @@ export function useSessionPersistence(): void {
       ...(savedAlwaysConfuses && { alwaysConfuses: savedAlwaysConfuses }),
       ...(savedPersona && { activePersona: savedPersona }),
       ...(savedTutorMode && { tutorMode: savedTutorMode }),
+      ...(savedDailyChallenge && { dailyChallenge: savedDailyChallenge }),
+      moodSettings: savedMoodSettings,
+      ...(savedStudyGoals.length > 0 && { studyGoals: savedStudyGoals }),
     });
   }, []);
 
@@ -223,6 +240,20 @@ export function useSessionPersistence(): void {
       },
     );
 
+    const unsubMoodSettings = store.subscribe(
+      (s) => s.moodSettings,
+      (mood) => {
+        safeSetItem(KEYS.moodSettings, JSON.stringify(mood));
+      },
+    );
+
+    const unsubDailyChallenge = store.subscribe(
+      (s) => s.dailyChallenge,
+      (dc) => {
+        safeSetItem(KEYS.dailyChallenge, JSON.stringify(dc));
+      },
+    );
+
     return () => {
       unsubProfile();
       unsubCourses();
@@ -236,6 +267,8 @@ export function useSessionPersistence(): void {
       unsubConfuses();
       unsubPersona();
       unsubTutorMode();
+      unsubMoodSettings();
+      unsubDailyChallenge();
     };
   }, [store]);
 

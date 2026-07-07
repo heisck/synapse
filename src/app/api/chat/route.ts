@@ -60,6 +60,45 @@ const PERSONA_INSTRUCTIONS: Record<string, string> = {
     'You are a friendly peer who happens to be great at explaining things. Use casual, conversational language. Say "dude," "awesome," "makes sense?" Keep it light and relatable. Use everyday analogies. Avoid jargon — if you use a technical term, immediately explain it simply. Keep explanations short and punchy.',
 }
 
+// --- Mood instruction builder ---
+function buildMoodInstruction(mood: { energy: number; formality: number; patience: number; humor: number }): string {
+  const v = mood;
+
+  // Energy: 0-100
+  let energyDesc: string;
+  if (v.energy <= 20) energyDesc = 'very calm and understated';
+  else if (v.energy <= 40) energyDesc = 'mildly calm and relaxed';
+  else if (v.energy <= 60) energyDesc = 'moderately energetic';
+  else if (v.energy <= 80) energyDesc = 'quite energetic and enthusiastic';
+  else energyDesc = 'highly energetic and exuberant';
+
+  // Formality: 0-100
+  let formalityDesc: string;
+  if (v.formality <= 20) formalityDesc = 'very casual and informal';
+  else if (v.formality <= 40) formalityDesc = 'casual and relaxed';
+  else if (v.formality <= 60) formalityDesc = 'semi-formal and balanced';
+  else if (v.formality <= 80) formalityDesc = 'fairly formal and structured';
+  else formalityDesc = 'very formal and precise';
+
+  // Patience: 0-100
+  let patienceDesc: string;
+  if (v.patience <= 20) patienceDesc = 'brief and to-the-point, skipping unnecessary detail';
+  else if (v.patience <= 40) patienceDesc = 'concise, giving quick summaries';
+  else if (v.patience <= 60) patienceDesc = 'moderately detailed in explanations';
+  else if (v.patience <= 80) patienceDesc = 'patient and thorough, taking time to explain step-by-step';
+  else patienceDesc = 'extremely patient and exhaustive, leaving no detail unexplained';
+
+  // Humor: 0-100
+  let humorDesc: string;
+  if (v.humor <= 20) humorDesc = 'completely serious, no humor or wit';
+  else if (v.humor <= 40) humorDesc = 'mostly serious with rare, subtle wit';
+  else if (v.humor <= 60) humorDesc = 'light and occasional humor';
+  else if (v.humor <= 80) humorDesc = 'playful with frequent witty remarks';
+  else humorDesc = 'highly playful and witty, injecting humor throughout';
+
+  return `Tone: ${energyDesc}. Language register: ${formalityDesc}. Explanation depth: ${patienceDesc}. Humor level: ${humorDesc}.`;
+}
+
 // --- Default system prompt ---
 const DEFAULT_SYSTEM_PROMPT =
   'You are Synapse, a friendly and adaptive AI tutor. Help the learner understand the topic clearly. Use simple language, stories, and analogies. Be concise but thorough.';
@@ -112,6 +151,7 @@ export async function POST(request: NextRequest) {
       decisionState,
       history,
       persona,
+      moodSettings,
     } = body;
 
     const userMessage = sanitize(message || '');
@@ -162,10 +202,15 @@ export async function POST(request: NextRequest) {
         break;
     }
 
+    // Prepend mood instruction to persona instruction
+    const moodInstruction = moodSettings
+      ? buildMoodInstruction(moodSettings as { energy: number; formality: number; patience: number; humor: number })
+      : buildMoodInstruction({ energy: 50, formality: 50, patience: 70, humor: 30 });
+
     // Prepend persona instruction to system prompt
     const personaId = typeof persona === 'string' ? persona : 'storyteller'
     const personaInstruction = PERSONA_INSTRUCTIONS[personaId] || PERSONA_INSTRUCTIONS['storyteller']
-    systemPrompt = `[PERSONA INSTRUCTION — adopt this voice/style for ALL responses]: ${personaInstruction}\n\n${systemPrompt}`
+    systemPrompt = `[PERSONA INSTRUCTION — adopt this voice/style for ALL responses]: ${personaInstruction}\n\n[MOOD MODIFIERS — adjust your tone/behavior accordingly]: ${moodInstruction}\n\n${systemPrompt}`
 
     // Trim system prompt to 3000 chars
     systemPrompt = systemPrompt.slice(0, 3000);
