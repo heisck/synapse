@@ -2,12 +2,12 @@
 
 import { Suspense, lazy, useState, useRef, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings } from 'lucide-react';
+import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Keyboard } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { AppSidebar } from './AppSidebar';
 import { StoreInitializer } from './StoreInitializer';
 import { ErrorBoundary } from './ErrorBoundary';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { AppView } from '@/types';
 
 const LandingPage = lazy(() =>
@@ -453,11 +453,59 @@ function SearchModal() {
   );
 }
 
+const shortcutGroups = [
+  {
+    title: 'Navigation',
+    shortcuts: [
+      { keys: ['⌘', '1'], description: 'Dashboard' },
+      { keys: ['⌘', '2'], description: 'AI Tutor' },
+      { keys: ['⌘', '3'], description: 'Upload' },
+      { keys: ['⌘', '4'], description: 'Quiz' },
+      { keys: ['⌘', '5'], description: 'Notes' },
+      { keys: ['⌘', '6'], description: 'Profile' },
+      { keys: ['⌘', '7'], description: 'Settings' },
+    ],
+  },
+  {
+    title: 'Actions',
+    shortcuts: [
+      { keys: ['⌘', 'K'], description: 'Search' },
+      { keys: ['⌘', ','], description: 'Shortcuts' },
+    ],
+  },
+  {
+    title: 'Quiz',
+    shortcuts: [
+      { keys: ['↑', '↓'], description: 'Navigate options' },
+      { keys: ['Enter'], description: 'Select option' },
+      { keys: ['1', '2', '3', '4'], description: 'Select answer option' },
+    ],
+  },
+];
+
 function KeyboardShortcuts() {
   const { navigate } = useAppStore();
+  const [open, setOpen] = useState(false);
+
+  // Navigation shortcuts + Cmd+, to open this dialog
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      // ? key (Shift+/) without Cmd/Ctrl/Alt opens shortcuts dialog
+      if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setOpen((v) => !v);
+        return;
+      }
+
+      // Cmd+, opens shortcuts dialog
+      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+        e.preventDefault();
+        setOpen((v) => !v);
+        return;
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.key === '1') { e.preventDefault(); navigate('dashboard'); }
       if ((e.metaKey || e.ctrlKey) && e.key === '2') { e.preventDefault(); navigate('tutor'); }
       if ((e.metaKey || e.ctrlKey) && e.key === '3') { e.preventDefault(); navigate('upload'); }
@@ -469,7 +517,69 @@ function KeyboardShortcuts() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [navigate]);
-  return null;
+
+  return (
+    <>
+      {/* Floating ? button */}
+      <motion.button
+        onClick={() => setOpen(true)}
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.95 }}
+        className="fixed bottom-6 right-6 z-50 flex h-10 w-10 items-center justify-center rounded-full glass pulse-glow border border-border/50 text-sm font-bold text-primary shadow-lg cursor-pointer"
+        aria-label="Keyboard shortcuts"
+      >
+        ?
+      </motion.button>
+
+      {/* Shortcuts Dialog */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-lg p-0 gap-0 overflow-hidden mesh-gradient">
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Keyboard className="h-5 w-5 text-primary" />
+              Keyboard Shortcuts
+            </DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-6 space-y-5 max-h-[60vh] overflow-y-auto">
+            {shortcutGroups.map((group, gi) => (
+              <motion.div
+                key={group.title}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: gi * 0.1 }}
+                className="space-y-2"
+              >
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.title}</h4>
+                <div className="space-y-1">
+                  {group.shortcuts.map((shortcut, si) => (
+                    <motion.div
+                      key={si}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.25, delay: gi * 0.1 + si * 0.04 }}
+                      className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-accent/50 transition-colors"
+                    >
+                      <span className="text-sm text-foreground/80">{shortcut.description}</span>
+                      <div className="flex items-center gap-1">
+                        {shortcut.keys.map((key, ki) => (
+                          <span key={ki} className="flex items-center">
+                            {ki > 0 && <span className="text-xs text-muted-foreground/50 mx-0.5">+</span>}
+                            <kbd className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-md border border-border/60 bg-muted/80 px-1.5 font-mono text-[11px] font-medium text-foreground/70 shadow-sm">
+                              {key}
+                            </kbd>
+                          </span>
+                        ))}
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 const fullViewportViews: Array<string> = ['landing', 'onboarding'];

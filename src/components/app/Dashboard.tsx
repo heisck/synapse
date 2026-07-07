@@ -239,6 +239,9 @@ export function Dashboard() {
     studySessions,
     masteryMap,
     activeSessionId,
+    onboardingComplete,
+    notes,
+    quizScore,
   } = useAppStore();
 
   const { current: currentStreak, best: bestStreak } = useStudyStreak();
@@ -593,6 +596,116 @@ export function Dashboard() {
               <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center animate-float">
                 <Zap className="h-10 w-10 text-primary/70" />
               </div>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Learning Path Progress */}
+      <motion.div
+        variants={fadeUp}
+        initial="initial"
+        animate="animate"
+      >
+        <div className="glass rounded-xl p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-primary" />
+              <h3 className="font-semibold text-sm">Learning Path</h3>
+            </div>
+            <Badge variant="secondary" className="text-xs">
+              {(() => {
+                const milestones = [
+                  onboardingComplete,
+                  studySessions.length >= 1,
+                  quizScore !== null,
+                  notes.length >= 1,
+                  currentStreak >= 3,
+                ];
+                const completed = milestones.filter(Boolean).length;
+                return `${completed}/5 milestones`;
+              })()}
+            </Badge>
+          </div>
+
+          {/* Horizontal Timeline */}
+          <div className="relative overflow-x-auto pb-2">
+            <div className="flex items-start min-w-[480px] sm:min-w-0 justify-between gap-0">
+              {[
+                { label: 'Get Started', icon: PlayCircle, done: onboardingComplete },
+                { label: 'First Session', icon: MessageSquare, done: studySessions.length >= 1 },
+                { label: 'Quiz Taker', icon: Target, done: quizScore !== null },
+                { label: 'Note Keeper', icon: BookOpen, done: notes.length >= 1 },
+                { label: 'Streak Master', icon: Flame, done: currentStreak >= 3 },
+              ].map((milestone, idx, arr) => {
+                const isFirstDone = idx === 0
+                  ? milestone.done
+                  : arr.slice(0, idx).every((m) => m.done);
+                const isCurrent = isFirstDone && !milestone.done;
+                const isLocked = !isFirstDone;
+                const isDone = milestone.done;
+                const Icon = milestone.icon;
+
+                return (
+                  <div key={milestone.label} className="flex items-start flex-1 last:flex-none">
+                    {/* Node + Label */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4, delay: idx * 0.1 }}
+                      className="flex flex-col items-center gap-2"
+                    >
+                      {/* Circle node */}
+                      <div className="relative">
+                        {isDone && (
+                          <motion.div
+                            initial={{ scale: 0.8 }}
+                            animate={{ scale: 1 }}
+                            className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 glow-emerald-strong"
+                          >
+                            <CheckCircle2 className="h-5 w-5 text-white" />
+                          </motion.div>
+                        )}
+                        {isCurrent && (
+                          <motion.div
+                            animate={{ boxShadow: ['0 0 0 0 rgba(16,185,129,0.4)', '0 0 0 10px rgba(16,185,129,0)', '0 0 0 0 rgba(16,185,129,0.4)'] }}
+                            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                            className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500/10"
+                          >
+                            <Icon className="h-5 w-5 text-emerald-500" />
+                          </motion.div>
+                        )}
+                        {isLocked && (
+                          <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-muted-foreground/25 bg-muted/30">
+                            <Icon className="h-5 w-5 text-muted-foreground/40" />
+                          </div>
+                        )}
+                      </div>
+                      <span className={`text-xs font-medium text-center leading-tight max-w-[72px] ${isDone ? 'text-emerald-600 dark:text-emerald-400' : isCurrent ? 'text-foreground' : 'text-muted-foreground/50'}`}>
+                        {milestone.label}
+                      </span>
+                    </motion.div>
+
+                    {/* Connector line (not after last item) */}
+                    {idx < arr.length - 1 && (
+                      <motion.div
+                        initial={{ scaleX: 0 }}
+                        animate={{ scaleX: 1 }}
+                        transition={{ duration: 0.5, delay: idx * 0.1 + 0.15 }}
+                        className="flex-1 flex items-center mt-[18px] -mx-1 origin-left"
+                      >
+                        <div
+                          className={`h-[2px] w-full rounded-full ${
+                            milestone.done
+                              ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
+                              : 'bg-gradient-to-r from-muted-foreground/20 to-muted-foreground/15'
+                          }`}
+                        />
+                      </motion.div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

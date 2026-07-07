@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useAppStore } from '@/stores/appStore'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,15 @@ import {
   Maximize2,
   ChevronDown,
   ChevronUp,
+  Search,
+  X,
+  LogOut,
+  Trophy,
+  Sparkles,
+  BookMarked,
+  Target,
+  Clock,
+  CheckCircle2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -164,6 +173,7 @@ export function TutorView() {
     activeSlides,
     currentSlideIndex,
     setCurrentSlideIndex,
+    navigate,
   } = useAppStore()
 
   const [input, setInput] = useState('')
@@ -245,6 +255,92 @@ export function TutorView() {
       setPomodoroRunning(false)
     }
   }, [pomodoroTimeLeft, pomodoroRunning])
+
+  // ---------- Session Summary & Search State ----------
+  const [showEndSession, setShowEndSession] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [confettiParticles] = useState(() =>
+    Array.from({ length: 40 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      y: Math.random() * -60 - 10,
+      rotation: Math.random() * 360,
+      scale: Math.random() * 0.6 + 0.4,
+      color: ['#10b981', '#14b8a6', '#06b6d4', '#f59e0b', '#ec4899', '#8b5cf6'][Math.floor(Math.random() * 6)],
+      delay: Math.random() * 0.5,
+      drift: (Math.random() - 0.5) * 60,
+    }))
+  )
+
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Focus search input when opened
+  useEffect(() => {
+    if (searchOpen && searchInputRef.current) {
+      searchInputRef.current.focus()
+    }
+  }, [searchOpen])
+
+  // Close search on Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && searchOpen) {
+        setSearchOpen(false)
+        setSearchQuery('')
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [searchOpen])
+
+  // ---------- Computed Session Stats ----------
+  const sessionStats = useMemo(() => {
+    const userMsgs = messages.filter((m) => m.role === 'user')
+    const assistantMsgs = messages.filter((m) => m.role === 'assistant')
+    const messagesExchanged = userMsgs.length + assistantMsgs.length
+    const conceptsExplored = Object.keys(masteryMap).length
+    const masteryValues = Object.values(masteryMap)
+    const avgMastery = masteryValues.length > 0
+      ? Math.round(masteryValues.reduce((sum, c) => sum + c.level, 0) / masteryValues.length)
+      : 0
+    const topicsCovered = new Set<string>()
+    if (activeTopic) topicsCovered.add(activeTopic)
+    Object.keys(masteryMap).forEach((k) => topicsCovered.add(k))
+    const keyTakeaways = assistantMsgs
+      .filter((m) => m.content.length > 20)
+      .slice(-3)
+      .map((m) => m.content.length > 100 ? m.content.slice(0, 100) + '…' : m.content)
+    return {
+      duration: timerSeconds,
+      messagesExchanged,
+      topicsCovered: Array.from(topicsCovered),
+      conceptsExplored,
+      avgMastery,
+      keyTakeaways,
+      showConfetti: timerSeconds > 600, // > 10 minutes
+    }
+  }, [messages, masteryMap, activeTopic, timerSeconds])
+
+  // ---------- Chat Search ----------
+  const searchMatches = useMemo(() => {
+    if (!searchQuery.trim()) return { filtered: messages, matchCount: 0 }
+    const q = searchQuery.toLowerCase()
+    const matched = messages.filter((m) => m.content.toLowerCase().includes(q))
+    return { filtered: matched, matchCount: matched.length }
+  }, [messages, searchQuery])
+
+  // Highlight text with emerald background
+  const highlightText = useCallback((text: string, query: string) => {
+    if (!query.trim()) return text
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const parts = text.split(new RegExp(`(${escaped})`, 'gi'))
+    return parts.map((part, i) =>
+      part.toLowerCase() === query.toLowerCase()
+        ? <mark key={i} className="bg-emerald-300/60 dark:bg-emerald-500/40 text-inherit rounded-sm px-0.5">{part}</mark>
+        : part
+    )
+  }, [])
 
   const showSlidePanel = (tutorMode === 'slide' || tutorMode === 'hybrid') && activeSlides.length > 0
 
@@ -405,6 +501,10 @@ export function TutorView() {
   const handleQuickAction = (prompt: string) => {
     handleSend(prompt)
   }
+
+  const handleSaveAndClose = useCallback(() => {
+    navigate('dashboard')
+  }, [navigate])
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -650,9 +750,14 @@ export function TutorView() {
               </span>
             </Badge>
           </motion.div>
-          <Badge variant="outline" className="text-xs">
-            {messages.length} messages
-          </Badge>
+          {/* Word Count Stats Pill */}
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 glass text-xs text-muted-foreground">
+            <MessageCircle className="w-3 h-3 text-emerald-500" />
+            <span className="font-mono font-medium tabular-nums">{messages.length}</span>
+            <span className="text-muted-foreground/60">·</span>
+            <Clock className="w-3 h-3 text-emerald-500" />
+            <span className="font-mono font-medium tabular-nums">{formatTimer(timerSeconds)}</span>
+          </div>
           <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
             <Button
               variant="ghost"
@@ -743,6 +848,60 @@ export function TutorView() {
         <div className="flex-1 flex flex-col min-w-0">
           {/* Course Context Panel - fallback when no dedicated slide panel */}
           {!showSlidePanel && <CourseContextPanel />}
+
+          {/* Chat sub-header with search button */}
+          <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
+            <span className="text-xs text-muted-foreground">
+              {activeTopic ? `Studying: ${activeTopic}` : 'Ready to learn'}
+            </span>
+            <motion.button
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              onClick={() => { setSearchOpen(!searchOpen); if (searchOpen) setSearchQuery('') }}
+              className={`p-1.5 rounded-lg transition-colors ${searchOpen ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' : 'hover:bg-accent text-muted-foreground hover:text-foreground'}`}
+              aria-label="Search within chat"
+            >
+              <Search className="w-4 h-4" />
+            </motion.button>
+          </div>
+
+          {/* Search Bar - slides down with framer-motion */}
+          <AnimatePresence>
+            {searchOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="overflow-hidden border-b border-border/60"
+              >
+                <div className="flex items-center gap-2 px-4 py-2 bg-card/30">
+                  <Search className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search within chat..."
+                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  />
+                  {searchQuery && (
+                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                      {searchMatches.matchCount} match{searchMatches.matchCount !== 1 ? 'es' : ''}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => { setSearchOpen(false); setSearchQuery('') }}
+                    className="shrink-0 p-0.5 rounded-md hover:bg-accent transition-colors"
+                    aria-label="Close search"
+                  >
+                    <X className="w-3.5 h-3.5 text-muted-foreground" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <ScrollArea className="flex-1 p-4" ref={scrollRef}>
             {/* Quick topic chips when no topic is set */}
             {!activeTopic && messages.length <= 1 && (
@@ -761,14 +920,45 @@ export function TutorView() {
               </div>
             )}
 
-            {messages.map((msg) => (
-              <ChatBubble
-                key={msg.id}
-                message={msg}
-                isStreaming={false}
-                onRegenerate={msg.role === 'assistant' ? handleRegenerate : undefined}
-              />
-            ))}
+            {searchOpen && searchQuery.trim()
+              ? searchMatches.matchCount > 0
+                ? searchMatches.filtered.map((msg) => (
+                    <motion.div
+                      key={msg.id}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className={`rounded-xl p-3 mb-2 border ${
+                        msg.role === 'user'
+                          ? 'ml-8 bg-primary/5 border-primary/20'
+                          : 'mr-8 bg-card/60 border-border/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className={`text-[10px] font-semibold uppercase tracking-wide ${msg.role === 'user' ? 'text-primary' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                          {msg.role === 'user' ? 'You' : 'AI Tutor'}
+                        </span>
+                      </div>
+                      <div className="text-sm leading-relaxed text-foreground/90">
+                        {highlightText(msg.content, searchQuery)}
+                      </div>
+                    </motion.div>
+                  ))
+                : (
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                      <Search className="w-8 h-8 mb-2 opacity-40" />
+                      <p className="text-sm">No messages match "{searchQuery}"</p>
+                    </div>
+                  )
+              : messages.map((msg) => (
+                  <ChatBubble
+                    key={msg.id}
+                    message={msg}
+                    isStreaming={false}
+                    onRegenerate={msg.role === 'assistant' ? handleRegenerate : undefined}
+                  />
+                ))
+            }
 
             {isLoading && <TypingIndicator />}
           </ScrollArea>
@@ -986,6 +1176,16 @@ export function TutorView() {
               {/* Session Controls */}
               <SessionControls />
 
+              {/* End Session Button */}
+              <Button
+                variant="outline"
+                className="w-full gap-2 text-sm border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+                onClick={() => setShowEndSession(true)}
+              >
+                <LogOut className="w-4 h-4" />
+                End Session
+              </Button>
+
               <Separator />
 
               {/* Tip Input */}
@@ -1004,6 +1204,192 @@ export function TutorView() {
           </div>
         )}
       </div>
+
+      {/* End Session Summary Panel */}
+      <AnimatePresence>
+        {showEndSession && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-end justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            {/* Backdrop */}
+            <motion.div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => setShowEndSession(false)}
+            />
+
+            {/* Confetti Particles */}
+            {sessionStats.showConfetti && (
+              <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                {confettiParticles.map((p) => (
+                  <motion.div
+                    key={p.id}
+                    className="absolute w-2 h-2 rounded-sm"
+                    style={{ backgroundColor: p.color, left: `${p.x}%`, top: `${p.y}%` }}
+                    initial={{ y: 0, opacity: 1, rotate: 0, x: 0 }}
+                    animate={{
+                      y: [0, 200, 400, 600],
+                      x: [0, p.drift * 0.3, p.drift * 0.7, p.drift],
+                      opacity: [1, 1, 0.8, 0],
+                      rotate: [p.rotation, p.rotation + 360],
+                    }}
+                    transition={{
+                      duration: 3,
+                      delay: p.delay,
+                      ease: 'easeIn',
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Panel */}
+            <motion.div
+              className="relative z-10 w-full max-w-lg mx-4 mb-4 rounded-2xl glass card-shadow border border-border/50 overflow-hidden"
+              initial={{ y: '100%', opacity: 0, scale: 0.95 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: '100%', opacity: 0, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            >
+              {/* Panel Header */}
+              <div className="flex items-center justify-between px-6 pt-6 pb-4">
+                <div className="flex items-center gap-2">
+                  {sessionStats.showConfetti && <Trophy className="w-5 h-5 text-amber-500" />}
+                  <h2 className="text-lg font-bold gradient-text">Session Summary</h2>
+                </div>
+                <button
+                  onClick={() => setShowEndSession(false)}
+                  className="p-1 rounded-lg hover:bg-accent transition-colors"
+                  aria-label="Close summary"
+                >
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+
+              <div className="px-6 pb-6 space-y-5">
+                {/* Session Stats Grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-1">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Duration</span>
+                    </div>
+                    <p className="text-sm font-bold font-mono tabular-nums text-foreground">
+                      {formatTimer(sessionStats.duration)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-1">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Messages</span>
+                    </div>
+                    <p className="text-sm font-bold font-mono tabular-nums text-foreground">
+                      {sessionStats.messagesExchanged}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-1">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <BookMarked className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Topics Covered</span>
+                    </div>
+                    <p className="text-sm font-bold font-mono tabular-nums text-foreground">
+                      {sessionStats.topicsCovered.length}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-1">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <Target className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Concepts Explored</span>
+                    </div>
+                    <p className="text-sm font-bold font-mono tabular-nums text-foreground">
+                      {sessionStats.conceptsExplored}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Mastery Progress Bar */}
+                {sessionStats.conceptsExplored > 0 && (
+                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-muted-foreground">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span className="text-xs font-medium">Avg Mastery Gained</span>
+                      </div>
+                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                        {sessionStats.avgMastery}%
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                      <motion.div
+                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${sessionStats.avgMastery}%` }}
+                        transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Topics List */}
+                {sessionStats.topicsCovered.length > 0 && (
+                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-2">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Topics</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {sessionStats.topicsCovered.map((topic) => (
+                        <Badge key={topic} variant="secondary" className="text-xs">
+                          {topic}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Key Takeaways */}
+                {sessionStats.keyTakeaways.length > 0 && (
+                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-2">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Key Takeaways</span>
+                    </div>
+                    <ul className="space-y-1.5">
+                      {sessionStats.keyTakeaways.map((takeaway, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-foreground/80 leading-relaxed">
+                          <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          {takeaway}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-1">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setShowEndSession(false)}
+                  >
+                    Continue Studying
+                  </Button>
+                  <Button
+                    className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+                    onClick={handleSaveAndClose}
+                  >
+                    <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                    Save & Close
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

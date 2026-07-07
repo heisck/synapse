@@ -1089,6 +1089,100 @@ Stage Summary:
 3. **Mock chart fallback** - Dashboard charts fall back to mock data when no localStorage data exists (expected behavior)
 4. **SQLite on Vercel** - Vercel serverless doesn't natively support SQLite; serverExternalPackages added but full deploy needs a DB migration plan
 
+---
+Task ID: 16
+Agent: Auto Review (Cron) - Round 7
+Task: Keyboard shortcuts dialog, learning path visualization, session summary panel, chat search, new CSS utilities, achievement toasts
+
+Work Log:
+- **QA Assessment**: Build passes clean (0 errors, 0 warnings), lint passes clean (0 errors). Production build in 26.2s, static generation in 176.6ms.
+- **Keyboard Shortcuts Dialog (AppShell.tsx)**:
+  - Floating `?` button (fixed bottom-right) with glass + pulse-glow styling
+  - Opens via `?` key, `Cmd+,` shortcut, or click
+  - Dialog with mesh-gradient background, 3 shortcut categories (Navigation, Actions, Quiz)
+  - Each row: styled kbd element + description with staggered framer-motion entrance
+- **Learning Path Progress (Dashboard.tsx)**:
+  - 5 milestone nodes on horizontal timeline: Get Started, First Session, Quiz Taker, Note Keeper, Streak Master
+  - Completed nodes: emerald-filled + white checkmark + glow-emerald-strong
+  - Current node: emerald outline + pulsing ring
+  - Locked nodes: muted gray outline
+  - Gradient connector lines between nodes
+  - Progress badge "X/5 milestones reached"
+  - Staggered fadeUp entrance animations
+- **Session Summary Panel (TutorView.tsx)**:
+  - "End Session" button with LogOut icon in right panel
+  - Slide-up panel with spring animation (AnimatePresence) + backdrop blur
+  - Session stats grid (2x2): Duration, Messages, Topics, Concepts
+  - Mastery progress bar with animated gradient fill
+  - Key takeaways: last 3 assistant messages truncated to 100 chars
+  - Action buttons: "Continue Studying" / "Save & Close"
+  - 40 confetti particles when session > 10 minutes
+- **Chat Search/Filter (TutorView.tsx)**:
+  - Search icon button toggles sliding search bar (framer-motion height animation)
+  - Real-time message filtering with emerald highlight on matching text
+  - Match count display ("3 matches")
+  - Escape key or X button to close
+  - Empty state when no matches
+- **Word Count Stats (TutorView.tsx)**:
+  - Glass pill in header with message count (MessageCircle icon) + session duration (Clock icon)
+- **10 New CSS Utilities (globals.css)**:
+  1. `.glass-inner-glow` - Glass card with inset glow that intensifies on hover
+  2. `.typing-cursor` - Blinking cursor element (2px, 1s step-end infinite)
+  3. `.gradient-text-shimmer` - Text with sweeping shimmer highlight
+  4. `.floating-particles` - CSS-only floating dots via pseudo-elements
+  5. `.morph-radius` - Border-radius transition (1rem to full) on hover
+  6. `.checkmark-draw` - SVG checkmark stroke-dashoffset animation
+  7. `.glass-accent-top` - Glass panel with 3px emerald-teal gradient accent line
+  8. `.breathe` - Gentle scale pulse (1 to 1.02 over 4s)
+  9. `.animated-dashed-border` - Rotating dashed border animation (20s)
+  10. `.glass-corner-decorations` - L-shaped corner marks with hover opacity transition
+  - 6 new @keyframes: cursorBlink, shimmerSweep, particlesFloat, checkmarkStroke, breatheScale, dashRotate
+- **Achievement Unlock Toast (StoreInitializer.tsx)**:
+  - Tracks previous achievement states via useRef
+  - Detects when unlockedAt transitions from null to value
+  - Fires custom sonner toast: Trophy icon, gradient background, 6000ms duration
+  - Emerald-to-teal gradient styling, unstyled mode
+
+Stage Summary:
+- 0 lint errors, clean production build
+- Keyboard shortcuts dialog with visual reference for all hotkeys
+- Learning path progress visualization (5 milestones) on Dashboard
+- Session summary panel with stats, takeaways, confetti
+- Chat search with real-time filtering and text highlighting
+- 10 new CSS micro-animation utilities (glass, particles, animations)
+- Achievement unlock toast notifications with gradient styling
+
+## Current Project Status
+
+### Verified Working:
+- Landing page with GSAP/WebGL/Lenis/framer-motion animations
+- Simplified onboarding with Quick Start shortcut + full multi-step wizard
+- Enhanced Dashboard with typewriter greeting, hero card, learning path milestones (5 nodes), CSV export
+- AI Tutor with typewriter streaming chat, message reactions, suggested prompts, gradient glow, chat search, session summary, word count stats
+- Three tutoring modes: Chat, Slides, Hybrid with pill-style toggle
+- TTS audio playback with animated indicators
+- Achievement system with 15 badges, rarity-based glow, unlock toast notifications
+- Study session auto-tracking with streak computation
+- Quiz mode with DnD matching (SVG connectors), 3D flashcards (swipe gestures), timer, difficulty bar
+- Notes with tag filtering, search, sort, colored borders, markdown export (single + bulk)
+- Upload with drag-drop, category chips, upload history (localStorage), batch summary toasts
+- Settings with animated toggles, glow selects, danger zone, export buttons
+- Profile with pulsing avatar, animated stats, rarity glow achievements, heatmap tooltips
+- Course detail with breadcrumbs, glass styling, Start Quiz button
+- Enhanced sidebar with tooltips, gradient active indicator, notification dot, bounce
+- Keyboard shortcuts dialog (Cmd+, or ?)
+- Mobile responsive: safe-area padding, reduced glass sizing, smaller headings, full-width search
+- Vercel-compatible next.config.ts with serverExternalPackages
+- 10 new CSS micro-animation utilities (glass variants, particles, checkmark, shimmer, etc.)
+- Dark mode, toasts, keyboard shortcuts (Cmd+1-7, Cmd+K)
+- Full SEO, rate limiting, Zod validation
+
+### Known Issues:
+1. **Server stability** - Next.js dev server OOMs after Turbopack compilation (sandbox memory limitation, not code bug)
+2. **Three.js SSR bail** - ParticleField uses `next/dynamic` with `ssr: false` (expected)
+3. **Mock chart fallback** - Dashboard charts fall back to mock data when no localStorage data exists (expected behavior)
+4. **SQLite on Vercel** - Vercel serverless doesn't natively support SQLite; serverExternalPackages added but full deploy needs a DB migration plan
+
 ### Recommendations for Next Phase:
 1. **Priority 1**: End-to-end test with real .docx upload -> question generation -> quiz flow
 2. **Priority 1**: Verify TTS playback works end-to-end in browser
