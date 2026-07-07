@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback } from '@/types';
+import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note } from '@/types';
 
 interface AppState {
   // Navigation
@@ -87,6 +87,16 @@ interface AppState {
   tutorMode: 'text' | 'slide' | 'hybrid';
   setTutorMode: (mode: 'text' | 'slide' | 'hybrid') => void;
 
+  // Notes
+  notes: Note[];
+  addNote: (note: Note) => void;
+  updateNote: (id: string, updates: Partial<Pick<Note, 'title' | 'content' | 'tags'>>) => void;
+  deleteNote: (id: string) => void;
+
+  // Recent Views (for search modal)
+  recentViews: AppView[];
+  addRecentView: (view: AppView) => void;
+
   // UI
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
@@ -97,7 +107,11 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   currentView: 'landing',
   previousView: null,
-  navigate: (view) => set((s) => ({ currentView: view, previousView: s.currentView })),
+  navigate: (view) => set((s) => {
+    const filtered = s.recentViews.filter((v) => v !== view);
+    const updatedRecent = ['landing', 'onboarding'].includes(view) ? s.recentViews : [view, ...filtered].slice(0, 3);
+    return { currentView: view, previousView: s.currentView, recentViews: updatedRecent };
+  }),
   userName: '',
   userEmail: '',
   userId: null,
@@ -155,6 +169,44 @@ export const useAppStore = create<AppState>((set) => ({
   setActivePersona: (persona) => set({ activePersona: persona }),
   tutorMode: 'hybrid',
   setTutorMode: (mode) => set({ tutorMode: mode }),
+  notes: (() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem('synapse-notes');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  })(),
+  addNote: (note) => set((s) => {
+    const updated = [note, ...s.notes];
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-notes', JSON.stringify(updated));
+    }
+    return { notes: updated };
+  }),
+  updateNote: (id, updates) => set((s) => {
+    const updated = s.notes.map((n) =>
+      n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n
+    );
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-notes', JSON.stringify(updated));
+    }
+    return { notes: updated };
+  }),
+  deleteNote: (id) => set((s) => {
+    const updated = s.notes.filter((n) => n.id !== id);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-notes', JSON.stringify(updated));
+    }
+    return { notes: updated };
+  }),
+  recentViews: [],
+  addRecentView: (view) => set((s) => {
+    const filtered = s.recentViews.filter((v) => v !== view);
+    const updated = [view, ...filtered].slice(0, 3);
+    return { recentViews: updated };
+  }),
   sidebarOpen: false,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   isLoading: false,

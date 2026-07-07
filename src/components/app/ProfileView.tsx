@@ -33,6 +33,7 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/appStore';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
+import { clearSessionStorage } from '@/hooks/useSessionPersistence';
 
 /* ── Animation Variants ── */
 const stagger = {
@@ -126,6 +127,7 @@ export function ProfileView() {
   };
 
   const handleSignOut = () => {
+    clearSessionStorage();
     navigate('landing');
   };
 

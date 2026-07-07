@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { motion, useInView } from 'framer-motion';
 import { Brain, FileUp, ShieldCheck, Layers, Activity, RefreshCw } from 'lucide-react';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -46,29 +47,109 @@ const features = [
   },
 ];
 
+const containerVariants = {
+  hidden: {},
+  visible: {
+    transition: {
+      staggerChildren: 0.1,
+    },
+  },
+};
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 50, scale: 0.95 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      duration: 0.6,
+      ease: [0.22, 1, 0.36, 1],
+    },
+  },
+};
+
+function FeatureCard({
+  feature,
+  index,
+}: {
+  feature: (typeof features)[0];
+  index: number;
+}) {
+  const Icon = feature.icon;
+  const isEven = index % 2 === 0;
+
+  return (
+    <motion.div
+      variants={cardVariants}
+      className="group relative"
+      whileHover={{ y: -6 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+    >
+      {/* Glow border overlay */}
+      <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-br from-emerald-500/0 via-teal-400/0 to-emerald-500/0 group-hover:from-emerald-500/40 group-hover:via-teal-400/30 group-hover:to-emerald-500/40 transition-all duration-500 blur-[1px] opacity-0 group-hover:opacity-100" />
+
+      <div className="relative rounded-2xl glass p-6 sm:p-8 h-full transition-all duration-500 overflow-hidden">
+        {/* Gradient accent line at top */}
+        <motion.div
+          className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent"
+          initial={{ scaleX: 0 }}
+          whileInView={{ scaleX: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.8, delay: 0.2 + index * 0.1, ease: 'easeOut' }}
+          style={{ transformOrigin: isEven ? 'left' : 'right' }}
+        />
+
+        {/* Subtle background glow on hover */}
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-500/0 to-teal-500/0 group-hover:from-emerald-500/[0.03] group-hover:to-teal-500/[0.03] transition-all duration-500" />
+
+        {/* Icon */}
+        <motion.div
+          className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-950/50 flex items-center justify-center mb-5 group-hover:bg-emerald-200 dark:group-hover:bg-emerald-900/50 transition-all duration-300 relative"
+          whileHover={{ rotate: [0, -5, 5, 0] }}
+          transition={{ duration: 0.4 }}
+        >
+          <Icon className="w-6 h-6 text-emerald-600 dark:text-emerald-400 transition-transform duration-300 group-hover:scale-110" />
+          {/* Pulse ring on hover */}
+          <div className="absolute inset-0 rounded-xl border-2 border-emerald-400/0 group-hover:border-emerald-400/30 transition-all duration-500 scale-100 group-hover:scale-125 opacity-0 group-hover:opacity-100" />
+        </motion.div>
+
+        <h3 className="text-lg font-semibold mb-2 text-foreground relative z-10">
+          {feature.title}
+        </h3>
+        <p className="text-sm text-muted-foreground leading-relaxed relative z-10">
+          {feature.description}
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
 export default function FeaturesSection() {
   const sectionRef = useRef<HTMLElement>(null);
-  const cardsRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const isInView = useInView(sectionRef, { once: true, margin: '-100px' });
 
   useEffect(() => {
     const ctx = gsap.context(() => {
-      gsap.fromTo(
-        '.feature-card',
-        { opacity: 0, y: 50 },
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.7,
-          stagger: 0.1,
-          ease: 'power3.out',
-          scrollTrigger: {
-            trigger: cardsRef.current,
-            start: 'top 80%',
-            end: 'bottom 20%',
-            toggleActions: 'play none none none',
-          },
-        }
-      );
+      if (headerRef.current) {
+        gsap.fromTo(
+          headerRef.current.children,
+          { opacity: 0, y: 30 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 0.7,
+            stagger: 0.15,
+            ease: 'power3.out',
+            scrollTrigger: {
+              trigger: headerRef.current,
+              start: 'top 85%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      }
     }, sectionRef);
 
     return () => ctx.revert();
@@ -82,7 +163,7 @@ export default function FeaturesSection() {
     >
       <div className="max-w-6xl mx-auto">
         {/* Section Header */}
-        <div className="text-center mb-16">
+        <div ref={headerRef} className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-4">
             Powerful Features for{' '}
             <span className="gradient-text">Deeper Learning</span>
@@ -94,30 +175,16 @@ export default function FeaturesSection() {
         </div>
 
         {/* Feature Cards Grid */}
-        <div
-          ref={cardsRef}
+        <motion.div
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+          variants={containerVariants}
+          initial="hidden"
+          animate={isInView ? 'visible' : 'hidden'}
         >
-          {features.map((feature) => {
-            const Icon = feature.icon;
-            return (
-              <div
-                key={feature.title}
-                className="feature-card opacity-0 group rounded-2xl glass p-6 sm:p-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-emerald-500/10"
-              >
-                <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center mb-5 group-hover:bg-emerald-200 transition-colors duration-300">
-                  <Icon className="w-6 h-6 text-emerald-600" />
-                </div>
-                <h3 className="text-lg font-semibold mb-2 text-foreground">
-                  {feature.title}
-                </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {feature.description}
-                </p>
-              </div>
-            );
-          })}
-        </div>
+          {features.map((feature, index) => (
+            <FeatureCard key={feature.title} feature={feature} index={index} />
+          ))}
+        </motion.div>
       </div>
     </section>
   );

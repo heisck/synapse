@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   User,
   Menu,
+  BookMarked,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -32,6 +33,7 @@ const navItems: NavItem[] = [
   { icon: BookOpen, label: 'My Courses', view: 'dashboard' },
   { icon: MessageSquare, label: 'Tutor', view: 'tutor' },
   { icon: ClipboardCheck, label: 'Quiz Mode', view: 'quiz' },
+  { icon: BookMarked, label: 'Notes', view: 'notes' },
   { icon: User, label: 'Profile', view: 'profile' },
 ];
 

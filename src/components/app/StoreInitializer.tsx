@@ -2,10 +2,14 @@
 
 import { useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useSessionPersistence } from '@/hooks/useSessionPersistence';
 import type { Course } from '@/types';
 
 export function StoreInitializer() {
   const { setCourses, courses } = useAppStore();
+
+  // Restore persisted session state from localStorage
+  useSessionPersistence();
 
   useEffect(() => {
     if (courses.length > 0) return;

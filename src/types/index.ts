@@ -6,7 +6,8 @@ export type AppView =
   | 'quiz'
   | 'onboarding'
   | 'profile'
-  | 'course-detail';
+  | 'course-detail'
+  | 'notes';
 
 export interface LearnerProfile {
   learningStyle: 'visual' | 'auditory' | 'reading' | 'kinesthetic';
@@ -100,4 +101,13 @@ export interface UserFeedback {
   type: 'like' | 'dislike' | 'confused' | 'too_fast' | 'too_slow';
   message?: string;
   createdAt: string;
+}
+
+export interface Note {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  tags: string[];
 }

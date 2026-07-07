@@ -17,7 +17,20 @@ import {
   Loader2,
   Lightbulb,
   Keyboard,
+  TrendingUp,
+  BarChart3,
 } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -55,6 +68,25 @@ const weeklyGoals = [
   { label: 'Complete Cell Biology', status: 'done' as const },
   { label: 'Practice Calculus', status: 'in-progress' as const },
   { label: 'Review Notes', status: 'pending' as const },
+];
+
+const weeklyActivityData = [
+  { day: 'Mon', sessions: 3 },
+  { day: 'Tue', sessions: 5 },
+  { day: 'Wed', sessions: 2 },
+  { day: 'Thu', sessions: 7 },
+  { day: 'Fri', sessions: 4 },
+  { day: 'Sat', sessions: 6 },
+  { day: 'Sun', sessions: 1 },
+];
+
+const masteryTrendData = [
+  { week: 'Week 1', mastery: 45 },
+  { week: 'Week 2', mastery: 52 },
+  { week: 'Week 3', mastery: 61 },
+  { week: 'Week 4', mastery: 68 },
+  { week: 'Week 5', mastery: 74 },
+  { week: 'Week 6', mastery: 78 },
 ];
 
 function getGreeting(): string {
@@ -299,6 +331,138 @@ export function Dashboard() {
               </div>
             ))}
           </div>
+        </div>
+      </motion.div>
+
+      {/* Learning Analytics */}
+      <motion.div variants={fadeUp} className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-lg">Learning Analytics</h3>
+          <Badge variant="secondary" className="text-xs">
+            <BarChart3 className="h-3 w-3 mr-1" />
+            Insights
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Weekly Activity Bar Chart */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+          >
+            <div className="glass rounded-xl overflow-hidden">
+              <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-3">
+                <div className="flex items-center gap-2 text-white">
+                  <BarChart3 className="h-4 w-4" />
+                  <span className="text-sm font-semibold">Weekly Activity</span>
+                </div>
+                <p className="text-emerald-100/80 text-xs mt-0.5">Study sessions per day this week</p>
+              </div>
+              <div className="p-4" style={{ minHeight: 220 }}>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={weeklyActivityData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis
+                      dataKey="day"
+                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                      axisLine={false}
+                      tickLine={false}
+                      allowDecimals={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        color: 'hsl(var(--foreground))',
+                      }}
+                      cursor={{ fill: 'hsl(var(--accent))', opacity: 0.4 }}
+                    />
+                    <Bar
+                      dataKey="sessions"
+                      fill="url(#barGradient)"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={40}
+                    />
+                    <defs>
+                      <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#10b981" />
+                        <stop offset="100%" stopColor="#14b8a6" />
+                      </linearGradient>
+                    </defs>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Mastery Trend Line Chart */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2, ease: 'easeOut' }}
+          >
+            <div className="glass rounded-xl overflow-hidden">
+              <div className="bg-gradient-to-r from-teal-600 to-emerald-600 px-5 py-3">
+                <div className="flex items-center gap-2 text-white">
+                  <TrendingUp className="h-4 w-4" />
+                  <span className="text-sm font-semibold">Mastery Trend</span>
+                </div>
+                <p className="text-emerald-100/80 text-xs mt-0.5">Overall mastery score over time</p>
+              </div>
+              <div className="p-4" style={{ minHeight: 220 }}>
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={masteryTrendData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis
+                      dataKey="week"
+                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      domain={[0, 100]}
+                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v: number) => `${v}%`}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        color: 'hsl(var(--foreground))',
+                      }}
+                      formatter={(value: number) => [`${value}%`, 'Mastery']}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="mastery"
+                      stroke="url(#lineGradient)"
+                      strokeWidth={2.5}
+                      dot={{ fill: '#10b981', strokeWidth: 2, stroke: '#fff', r: 4 }}
+                      activeDot={{ r: 6, fill: '#14b8a6', stroke: '#fff', strokeWidth: 2 }}
+                    />
+                    <defs>
+                      <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor="#10b981" />
+                        <stop offset="100%" stopColor="#14b8a6" />
+                      </linearGradient>
+                    </defs>
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </motion.div>
         </div>
       </motion.div>
 
