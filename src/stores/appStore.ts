@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings, Achievement, StudySession, StudyGoal, StudyNotification, AdaptiveResult } from '@/types';
+import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings, Achievement, StudySession, StudyGoal, StudyNotification, AdaptiveResult, StudyBuddy } from '@/types';
 
 interface AppState {
   // Navigation
@@ -149,6 +149,12 @@ interface AppState {
   adaptiveResults: AdaptiveResult[];
   addAdaptiveResult: (result: AdaptiveResult) => void;
   clearAdaptiveResults: () => void;
+
+  // Study Buddies & Leaderboard
+  studyBuddies: StudyBuddy[];
+  leaderboardPeriod: 'weekly' | 'allTime' | 'category';
+  setLeaderboardPeriod: (period: 'weekly' | 'allTime' | 'category') => void;
+  addStudyBuddy: (buddy: StudyBuddy) => void;
 
   // Viewed Slides & Course Completion
   viewedSlides: string[];
@@ -831,4 +837,39 @@ export const useAppStore = create<AppState>((set) => ({
     adaptiveResults: [...s.adaptiveResults, result].slice(-200),
   })),
   clearAdaptiveResults: () => set({ adaptiveResults: [] }),
+
+  // Study Buddies & Leaderboard
+  studyBuddies: (() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem('synapse-study-buddies');
+      if (stored) return JSON.parse(stored) as StudyBuddy[];
+    } catch { /* ignore */ }
+    // Generate default buddies on first load
+    const defaultBuddies: StudyBuddy[] = [
+      { id: 'buddy-1', name: 'Aria Chen', avatarGradient: 'from-emerald-400 to-teal-500', totalXP: 12840, level: 24, streak: 15, coursesCompleted: 8, quizAccuracy: 92, currentTopic: 'Machine Learning Basics', isOnline: true },
+      { id: 'buddy-2', name: 'Marcus Webb', avatarGradient: 'from-amber-400 to-orange-500', totalXP: 15200, level: 28, streak: 22, coursesCompleted: 12, quizAccuracy: 88, currentTopic: 'Organic Chemistry', isOnline: true },
+      { id: 'buddy-3', name: 'Priya Sharma', avatarGradient: 'from-pink-400 to-rose-500', totalXP: 9750, level: 19, streak: 7, coursesCompleted: 5, quizAccuracy: 95, currentTopic: 'Data Structures & Algo', isOnline: true },
+      { id: 'buddy-4', name: 'Leo Tanaka', avatarGradient: 'from-violet-400 to-purple-500', totalXP: 18300, level: 32, streak: 31, coursesCompleted: 15, quizAccuracy: 91, currentTopic: 'Quantum Physics', isOnline: false },
+      { id: 'buddy-5', name: 'Sofia Rivera', avatarGradient: 'from-cyan-400 to-blue-500', totalXP: 11200, level: 21, streak: 12, coursesCompleted: 9, quizAccuracy: 87, currentTopic: 'Cell Biology', isOnline: true },
+      { id: 'buddy-6', name: 'Kai Nakamura', avatarGradient: 'from-red-400 to-rose-600', totalXP: 21500, level: 38, streak: 45, coursesCompleted: 18, quizAccuracy: 94, currentTopic: 'Linear Algebra', isOnline: false },
+      { id: 'buddy-7', name: 'Zara Patel', avatarGradient: 'from-lime-400 to-emerald-600', totalXP: 8900, level: 17, streak: 5, coursesCompleted: 4, quizAccuracy: 83, currentTopic: 'World History', isOnline: false },
+      { id: 'buddy-8', name: 'Finn O\'Brien', avatarGradient: 'from-sky-400 to-indigo-500', totalXP: 14100, level: 26, streak: 19, coursesCompleted: 11, quizAccuracy: 89, currentTopic: 'Biochemistry', isOnline: false },
+      { id: 'buddy-9', name: 'Nadia Kowalski', avatarGradient: 'from-fuchsia-400 to-pink-600', totalXP: 7600, level: 15, streak: 3, coursesCompleted: 3, quizAccuracy: 86, currentTopic: 'Thermodynamics', isOnline: false },
+      { id: 'buddy-10', name: 'Ethan Park', avatarGradient: 'from-teal-400 to-cyan-600', totalXP: 16900, level: 30, streak: 28, coursesCompleted: 14, quizAccuracy: 93, currentTopic: 'Neural Networks', isOnline: false },
+    ];
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('synapse-study-buddies', JSON.stringify(defaultBuddies)); } catch { /* ignore */ }
+    }
+    return defaultBuddies;
+  })(),
+  leaderboardPeriod: 'weekly' as const,
+  setLeaderboardPeriod: (period) => set({ leaderboardPeriod: period }),
+  addStudyBuddy: (buddy) => set((s) => {
+    const updated = [...s.studyBuddies, buddy];
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('synapse-study-buddies', JSON.stringify(updated)); } catch { /* ignore */ }
+    }
+    return { studyBuddies: updated };
+  }),
 }));

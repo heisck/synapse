@@ -2,7 +2,7 @@
 
 import { Suspense, lazy, useState, useRef, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Keyboard, Timer, Bell, Flame, Target, Lightbulb, Clock, CheckCheck } from 'lucide-react';
+import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Keyboard, Timer, Bell, Flame, Target, Lightbulb, Clock, CheckCheck, Trophy } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { AppSidebar } from './AppSidebar';
 import { StoreInitializer } from './StoreInitializer';
@@ -27,6 +27,7 @@ const CourseDetail = lazy(() => import('./CourseDetail'));
 const NotesView = lazy(() => import('./NotesView'));
 const SettingsView = lazy(() => import('./SettingsView'));
 const FocusTimerView = lazy(() => import('./FocusTimerView').then((m) => ({ default: m.FocusTimerView })));
+const LeaderboardView = lazy(() => import('./LeaderboardView').then((m) => ({ default: m.LeaderboardView })));
 
 function ViewLoader() {
   return (
@@ -151,6 +152,11 @@ const viewTransitions: Record<string, { initial: object; animate: object; exit: 
     animate: { opacity: 1, scale: 1 },
     exit: { opacity: 0, scale: 0.95 },
   },
+  leaderboard: {
+    initial: { opacity: 0, y: 30, scale: 0.97 },
+    animate: { opacity: 1, y: 0, scale: 1 },
+    exit: { opacity: 0, y: -30, scale: 0.97 },
+  },
 };
 
 const defaultTransition = {
@@ -170,6 +176,7 @@ function SearchModal() {
     { label: 'AI Tutor', view: 'tutor' as AppView, icon: MessageSquare },
     { label: 'Upload Slides', view: 'upload' as AppView, icon: Upload },
     { label: 'Quiz Mode', view: 'quiz' as AppView, icon: ClipboardCheck },
+    { label: 'Leaderboard', view: 'leaderboard' as AppView, icon: Trophy },
     { label: 'Notes', view: 'notes' as AppView, icon: BookMarked },
     { label: 'Focus Timer', view: 'focus-timer' as AppView, icon: Timer },
     { label: 'Profile', view: 'profile' as AppView, icon: User },
@@ -769,8 +776,8 @@ function NotificationBell() {
 
 const fullViewportViews: Array<string> = ['landing', 'onboarding'];
 
-// Spring transition config for view changes
-const springTransition = { type: 'spring' as const, stiffness: 300, damping: 30 };
+// Transition config for view changes - use tween for reliable animations
+const viewTransitionConfig = { type: 'tween' as const, duration: 0.3, ease: 'easeInOut' };
 
 export function AppShell() {
   const { currentView, navigate } = useAppStore();
@@ -819,6 +826,8 @@ export function AppShell() {
         return <NotesView />;
       case 'focus-timer':
         return <FocusTimerView />;
+      case 'leaderboard':
+        return <LeaderboardView />;
       case 'settings':
         return <SettingsView />;
       default:
@@ -839,10 +848,10 @@ export function AppShell() {
           <motion.div
             key={currentView}
             variants={viewVariant}
-            initial="initial"
+            initial={currentView === 'landing' ? false : 'initial'}
             animate="animate"
             exit="exit"
-            transition={springTransition}
+            transition={viewTransitionConfig}
             className="min-h-screen mesh-gradient"
           >
             <TransitionIndicator show={transitioning} />
@@ -856,10 +865,10 @@ export function AppShell() {
           <motion.div
             key={`app-${currentView}`}
             variants={viewVariant}
-            initial="initial"
+            initial={false}
             animate="animate"
             exit="exit"
-            transition={springTransition}
+            transition={viewTransitionConfig}
             className="flex min-h-screen"
           >
             <AppSidebar />

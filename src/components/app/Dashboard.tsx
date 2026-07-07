@@ -22,6 +22,8 @@ import {
   ChevronLeft,
   ChevronRight,
   PlayCircle,
+  Play,
+  Pause,
   Plus,
   ChevronUp,
   ChevronDown,
@@ -33,6 +35,7 @@ import {
   Hash,
   X,
   RefreshCw,
+  RotateCcw,
   ClipboardCheck,
   Check,
   Layers,
@@ -44,6 +47,14 @@ import {
   Palette,
   Briefcase,
   FolderOpen,
+  Users,
+  Share2,
+  Copy,
+  CheckCheck as CheckCheckIcon,
+  ExternalLink,
+  Search,
+  Trophy,
+  ArrowUpDown,
 } from 'lucide-react';
 import {
   BarChart,
@@ -64,6 +75,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAppStore } from '@/stores/appStore';
 import { CATEGORY_CONFIG, COURSE_CATEGORIES } from './UploadView';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
@@ -414,6 +426,195 @@ const SESSION_TYPE_CONFIG: Record<string, { icon: typeof BookOpen; color: string
   review: { icon: RefreshCw, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-500/10' },
   quiz: { icon: ClipboardCheck, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/10' },
 };
+
+// Study Buddies Online Mini Widget
+function StudyBuddiesOnlineWidget() {
+  const { studyBuddies, navigate } = useAppStore();
+  const onlineBuddies = studyBuddies.filter((b) => b.isOnline).slice(0, 4);
+
+  const handleBuddyClick = (name: string) => {
+    toast.success(`Study session invite sent to ${name}!`, {
+      description: 'They\'ll receive your invitation shortly.',
+    });
+  };
+
+  return (
+    <div className="glass rounded-xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Users className="h-4 w-4 text-primary" />
+          <h3 className="font-semibold text-sm">Study Buddies Online</h3>
+          <motion.span
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+            className="flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500/15 px-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400"
+          >
+            {onlineBuddies.length}
+          </motion.span>
+        </div>
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => navigate('leaderboard')}
+          className="text-xs text-primary hover:underline flex items-center gap-1"
+        >
+          View all
+          <ArrowRight className="h-3 w-3" />
+        </motion.button>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <AnimatePresence>
+          {onlineBuddies.map((buddy, i) => (
+            <motion.button
+              key={buddy.id}
+              initial={{ opacity: 0, y: 15, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: i * 0.08, type: 'spring', stiffness: 300, damping: 22 }}
+              whileHover={{ scale: 1.03, y: -2 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => handleBuddyClick(buddy.name)}
+              className="group flex flex-col items-center gap-2 p-3 rounded-xl bg-accent/30 hover:bg-accent/60 border border-border/30 hover:border-primary/20 transition-all"
+            >
+              {/* Avatar with pulsing online dot */}
+              <div className="relative">
+                <Avatar className="h-10 w-10">
+                  <AvatarFallback className={`bg-gradient-to-br ${buddy.avatarGradient} text-white text-xs font-bold`}>
+                    {buddy.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <motion.span
+                  className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-background"
+                  animate={{
+                    boxShadow: [
+                      '0 0 0 0 rgba(16, 185, 129, 0.5)',
+                      '0 0 0 5px rgba(16, 185, 129, 0)',
+                    ],
+                  }}
+                  transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+                />
+              </div>
+              <div className="text-center min-w-0 w-full">
+                <p className="text-xs font-medium truncate">{buddy.name.split(' ')[0]}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{buddy.currentTopic}</p>
+                <div className="flex items-center justify-center gap-1 mt-1">
+                  <Flame className="h-2.5 w-2.5 text-orange-500" />
+                  <span className="text-[10px] font-semibold text-orange-600 dark:text-orange-400">{buddy.streak}d</span>
+                </div>
+              </div>
+            </motion.button>
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+// Dashboard Share Stats Modal
+function DashboardShareModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { userName, studySessions, completedCourses, adaptiveResults, dailyChallenge } = useAppStore();
+  const { current: streak } = useStudyStreak();
+  const totalStudyMinutes = useTotalStudyTime();
+  const hours = Math.floor(totalStudyMinutes / 60);
+
+  const totalAdaptive = adaptiveResults.length;
+  const correctAdaptive = adaptiveResults.filter((r) => r.correct).length;
+  const quizAccuracy = totalAdaptive > 0 ? Math.round((correctAdaptive / totalAdaptive) * 100) : 0;
+  const totalXP = studySessions.reduce((sum, s) => sum + s.duration * 10, 0) + Math.round(quizAccuracy * 5) + (dailyChallenge.totalCompleted || 0) * 50;
+
+  const level = Math.max(1, Math.min(50, Math.floor(Math.sqrt(totalXP / 100)) + 1));
+
+  const statsText = useMemo(() => {
+    const card = [
+      '╔══════════════════════════════════════╗',
+      '║      🧠 SynapseLearn Stats 🧠        ║',
+      '╠══════════════════════════════════════╣',
+      `║  📊 Level:    ${String(level).padEnd(24)}║`,
+      `║  ⭐ XP:       ${String(totalXP.toLocaleString()).padEnd(24)}║`,
+      `║  🔥 Streak:   ${String(`${streak} days`).padEnd(24)}║`,
+      `║  📚 Courses:  ${String(completedCourses.length.toString()).padEnd(24)}║`,
+      `║  🎯 Accuracy: ${String(`${quizAccuracy}%`).padEnd(24)}║`,
+      `║  ⏱️ Study:    ${String(`${hours}+ hours`).padEnd(24)}║`,
+      '╠══════════════════════════════════════╣',
+      '║   Join me on SynapseLearn! 🚀       ║',
+      '╚══════════════════════════════════════╝',
+    ].join('\n');
+    return card;
+  }, [level, totalXP, streak, completedCourses.length, quizAccuracy, hours]);
+
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(statsText);
+      setCopied(true);
+      toast.success('Stats copied to clipboard!');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Failed to copy to clipboard');
+    }
+  };
+
+  const handleTwitter = () => {
+    const tweetText = `🧠 SynapseLearn Stats:\nLevel ${level} | ${totalXP.toLocaleString()} XP | ${streak}-day streak | ${quizAccuracy}% quiz accuracy\n\nJoin me on SynapseLearn! 🚀`;
+    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    toast.success('Opening Twitter share dialog...');
+  };
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            onClick={(e) => e.stopPropagation()}
+            className="glass rounded-2xl p-6 w-full max-w-md border border-border/50"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-lg gradient-text">Share Your Stats</h3>
+              <motion.button
+                whileHover={{ rotate: 90, scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={onClose}
+                className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-accent transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </motion.button>
+            </div>
+
+            <div className="bg-muted/50 rounded-xl p-4 mb-4 overflow-x-auto">
+              <pre className="text-xs font-mono text-foreground/80 whitespace-pre leading-relaxed">
+                {statsText}
+              </pre>
+            </div>
+
+            <div className="flex gap-2">
+              <Button onClick={handleCopy} className="flex-1">
+                {copied ? <CheckCheckIcon className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+                {copied ? 'Copied!' : 'Copy to Clipboard'}
+              </Button>
+              <Button variant="outline" onClick={handleTwitter} className="flex-1">
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Share on Twitter
+              </Button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
 
 // Brain loading animation with orbiting dots
 function BrainLoader() {
@@ -984,6 +1185,7 @@ export function Dashboard() {
     addStudyGoal,
     updateStudyGoal,
     deleteStudyGoal: removeStudyGoal,
+    completedCourses,
   } = useAppStore();
 
   const { current: currentStreak, best: bestStreak } = useStudyStreak();
@@ -996,6 +1198,7 @@ export function Dashboard() {
   const [tipDirection, setTipDirection] = useState<'left' | 'right'>('left');
   const [toastShown, setToastShown] = useState(false);
   const [newGoalText, setNewGoalText] = useState('');
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
   // Weak areas state
   const ERROR_REPORT_STORAGE_KEY = 'synapse-error-report';
@@ -1296,6 +1499,9 @@ export function Dashboard() {
 
   // Category filter state
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('All');
+  const [courseSearchQuery, setCourseSearchQuery] = useState('');
+  const [courseStatusFilter, setCourseStatusFilter] = useState<'all' | 'in-progress' | 'completed'>('all');
+  const [courseSortMode, setCourseSortMode] = useState<'name' | 'date' | 'progress'>('date');
 
   // Compute used categories from courses and store
   const usedCategories = useMemo(() => {
@@ -1321,12 +1527,53 @@ export function Dashboard() {
 
   // Filtered courses
   const filteredCourses = useMemo(() => {
-    if (selectedCategoryFilter === 'All') return courses;
-    return courses.filter((c) => {
-      const cat = courseCategories[c.id] || c.subject;
-      return cat === selectedCategoryFilter;
-    });
-  }, [courses, courseCategories, selectedCategoryFilter]);
+    let result = courses;
+
+    // Search by title
+    if (courseSearchQuery.trim()) {
+      const q = courseSearchQuery.toLowerCase();
+      result = result.filter((c) => c.title.toLowerCase().includes(q));
+    }
+
+    // Category filter
+    if (selectedCategoryFilter !== 'All') {
+      result = result.filter((c) => {
+        const cat = courseCategories[c.id] || c.subject;
+        return cat === selectedCategoryFilter;
+      });
+    }
+
+    // Status filter
+    if (courseStatusFilter === 'completed') {
+      result = result.filter((c) => completedCourses.includes(c.id));
+    } else if (courseStatusFilter === 'in-progress') {
+      result = result.filter((c) => !completedCourses.includes(c.id));
+    }
+
+    // Sort
+    const sorted = [...result];
+    switch (courseSortMode) {
+      case 'name':
+        sorted.sort((a, b) => a.title.localeCompare(b.title));
+        break;
+      case 'date':
+        sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        break;
+      case 'progress': {
+        sorted.sort((a, b) => {
+          const aSlideCount = a._count?.slides ?? a.slides?.length ?? 0;
+          const bSlideCount = b._count?.slides ?? b.slides?.length ?? 0;
+          const aDone = completedCourses.includes(a.id) ? 1 : 0;
+          const bDone = completedCourses.includes(b.id) ? 1 : 0;
+          if (bDone !== aDone) return bDone - aDone;
+          return bSlideCount - aSlideCount;
+        });
+        break;
+      }
+    }
+
+    return sorted;
+  }, [courses, courseCategories, selectedCategoryFilter, courseSearchQuery, courseStatusFilter, courseSortMode, completedCourses]);
 
   const showViewAll = filteredCourses.length > 3;
   const displayedCourses = filteredCourses.slice(0, 3);
@@ -1349,65 +1596,73 @@ export function Dashboard() {
   };
 
   return (
+    <div className="relative">
+      {/* Decorative animated mesh gradient background */}
+      <div className="dashboard-mesh-bg" />
     <motion.div
       variants={stagger}
       initial="initial"
       animate="animate"
       className="space-y-8 pt-2 lg:pt-4"
     >
-      {/* Welcome Header */}
-      <motion.div variants={fadeUp} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="space-y-1 pl-14 lg:pl-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <motion.h1
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.1, ease: 'easeOut' }}
-              className="text-2xl lg:text-3xl font-bold"
-            >
-              <TypewriterText text={`${greeting}, `} speed={40} />
-              <motion.span
-                initial={{ opacity: 0, x: 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: `${greeting}, `.length * 0.04 + 0.15, duration: 0.4, ease: 'easeOut' }}
-                className="gradient-text shimmer inline-block"
+      {/* Floating glass-morphism header card */}
+      <motion.div variants={fadeUp} className="glass-card-hover hover-lift rounded-xl p-5 pl-14 lg:pl-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <motion.h1
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.1, ease: 'easeOut' }}
+                className="text-2xl lg:text-3xl font-bold"
               >
-                {displayName}
-              </motion.span>
-            </motion.h1>
-            {currentStreak > 0 && (
-              <motion.div
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.8, type: 'spring', stiffness: 400, damping: 20 }}
-                className="flex items-center gap-1 text-orange-500 bg-orange-500/10 px-2.5 py-0.5 rounded-full"
-              >
-                <motion.div
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                <TypewriterText text={`${greeting}, `} speed={40} />
+                <motion.span
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: `${greeting}, `.length * 0.04 + 0.15, duration: 0.4, ease: 'easeOut' }}
+                  className="gradient-text shimmer inline-block"
                 >
-                  <Flame className="h-4 w-4" />
+                  {displayName}
+                </motion.span>
+              </motion.h1>
+              {currentStreak > 0 && (
+                <motion.div
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: 0.8, type: 'spring', stiffness: 400, damping: 20 }}
+                  className="flex items-center gap-1 text-orange-500 bg-orange-500/10 px-2.5 py-0.5 rounded-full"
+                >
+                  <motion.div
+                    animate={{ scale: [1, 1.2, 1] }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                  >
+                    <Flame className="h-4 w-4" />
+                  </motion.div>
+                  <span className="text-xs font-bold">{currentStreak} day streak</span>
                 </motion.div>
-                <span className="text-xs font-bold">{currentStreak} day streak</span>
-              </motion.div>
-            )}
+              )}
+            </div>
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5 }}
+              className="text-muted-foreground text-sm"
+            >
+              {format(new Date(), 'EEEE, MMMM d, yyyy')}
+            </motion.p>
           </div>
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="text-muted-foreground text-sm"
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="flex items-center gap-2"
           >
-            {format(new Date(), 'EEEE, MMMM d, yyyy')}
-          </motion.p>
-        </div>
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="flex items-center gap-2 pl-14 lg:pl-0"
-        >
           <ThemeToggle />
+          <Button variant="outline" size="sm" onClick={() => setShareModalOpen(true)}>
+            <Share2 className="h-4 w-4 mr-2" />
+            Share Stats
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExportStudyData}>
             <Download className="h-4 w-4 mr-2" />
             Export Data
@@ -1421,13 +1676,14 @@ export function Dashboard() {
             Upload Slides
           </Button>
         </motion.div>
+        </div>
       </motion.div>
 
       <GradientDivider />
 
       {/* Quick Start Hero Card */}
       <motion.div variants={fadeUp}>
-        <div className="glass mesh-gradient gradient-border rounded-xl p-6 cursor-pointer group relative overflow-hidden"
+        <div className="glass mesh-gradient gradient-border rounded-xl p-6 cursor-pointer group relative overflow-hidden animated-border-gradient hover-lift"
           onClick={() => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic")}
         >
           <QuickStartParticles />
@@ -1543,6 +1799,11 @@ export function Dashboard() {
             </div>
           );
         })()}
+      </motion.div>
+
+      {/* Study Buddies Online */}
+      <motion.div variants={fadeUp}>
+        <StudyBuddiesOnlineWidget />
       </motion.div>
 
       {/* Your Study Plan - AI Generated */}
@@ -1844,6 +2105,13 @@ export function Dashboard() {
             ))}
           </div>
         </div>
+      </motion.div>
+
+      <GradientDivider />
+
+      {/* Quick Study Timer Widget */}
+      <motion.div variants={fadeUp}>
+        <DashboardPomodoroTimer />
       </motion.div>
 
       <GradientDivider />
@@ -2508,6 +2776,73 @@ export function Dashboard() {
           </div>
         </div>
 
+        {/* Search & Filter Bar */}
+        {courses.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search courses by title..."
+                  value={courseSearchQuery}
+                  onChange={(e) => setCourseSearchQuery(e.target.value)}
+                  className="pl-9 h-9 text-sm"
+                />
+                {courseSearchQuery && (
+                  <button
+                    onClick={() => setCourseSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const modes: Array<'name' | 'date' | 'progress'> = ['date', 'name', 'progress'];
+                    const idx = modes.indexOf(courseSortMode);
+                    setCourseSortMode(modes[(idx + 1) % modes.length]);
+                  }}
+                  className="h-9 text-sm shrink-0"
+                >
+                  <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
+                  {courseSortMode === 'name' ? 'By Name' : courseSortMode === 'date' ? 'By Date' : 'By Progress'}
+                </Button>
+              </div>
+            </div>
+            {/* Status filter chips */}
+            <div className="flex items-center gap-2">
+              {(['all', 'in-progress', 'completed'] as const).map((status) => {
+                const isActive = courseStatusFilter === status;
+                const count = status === 'all'
+                  ? courses.length
+                  : status === 'completed'
+                    ? courses.filter((c) => completedCourses.includes(c.id)).length
+                    : courses.filter((c) => !completedCourses.includes(c.id)).length;
+                return (
+                  <motion.button
+                    key={status}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setCourseStatusFilter(status)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                      isActive
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-background/60 border-border text-muted-foreground hover:bg-accent'
+                    }`}
+                  >
+                    {status === 'all' ? 'All' : status === 'in-progress' ? 'In Progress' : 'Completed'}
+                    <span className="ml-1.5 opacity-70">{count}</span>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Category Breakdown Bar */}
         {courses.length > 0 && Object.keys(categoryStats).length > 0 && (
           <motion.div
@@ -2623,15 +2958,18 @@ export function Dashboard() {
             </AnimatePresence>
           </motion.div>
         )}
-        {filteredCourses.length === 0 && selectedCategoryFilter !== 'All' && (
+        {filteredCourses.length === 0 && (selectedCategoryFilter !== 'All' || courseSearchQuery.trim() || courseStatusFilter !== 'all') && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="text-center py-8"
           >
-            <p className="text-sm text-muted-foreground">No courses in &quot;{selectedCategoryFilter}&quot; category.</p>
-            <Button variant="link" size="sm" className="mt-1" onClick={() => setSelectedCategoryFilter('All')}>
-              Show all courses
+            <p className="text-sm text-muted-foreground">
+              No courses match your filters.
+              {courseSearchQuery.trim() && ` Searching "${courseSearchQuery}".`}
+            </p>
+            <Button variant="link" size="sm" className="mt-1" onClick={() => { setCourseSearchQuery(''); setCourseStatusFilter('all'); setSelectedCategoryFilter('All'); }}>
+              Clear all filters
             </Button>
           </motion.div>
         )}
@@ -2714,11 +3052,174 @@ export function Dashboard() {
           Press <kbd className="font-mono text-[11px] bg-muted/80 px-1.5 py-0.5 rounded border border-border/50">⌘K</kbd> to search &bull; <kbd className="font-mono text-[11px] bg-muted/80 px-1.5 py-0.5 rounded border border-border/50">⌘1-5</kbd> to navigate
         </p>
       </motion.div>
+
+      {/* Share Stats Modal */}
+      <DashboardShareModal open={shareModalOpen} onClose={() => setShareModalOpen(false)} />
     </motion.div>
+    </div>
   );
 }
 
-// Enhanced Course Card with gradient overlay sliding up from bottom on hover
+// Quick Pomodoro Timer Widget for Dashboard
+function DashboardPomodoroTimer() {
+  const POMODORO_SECONDS = 25 * 60;
+  const TOTAL_SESSIONS = 4;
+
+  const [secondsLeft, setSecondsLeft] = useState(POMODORO_SECONDS);
+  const [isRunning, setIsRunning] = useState(false);
+  const [completedSessions, setCompletedSessions] = useState(() => {
+    try {
+      const stored = localStorage.getItem('synapse-dashboard-pomodoro-sessions');
+      return stored ? (parseInt(stored, 10) || 0) : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (isRunning && secondsLeft > 0) {
+      intervalRef.current = setInterval(() => {
+        setSecondsLeft((s) => {
+          if (s <= 1) {
+            setIsRunning(false);
+            setCompletedSessions((prev) => {
+              const next = prev + 1;
+              try { localStorage.setItem('synapse-dashboard-pomodoro-sessions', String(next)); } catch { /* ignore */ }
+              return next;
+            });
+            toast.success('Focus session complete! Time for a break.');
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isRunning, secondsLeft]);
+
+  const progress = ((POMODORO_SECONDS - secondsLeft) / POMODORO_SECONDS) * 100;
+  const minutes = Math.floor(secondsLeft / 60);
+  const seconds = secondsLeft % 60;
+  const displayTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+  // SVG circular progress
+  const radius = 52;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (progress / 100) * circumference;
+
+  return (
+    <div className="glass rounded-xl p-5 border border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 via-teal-500/5 to-transparent relative overflow-hidden">
+      {/* Subtle glow accent */}
+      <div className="absolute -top-10 -right-10 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="relative z-10 flex items-center gap-5">
+        {/* Circular timer */}
+        <div className="relative shrink-0">
+          <svg width="128" height="128" className="-rotate-90">
+            <circle
+              cx="64" cy="64" r={radius}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="6"
+              className="text-muted/30"
+            />
+            <motion.circle
+              cx="64" cy="64" r={radius}
+              fill="none"
+              stroke="url(#timerGradient)"
+              strokeWidth="6"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              animate={{ strokeDashoffset }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+            />
+            <defs>
+              <linearGradient id="timerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#059669" />
+                <stop offset="100%" stopColor="#14b8a6" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-2xl font-bold font-mono tabular-nums tracking-tight">{displayTime}</span>
+            <span className="text-[10px] text-muted-foreground mt-0.5">
+              {isRunning ? 'Focusing...' : secondsLeft === 0 ? 'Done!' : 'Ready'}
+            </span>
+          </div>
+        </div>
+
+        {/* Controls & Info */}
+        <div className="flex-1 space-y-3 min-w-0">
+          <div className="flex items-center gap-2">
+            <Timer className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            <h3 className="font-semibold text-sm">Focus Timer</h3>
+            <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">
+              Session {Math.min(completedSessions + 1, TOTAL_SESSIONS)}/{TOTAL_SESSIONS}
+            </Badge>
+          </div>
+
+          {/* Session dots */}
+          <div className="flex items-center gap-1.5">
+            {Array.from({ length: TOTAL_SESSIONS }).map((_, i) => (
+              <div
+                key={i}
+                className={`h-2 rounded-full transition-all duration-500 ${
+                  i < completedSessions
+                    ? 'bg-emerald-500 w-6 shadow-sm shadow-emerald-500/30'
+                    : i === completedSessions && isRunning
+                      ? 'bg-emerald-500/50 w-4 animate-pulse'
+                      : 'bg-muted/40 w-2'
+                }`}
+              />
+            ))}
+          </div>
+
+          {/* Buttons */}
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                if (secondsLeft === 0) {
+                  setSecondsLeft(POMODORO_SECONDS);
+                  setCompletedSessions(0);
+                  try { localStorage.setItem('synapse-dashboard-pomodoro-sessions', '0'); } catch { /* ignore */ }
+                }
+                setIsRunning(!isRunning);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs"
+            >
+              {secondsLeft === 0 ? (
+                <><RotateCcw className="h-3 w-3 mr-1.5" />Restart</>
+              ) : isRunning ? (
+                <><Pause className="h-3 w-3 mr-1.5" />Pause</>
+              ) : (
+                <><Play className="h-3 w-3 mr-1.5" />Start</>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsRunning(false);
+                setSecondsLeft(POMODORO_SECONDS);
+              }}
+              className="h-8 text-xs"
+              disabled={secondsLeft === POMODORO_SECONDS && !isRunning}
+            >
+              <RotateCcw className="h-3 w-3" />
+            </Button>
+            <span className="text-[10px] text-muted-foreground ml-auto">
+              {completedSessions > 0 ? `${completedSessions} done today` : '25 min sessions'}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof CourseCard>[0]['course']; onClick: () => void }) {
   const slideCount = course._count?.slides ?? course.slides?.length ?? 0;
 

@@ -24,7 +24,7 @@ export function StatsCard({ icon: Icon, label, value, trend, change, index = 0 }
     <motion.div
       whileHover={{ y: -2, scale: 1.01 }}
       transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-      className="glass rounded-xl p-4 flex items-center gap-4"
+      className="glass glass-card-hover hover-lift rounded-xl p-4 flex items-center gap-4"
     >
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10">
         <Icon className="h-5 w-5 text-primary" />

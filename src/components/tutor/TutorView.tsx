@@ -1099,7 +1099,7 @@ export function TutorView() {
             )}
           </AnimatePresence>
 
-          <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+          <ScrollArea className="flex-1 p-4 tutor-chat-glass" ref={scrollRef}>
             {/* Quick topic chips when no topic is set */}
             {!activeTopic && messages.length <= 1 && (
               <div className="flex flex-wrap gap-2 mb-4 justify-center">
@@ -1161,7 +1161,7 @@ export function TutorView() {
           </ScrollArea>
 
           {/* Input Area */}
-          <div className="border-t glass gradient-border">
+          <div className="border-t tutor-floating-input">
             {/* Suggested Prompts Bar */}
             <AnimatePresence>
               {!inputFocused && input.trim() === '' && !isLoading && (

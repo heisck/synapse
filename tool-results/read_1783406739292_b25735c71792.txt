@@ -1,0 +1,909 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { Suspense, lazy, useState, useRef, useEffect, useCallback } from 'react';
+     4→     4→import { AnimatePresence, motion } from 'framer-motion';
+     5→     5→import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Keyboard, Timer, Bell, Flame, Target, Lightbulb, Clock, CheckCheck } from 'lucide-react';
+     6→     6→import { useAppStore } from '@/stores/appStore';
+     7→     7→import { AppSidebar } from './AppSidebar';
+     8→     8→import { StoreInitializer } from './StoreInitializer';
+     9→     9→import { ErrorBoundary } from './ErrorBoundary';
+    10→    10→import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+    11→    11→import { Button } from '@/components/ui/button';
+    12→    12→import { useNotifications } from '@/hooks/useNotifications';
+    13→    13→import type { StudyNotification, AppView } from '@/types';
+    14→    14→
+    15→    15→const LandingPage = lazy(() =>
+    16→    16→  import('@/components/landing/LandingPage').then((m) => ({ default: m.LandingPage }))
+    17→    17→);
+    18→    18→const Dashboard = lazy(() => import('./Dashboard'));
+    19→    19→const TutorView = lazy(() =>
+    20→    20→  import('@/components/tutor/TutorView').then((m) => ({ default: m.TutorView }))
+    21→    21→);
+    22→    22→const UploadView = lazy(() => import('./UploadView'));
+    23→    23→const QuizView = lazy(() => import('./QuizView'));
+    24→    24→const OnboardingFlow = lazy(() => import('./OnboardingFlow'));
+    25→    25→const ProfileView = lazy(() => import('./ProfileView'));
+    26→    26→const CourseDetail = lazy(() => import('./CourseDetail'));
+    27→    27→const NotesView = lazy(() => import('./NotesView'));
+    28→    28→const SettingsView = lazy(() => import('./SettingsView'));
+    29→    29→const FocusTimerView = lazy(() => import('./FocusTimerView').then((m) => ({ default: m.FocusTimerView })));
+    30→    30→
+    31→    31→function ViewLoader() {
+    32→    32→  return (
+    33→    33→    <motion.div
+    34→    34→      initial={{ opacity: 0, scale: 0.8 }}
+    35→    35→      animate={{ opacity: 1, scale: 1 }}
+    36→    36→      transition={{ type: 'spring', stiffness: 200, damping: 22, mass: 0.8 }}
+    37→    37→      className="flex h-full min-h-[60vh] items-center justify-center"
+    38→    38→    >
+    39→    39→      <div className="glass rounded-2xl p-8 flex flex-col items-center gap-5 max-w-xs w-full">
+    40→    40→        {/* Brain icon with pulsing glow */}
+    41→    41→        <motion.div
+    42→    42→          animate={{
+    43→    43→            boxShadow: [
+    44→    44→              '0 0 8px rgba(16, 185, 129, 0.15)',
+    45→    45→              '0 0 28px rgba(16, 185, 129, 0.35)',
+    46→    46→              '0 0 8px rgba(16, 185, 129, 0.15)',
+    47→    47→            ],
+    48→    48→            scale: [1, 1.06, 1],
+    49→    49→          }}
+    50→    50→          transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+    51→    51→          className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10"
+    52→    52→        >
+    53→    53→          <Brain className="h-8 w-8 text-primary" />
+    54→    54→        </motion.div>
+    55→    55→
+    56→    56→        {/* Animated gradient text */}
+    57→    57→        <p className="gradient-text-animated text-lg font-semibold">Loading...</p>
+    58→    58→
+    59→    59→        {/* Three bouncing dots */}
+    60→    60→        <div className="flex items-center gap-2">
+    61→    61→          {[0, 1, 2].map((i) => (
+    62→    62→            <motion.span
+    63→    63→              key={i}
+    64→    64→              animate={{
+    65→    65→                y: [0, -10, 0],
+    66→    66→                opacity: [0.4, 1, 0.4],
+    67→    67→                scale: [0.7, 1, 0.7],
+    68→    68→              }}
+    69→    69→              transition={{
+    70→    70→                duration: 1.2,
+    71→    71→                repeat: Infinity,
+    72→    72→                ease: 'easeInOut',
+    73→    73→                delay: i * 0.18,
+    74→    74→              }}
+    75→    75→              className="h-2.5 w-2.5 rounded-full bg-primary"
+    76→    76→            />
+    77→    77→          ))}
+    78→    78→        </div>
+    79→    79→      </div>
+    80→    80→    </motion.div>
+    81→    81→  );
+    82→    82→}
+    83→    83→
+    84→    84→// Page transition indicator - thin gradient line at top during transitions
+    85→    85→function TransitionIndicator({ show }: { show: boolean }) {
+    86→    86→  return (
+    87→    87→    <AnimatePresence>
+    88→    88→      {show && (
+    89→    89→        <motion.div
+    90→    90→          initial={{ scaleX: 0, opacity: 0 }}
+    91→    91→          animate={{ scaleX: 1, opacity: 1 }}
+    92→    92→          exit={{ scaleX: 0, opacity: 0 }}
+    93→    93→          transition={{ duration: 0.15, ease: 'easeOut' }}
+    94→    94→          className="absolute top-0 left-0 right-0 h-[2px] z-50 origin-left"
+    95→    95→        >
+    96→    96→          <motion.div
+    97→    97→            animate={{ x: ['-100%', '100%'] }}
+    98→    98→            transition={{ duration: 0.3, ease: 'easeInOut' }}
+    99→    99→            className="h-full w-1/2 bg-gradient-to-r from-transparent via-primary to-transparent"
+   100→   100→          />
+   101→   101→        </motion.div>
+   102→   102→      )}
+   103→   103→    </AnimatePresence>
+   104→   104→  );
+   105→   105→}
+   106→   106→
+   107→   107→// Unique entrance animations per view
+   108→   108→const viewTransitions: Record<string, { initial: object; animate: object; exit: object }> = {
+   109→   109→  dashboard: {
+   110→   110→    initial: { opacity: 0, x: -40 },
+   111→   111→    animate: { opacity: 1, x: 0 },
+   112→   112→    exit: { opacity: 0, x: 40 },
+   113→   113→  },
+   114→   114→  tutor: {
+   115→   115→    initial: { opacity: 0, x: 40 },
+   116→   116→    animate: { opacity: 1, x: 0 },
+   117→   117→    exit: { opacity: 0, x: -40 },
+   118→   118→  },
+   119→   119→  upload: {
+   120→   120→    initial: { opacity: 0, scale: 0.92 },
+   121→   121→    animate: { opacity: 1, scale: 1 },
+   122→   122→    exit: { opacity: 0, scale: 0.92 },
+   123→   123→  },
+   124→   124→  quiz: {
+   125→   125→    initial: { opacity: 0, y: 40 },
+   126→   126→    animate: { opacity: 1, y: 0 },
+   127→   127→    exit: { opacity: 0, y: -40 },
+   128→   128→  },
+   129→   129→  notes: {
+   130→   130→    initial: { opacity: 0, x: -40 },
+   131→   131→    animate: { opacity: 1, x: 0 },
+   132→   132→    exit: { opacity: 0, x: 40 },
+   133→   133→  },
+   134→   134→  'focus-timer': {
+   135→   135→    initial: { opacity: 0, scale: 0.95 },
+   136→   136→    animate: { opacity: 1, scale: 1 },
+   137→   137→    exit: { opacity: 0, scale: 0.95 },
+   138→   138→  },
+   139→   139→  profile: {
+   140→   140→    initial: { opacity: 0, scale: 0.92 },
+   141→   141→    animate: { opacity: 1, scale: 1 },
+   142→   142→    exit: { opacity: 0, scale: 0.92 },
+   143→   143→  },
+   144→   144→  'course-detail': {
+   145→   145→    initial: { opacity: 0, y: 20, scale: 0.97 },
+   146→   146→    animate: { opacity: 1, y: 0, scale: 1 },
+   147→   147→    exit: { opacity: 0, y: -20, scale: 0.97 },
+   148→   148→  },
+   149→   149→  settings: {
+   150→   150→    initial: { opacity: 0, scale: 0.95 },
+   151→   151→    animate: { opacity: 1, scale: 1 },
+   152→   152→    exit: { opacity: 0, scale: 0.95 },
+   153→   153→  },
+   154→   154→};
+   155→   155→
+   156→   156→const defaultTransition = {
+   157→   157→  initial: { opacity: 0, x: -20 },
+   158→   158→  animate: { opacity: 1, x: 0 },
+   159→   159→  exit: { opacity: 0, x: 20 },
+   160→   160→};
+   161→   161→
+   162→   162→function SearchModal() {
+   163→   163→  const { navigate, recentViews, courses, addRecentView, setActiveTopic, setActiveSession } = useAppStore();
+   164→   164→  const [open, setOpen] = useState(false);
+   165→   165→  const [query, setQuery] = useState('');
+   166→   166→  const [activeIndex, setActiveIndex] = useState(0);
+   167→   167→
+   168→   168→  const searchItems = [
+   169→   169→    { label: 'Dashboard', view: 'dashboard' as AppView, icon: LayoutDashboard },
+   170→   170→    { label: 'AI Tutor', view: 'tutor' as AppView, icon: MessageSquare },
+   171→   171→    { label: 'Upload Slides', view: 'upload' as AppView, icon: Upload },
+   172→   172→    { label: 'Quiz Mode', view: 'quiz' as AppView, icon: ClipboardCheck },
+   173→   173→    { label: 'Notes', view: 'notes' as AppView, icon: BookMarked },
+   174→   174→    { label: 'Focus Timer', view: 'focus-timer' as AppView, icon: Timer },
+   175→   175→    { label: 'Profile', view: 'profile' as AppView, icon: User },
+   176→   176→    { label: 'Settings', view: 'settings' as AppView, icon: Settings },
+   177→   177→  ];
+   178→   178→
+   179→   179→  const recentViewItems = recentViews
+   180→   180→    .map((view) => searchItems.find((item) => item.view === view))
+   181→   181→    .filter((item): item is typeof searchItems[number] => !!item);
+   182→   182→
+   183→   183→  const recentCourseItems = courses.slice(0, 3).map((c) => ({
+   184→   184→    id: c.id,
+   185→   185→    label: c.title,
+   186→   186→    icon: LayoutDashboard,
+   187→   187→    action: () => {
+   188→   188→      navigate('course-detail');
+   189→   189→    },
+   190→   190→  }));
+   191→   191→
+   192→   192→  const quickActions = [
+   193→   193→    {
+   194→   194→      label: 'New Session',
+   195→   195→      icon: Sparkles,
+   196→   196→      action: () => {
+   197→   197→        setActiveTopic('General Study');
+   198→   198→        setActiveSession(`session-${Date.now()}`);
+   199→   199→        navigate('tutor');
+   200→   200→      },
+   201→   201→    },
+   202→   202→    {
+   203→   203→      label: 'Upload Slides',
+   204→   204→      icon: FileUp,
+   205→   205→      action: () => { navigate('upload'); },
+   206→   206→    },
+   207→   207→    {
+   208→   208→      label: 'Take Quiz',
+   209→   209→      icon: ClipboardCheck,
+   210→   210→      action: () => { navigate('quiz'); },
+   211→   211→    },
+   212→   212→  ];
+   213→   213→
+   214→   214→  const filtered = query
+   215→   215→    ? searchItems.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
+   216→   216→    : searchItems;
+   217→   217→
+   218→   218→  // Deduplicate views that already appeared in recent
+   219→   219→  const seenViews = new Set(recentViewItems.map((r) => r.view));
+   220→   220→  const uniqueViewItems = query ? filtered : filtered.filter((f) => !seenViews.has(f.view));
+   221→   221→  const totalNavigable = (query ? 0 : recentViewItems.length) + (query ? 0 : recentCourseItems.length) + (query ? 0 : quickActions.length) + uniqueViewItems.length;
+   222→   222→
+   223→   223→  const handleSelect = (idx: number) => {
+   224→   224→    let i = 0;
+   225→   225→    if (!query) {
+   226→   226→      if (idx < recentViewItems.length) {
+   227→   227→        const viewItem = recentViewItems[idx];
+   228→   228→        addRecentView(viewItem.view);
+   229→   229→        navigate(viewItem.view);
+   230→   230→        setOpen(false);
+   231→   231→        setQuery('');
+   232→   232→        return;
+   233→   233→      }
+   234→   234→      i += recentViewItems.length;
+   235→   235→    }
+   236→   236→    if (!query) {
+   237→   237→      if (idx < i + recentCourseItems.length) {
+   238→   238→        const courseItem = recentCourseItems[idx - i];
+   239→   239→        courseItem.action();
+   240→   240→        setOpen(false);
+   241→   241→        setQuery('');
+   242→   242→        return;
+   243→   243→      }
+   244→   244→      i += recentCourseItems.length;
+   245→   245→    }
+   246→   246→    if (!query) {
+   247→   247→      if (idx < i + quickActions.length) {
+   248→   248→        const actionItem = quickActions[idx - i];
+   249→   249→        actionItem.action();
+   250→   250→        setOpen(false);
+   251→   251→        setQuery('');
+   252→   252→        return;
+   253→   253→      }
+   254→   254→      i += quickActions.length;
+   255→   255→    }
+   256→   256→    const viewItem = uniqueViewItems[idx - i];
+   257→   257→    if (viewItem) {
+   258→   258→      addRecentView(viewItem.view);
+   259→   259→      navigate(viewItem.view);
+   260→   260→      setOpen(false);
+   261→   261→      setQuery('');
+   262→   262→    }
+   263→   263→  };
+   264→   264→
+   265→   265→  useEffect(() => {
+   266→   266→    const handler = (e: KeyboardEvent) => {
+   267→   267→      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+   268→   268→        e.preventDefault();
+   269→   269→        setOpen((v) => !v);
+   270→   270→      }
+   271→   271→    };
+   272→   272→    window.addEventListener('keydown', handler);
+   273→   273→    return () => window.removeEventListener('keydown', handler);
+   274→   274→  }, []);
+   275→   275→
+   276→   276→  useEffect(() => {
+   277→   277→    if (!open) {
+   278→   278→      setQuery('');
+   279→   279→      setActiveIndex(0);
+   280→   280→    }
+   281→   281→  }, [open]);
+   282→   282→
+   283→   283→  useEffect(() => {
+   284→   284→    setActiveIndex(0);
+   285→   285→  }, [query]);
+   286→   286→
+   287→   287→  const handleKeyDown = (e: React.KeyboardEvent) => {
+   288→   288→    if (e.key === 'ArrowDown') {
+   289→   289→      e.preventDefault();
+   290→   290→      setActiveIndex((prev) => (prev + 1) % totalNavigable);
+   291→   291→    } else if (e.key === 'ArrowUp') {
+   292→   292→      e.preventDefault();
+   293→   293→      setActiveIndex((prev) => (prev - 1 + totalNavigable) % totalNavigable);
+   294→   294→    } else if (e.key === 'Enter') {
+   295→   295→      e.preventDefault();
+   296→   296→      handleSelect(activeIndex);
+   297→   297→    }
+   298→   298→  };
+   299→   299→
+   300→   300→  let currentFlatIndex = 0;
+   301→   301→
+   302→   302→  return (
+   303→   303→    <Dialog open={open} onOpenChange={setOpen}>
+   304→   304→      <DialogContent className="w-[calc(100%-1rem)] sm:max-w-md p-0 gap-0 overflow-hidden">
+   305→   305→        <div className="flex items-center border-b px-3">
+   306→   306→          <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+   307→   307→          <input
+   308→   308→            autoFocus
+   309→   309→            placeholder="Search views, courses, actions..."
+   310→   310→            className="flex h-10 w-full bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
+   311→   311→            value={query}
+   312→   312→            onChange={(e) => setQuery(e.target.value)}
+   313→   313→            onKeyDown={handleKeyDown}
+   314→   314→          />
+   315→   315→          <kbd className="pointer-events-none ml-auto hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
+   316→   316→            ESC
+   317→   317→          </kbd>
+   318→   318→        </div>
+   319→   319→        <div className="max-h-[400px] overflow-y-auto px-1 pb-1">
+   320→   320→          {/* No results */}
+   321→   321→          {filtered.length === 0 && (!query || (query && recentViewItems.length === 0)) && (
+   322→   322→            <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+   323→   323→              No results found.
+   324→   324→            </div>
+   325→   325→          )}
+   326→   326→
+   327→   327→          {/* Recent Views */}
+   328→   328→          {!query && recentViewItems.length > 0 && (
+   329→   329→            <div className="pt-2">
+   330→   330→              <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   331→   331→                Recent
+   332→   332→              </div>
+   333→   333→              {recentViewItems.map((item) => {
+   334→   334→                const Icon = item.icon;
+   335→   335→                const idx = currentFlatIndex++;
+   336→   336→                return (
+   337→   337→                  <button
+   338→   338→                    key={`recent-${item.view}`}
+   339→   339→                    onClick={() => {
+   340→   340→                      addRecentView(item.view);
+   341→   341→                      navigate(item.view);
+   342→   342→                      setOpen(false);
+   343→   343→                      setQuery('');
+   344→   344→                    }}
+   345→   345→                    className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors text-left ${activeIndex === idx ? 'bg-accent' : 'hover:bg-accent'}`}
+   346→   346→                  >
+   347→   347→                    <Icon className="h-4 w-4 text-muted-foreground" />
+   348→   348→                    <span className="flex-1">{item.label}</span>
+   349→   349→                    <span className="text-[10px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">Recent</span>
+   350→   350→                  </button>
+   351→   351→                );
+   352→   352→              })}
+   353→   353→            </div>
+   354→   354→          )}
+   355→   355→
+   356→   356→          {/* Recent Courses */}
+   357→   357→          {!query && recentCourseItems.length > 0 && (
+   358→   358→            <div className="pt-2">
+   359→   359→              <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   360→   360→                Recent Courses
+   361→   361→              </div>
+   362→   362→              {recentCourseItems.map((item) => {
+   363→   363→                const idx = currentFlatIndex++;
+   364→   364→                return (
+   365→   365→                  <button
+   366→   366→                    key={`course-${item.id}`}
+   367→   367→                    onClick={() => {
+   368→   368→                      item.action();
+   369→   369→                      setOpen(false);
+   370→   370→                      setQuery('');
+   371→   371→                    }}
+   372→   372→                    className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors text-left ${activeIndex === idx ? 'bg-accent' : 'hover:bg-accent'}`}
+   373→   373→                  >
+   374→   374→                    <item.icon className="h-4 w-4 text-muted-foreground" />
+   375→   375→                    <span className="flex-1 truncate">{item.label}</span>
+   376→   376→                    <span className="text-[10px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">Recent</span>
+   377→   377→                  </button>
+   378→   378→                );
+   379→   379→              })}
+   380→   380→            </div>
+   381→   381→          )}
+   382→   382→
+   383→   383→          {/* Quick Actions */}
+   384→   384→          {!query && (
+   385→   385→            <div className="pt-2">
+   386→   386→              <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   387→   387→                Actions
+   388→   388→              </div>
+   389→   389→              {quickActions.map((action) => {
+   390→   390→                const Icon = action.icon;
+   391→   391→                const idx = currentFlatIndex++;
+   392→   392→                return (
+   393→   393→                  <button
+   394→   394→                    key={`action-${action.label}`}
+   395→   395→                    onClick={() => {
+   396→   396→                      action.action();
+   397→   397→                      setOpen(false);
+   398→   398→                      setQuery('');
+   399→   399→                    }}
+   400→   400→                    className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors text-left ${activeIndex === idx ? 'bg-accent' : 'hover:bg-accent'}`}
+   401→   401→                  >
+   402→   402→                    <Icon className="h-4 w-4 text-muted-foreground" />
+   403→   403→                    <span className="flex-1">{action.label}</span>
+   404→   404→                    <ArrowRight className="h-3 w-3 text-muted-foreground" />
+   405→   405→                  </button>
+   406→   406→                );
+   407→   407→              })}
+   408→   408→            </div>
+   409→   409→          )}
+   410→   410→
+   411→   411→          {/* All Views */}
+   412→   412→          {(query || true) && (
+   413→   413→            <div className="pt-2">
+   414→   414→              {!query && (
+   415→   415→                <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   416→   416→                  All Views
+   417→   417→                </div>
+   418→   418→              )}
+   419→   419→              {uniqueViewItems.map((item) => {
+   420→   420→                const Icon = item.icon;
+   421→   421→                const idx = currentFlatIndex++;
+   422→   422→                return (
+   423→   423→                  <button
+   424→   424→                    key={item.view}
+   425→   425→                    onClick={() => {
+   426→   426→                      addRecentView(item.view);
+   427→   427→                      navigate(item.view);
+   428→   428→                      setOpen(false);
+   429→   429→                      setQuery('');
+   430→   430→                    }}
+   431→   431→                    className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors text-left ${activeIndex === idx ? 'bg-accent' : 'hover:bg-accent'}`}
+   432→   432→                  >
+   433→   433→                    <Icon className="h-4 w-4 text-muted-foreground" />
+   434→   434→                    <span>{item.label}</span>
+   435→   435→                  </button>
+   436→   436→                );
+   437→   437→              })}
+   438→   438→            </div>
+   439→   439→          )}
+   440→   440→        </div>
+   441→   441→
+   442→   442→        {/* Footer hint */}
+   443→   443→        <div className="border-t px-3 py-2 flex items-center gap-3 text-[10px] text-muted-foreground">
+   444→   444→          <span className="flex items-center gap-1">
+   445→   445→            <kbd className="font-mono bg-muted/60 px-1 py-0.5 rounded border border-border/50">
+   446→   446→              <ArrowUp className="h-2.5 w-2.5 inline" />
+   447→   447→              <ArrowDown className="h-2.5 w-2.5 inline" />
+   448→   448→            </kbd>
+   449→   449→            Navigate
+   450→   450→          </span>
+   451→   451→          <span className="flex items-center gap-1">
+   452→   452→            <kbd className="font-mono bg-muted/60 px-1 py-0.5 rounded border border-border/50">Enter</kbd>
+   453→   453→            Select
+   454→   454→          </span>
+   455→   455→          <span className="flex items-center gap-1">
+   456→   456→            <kbd className="font-mono bg-muted/60 px-1 py-0.5 rounded border border-border/50">Esc</kbd>
+   457→   457→            Close
+   458→   458→          </span>
+   459→   459→        </div>
+   460→   460→      </DialogContent>
+   461→   461→    </Dialog>
+   462→   462→  );
+   463→   463→}
+   464→   464→
+   465→   465→const shortcutGroups = [
+   466→   466→  {
+   467→   467→    title: 'Navigation',
+   468→   468→    shortcuts: [
+   469→   469→      { keys: ['⌘', '1'], description: 'Dashboard' },
+   470→   470→      { keys: ['⌘', '2'], description: 'AI Tutor' },
+   471→   471→      { keys: ['⌘', '3'], description: 'Upload' },
+   472→   472→      { keys: ['⌘', '4'], description: 'Quiz' },
+   473→   473→      { keys: ['⌘', '5'], description: 'Notes' },
+   474→   474→      { keys: ['⌘', '6'], description: 'Profile' },
+   475→   475→      { keys: ['⌘', '7'], description: 'Settings' },
+   476→   476→      { keys: ['⌘', '8'], description: 'Focus Timer' },
+   477→   477→      { keys: ['⌘', '9'], description: 'Notes' },
+   478→   478→    ],
+   479→   479→  },
+   480→   480→  {
+   481→   481→    title: 'Actions',
+   482→   482→    shortcuts: [
+   483→   483→      { keys: ['⌘', 'K'], description: 'Search' },
+   484→   484→      { keys: ['⌘', ','], description: 'Shortcuts' },
+   485→   485→    ],
+   486→   486→  },
+   487→   487→  {
+   488→   488→    title: 'Quiz',
+   489→   489→    shortcuts: [
+   490→   490→      { keys: ['↑', '↓'], description: 'Navigate options' },
+   491→   491→      { keys: ['Enter'], description: 'Select option' },
+   492→   492→      { keys: ['1', '2', '3', '4'], description: 'Select answer option' },
+   493→   493→    ],
+   494→   494→  },
+   495→   495→];
+   496→   496→
+   497→   497→function KeyboardShortcuts() {
+   498→   498→  const { navigate } = useAppStore();
+   499→   499→  const [open, setOpen] = useState(false);
+   500→   500→
+   501→   501→  // Navigation shortcuts + Cmd+, to open this dialog
+   502→   502→  useEffect(() => {
+   503→   503→    const handler = (e: KeyboardEvent) => {
+   504→   504→      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+   505→   505→
+   506→   506→      // ? key (Shift+/) without Cmd/Ctrl/Alt opens shortcuts dialog
+   507→   507→      if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+   508→   508→        e.preventDefault();
+   509→   509→        setOpen((v) => !v);
+   510→   510→        return;
+   511→   511→      }
+   512→   512→
+   513→   513→      // Cmd+, opens shortcuts dialog
+   514→   514→      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+   515→   515→        e.preventDefault();
+   516→   516→        setOpen((v) => !v);
+   517→   517→        return;
+   518→   518→      }
+   519→   519→
+   520→   520→      if ((e.metaKey || e.ctrlKey) && e.key === '1') { e.preventDefault(); navigate('dashboard'); }
+   521→   521→      if ((e.metaKey || e.ctrlKey) && e.key === '2') { e.preventDefault(); navigate('tutor'); }
+   522→   522→      if ((e.metaKey || e.ctrlKey) && e.key === '3') { e.preventDefault(); navigate('upload'); }
+   523→   523→      if ((e.metaKey || e.ctrlKey) && e.key === '4') { e.preventDefault(); navigate('quiz'); }
+   524→   524→      if ((e.metaKey || e.ctrlKey) && e.key === '5') { e.preventDefault(); navigate('notes'); }
+   525→   525→      if ((e.metaKey || e.ctrlKey) && e.key === '6') { e.preventDefault(); navigate('profile'); }
+   526→   526→      if ((e.metaKey || e.ctrlKey) && e.key === '7') { e.preventDefault(); navigate('settings'); }
+   527→   527→      if ((e.metaKey || e.ctrlKey) && e.key === '8') { e.preventDefault(); navigate('focus-timer'); }
+   528→   528→      if ((e.metaKey || e.ctrlKey) && e.key === '9') { e.preventDefault(); navigate('notes'); }
+   529→   529→    };
+   530→   530→    window.addEventListener('keydown', handler);
+   531→   531→    return () => window.removeEventListener('keydown', handler);
+   532→   532→  }, [navigate]);
+   533→   533→
+   534→   534→  return (
+   535→   535→    <>
+   536→   536→      {/* Floating ? button */}
+   537→   537→      <motion.button
+   538→   538→        onClick={() => setOpen(true)}
+   539→   539→        whileHover={{ scale: 1.1 }}
+   540→   540→        whileTap={{ scale: 0.95 }}
+   541→   541→        className="fixed bottom-6 right-6 z-50 flex h-10 w-10 items-center justify-center rounded-full glass pulse-glow border border-border/50 text-sm font-bold text-primary shadow-lg cursor-pointer"
+   542→   542→        aria-label="Keyboard shortcuts"
+   543→   543→      >
+   544→   544→        ?
+   545→   545→      </motion.button>
+   546→   546→
+   547→   547→      {/* Shortcuts Dialog */}
+   548→   548→      <Dialog open={open} onOpenChange={setOpen}>
+   549→   549→        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-lg p-0 gap-0 overflow-hidden mesh-gradient">
+   550→   550→          <DialogHeader className="px-6 pt-6 pb-4">
+   551→   551→            <DialogTitle className="flex items-center gap-2 text-lg">
+   552→   552→              <Keyboard className="h-5 w-5 text-primary" />
+   553→   553→              Keyboard Shortcuts
+   554→   554→            </DialogTitle>
+   555→   555→          </DialogHeader>
+   556→   556→          <div className="px-6 pb-6 space-y-5 max-h-[60vh] overflow-y-auto">
+   557→   557→            {shortcutGroups.map((group, gi) => (
+   558→   558→              <motion.div
+   559→   559→                key={group.title}
+   560→   560→                initial={{ opacity: 0, y: 12 }}
+   561→   561→                animate={{ opacity: 1, y: 0 }}
+   562→   562→                transition={{ duration: 0.3, delay: gi * 0.1 }}
+   563→   563→                className="space-y-2"
+   564→   564→              >
+   565→   565→                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.title}</h4>
+   566→   566→                <div className="space-y-1">
+   567→   567→                  {group.shortcuts.map((shortcut, si) => (
+   568→   568→                    <motion.div
+   569→   569→                      key={si}
+   570→   570→                      initial={{ opacity: 0, x: -8 }}
+   571→   571→                      animate={{ opacity: 1, x: 0 }}
+   572→   572→                      transition={{ duration: 0.25, delay: gi * 0.1 + si * 0.04 }}
+   573→   573→                      className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-accent/50 transition-colors"
+   574→   574→                    >
+   575→   575→                      <span className="text-sm text-foreground/80">{shortcut.description}</span>
+   576→   576→                      <div className="flex items-center gap-1">
+   577→   577→                        {shortcut.keys.map((key, ki) => (
+   578→   578→                          <span key={ki} className="flex items-center">
+   579→   579→                            {ki > 0 && <span className="text-xs text-muted-foreground/50 mx-0.5">+</span>}
+   580→   580→                            <kbd className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-md border border-border/60 bg-muted/80 px-1.5 font-mono text-[11px] font-medium text-foreground/70 shadow-sm">
+   581→   581→                              {key}
+   582→   582→                            </kbd>
+   583→   583→                          </span>
+   584→   584→                        ))}
+   585→   585→                      </div>
+   586→   586→                    </motion.div>
+   587→   587→                  ))}
+   588→   588→                </div>
+   589→   589→              </motion.div>
+   590→   590→            ))}
+   591→   591→          </div>
+   592→   592→        </DialogContent>
+   593→   593→      </Dialog>
+   594→   594→    </>
+   595→   595→  );
+   596→   596→}
+   597→   597→
+   598→   598→// ---------- Notification Bell ----------
+   599→   599→function getNotificationIcon(type: StudyNotification['type']) {
+   600→   600→  switch (type) {
+   601→   601→    case 'streak': return Flame;
+   602→   602→    case 'achievement': return Target;
+   603→   603→    case 'goal': return Target;
+   604→   604→    case 'review': return Clock;
+   605→   605→    case 'tip': return Lightbulb;
+   606→   606→    default: return Bell;
+   607→   607→  }
+   608→   608→}
+   609→   609→
+   610→   610→function formatRelativeTime(dateStr: string): string {
+   611→   611→  const now = Date.now();
+   612→   612→  const then = new Date(dateStr).getTime();
+   613→   613→  const diffMs = now - then;
+   614→   614→  const diffMin = Math.floor(diffMs / 60000);
+   615→   615→  const diffHr = Math.floor(diffMs / 3600000);
+   616→   616→  const diffDay = Math.floor(diffMs / 86400000);
+   617→   617→
+   618→   618→  if (diffMin < 1) return 'Just now';
+   619→   619→  if (diffMin < 60) return `${diffMin}m ago`;
+   620→   620→  if (diffHr < 24) return `${diffHr}h ago`;
+   621→   621→  if (diffDay < 7) return `${diffDay}d ago`;
+   622→   622→  return new Date(dateStr).toLocaleDateString();
+   623→   623→}
+   624→   624→
+   625→   625→function NotificationBell() {
+   626→   626→  const { notifications, markNotificationRead, clearAllNotifications, navigate, currentView } = useAppStore();
+   627→   627→  const [open, setOpen] = useState(false);
+   628→   628→  const dropdownRef = useRef<HTMLDivElement>(null);
+   629→   629→
+   630→   630→  const unreadCount = notifications.filter((n) => !n.read).length;
+   631→   631→
+   632→   632→  // Close on outside click
+   633→   633→  useEffect(() => {
+   634→   634→    if (!open) return;
+   635→   635→    const handler = (e: MouseEvent) => {
+   636→   636→      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+   637→   637→        setOpen(false);
+   638→   638→      }
+   639→   639→    };
+   640→   640→    document.addEventListener('mousedown', handler);
+   641→   641→    return () => document.removeEventListener('mousedown', handler);
+   642→   642→  }, [open]);
+   643→   643→
+   644→   644→  const handleNotificationClick = (notif: StudyNotification) => {
+   645→   645→    markNotificationRead(notif.id);
+   646→   646→    if (notif.actionView) {
+   647→   647→      navigate(notif.actionView);
+   648→   648→      setOpen(false);
+   649→   649→    }
+   650→   650→  };
+   651→   651→
+   652→   652→  // Only show bell when not on landing or onboarding
+   653→   653→  if (currentView === 'landing' || currentView === 'onboarding') return null;
+   654→   654→
+   655→   655→  return (
+   656→   656→    <div ref={dropdownRef} className="relative">
+   657→   657→      <motion.button
+   658→   658→        whileHover={{ scale: 1.1 }}
+   659→   659→        whileTap={{ scale: 0.9 }}
+   660→   660→        onClick={() => setOpen((v) => !v)}
+   661→   661→        className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border/60 bg-background/60 hover:bg-accent/50 transition-colors"
+   662→   662→        aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
+   663→   663→      >
+   664→   664→        <Bell className="h-4 w-4 text-muted-foreground" />
+   665→   665→        <AnimatePresence>
+   666→   666→          {unreadCount > 0 && (
+   667→   667→            <motion.span
+   668→   668→              key={unreadCount}
+   669→   669→              initial={{ scale: 0 }}
+   670→   670→              animate={{ scale: 1 }}
+   671→   671→              exit={{ scale: 0 }}
+   672→   672→              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+   673→   673→              className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white px-1"
+   674→   674→            >
+   675→   675→              {unreadCount > 9 ? '9+' : unreadCount}
+   676→   676→            </motion.span>
+   677→   677→          )}
+   678→   678→        </AnimatePresence>
+   679→   679→      </motion.button>
+   680→   680→
+   681→   681→      <AnimatePresence>
+   682→   682→        {open && (
+   683→   683→          <motion.div
+   684→   684→            initial={{ opacity: 0, y: -8, scale: 0.95 }}
+   685→   685→            animate={{ opacity: 1, y: 0, scale: 1 }}
+   686→   686→            exit={{ opacity: 0, y: -8, scale: 0.95 }}
+   687→   687→            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+   688→   688→            className="absolute right-0 top-12 z-50 w-80 sm:w-96 glass rounded-xl border border-border/60 shadow-xl overflow-hidden"
+   689→   689→          >
+   690→   690→            {/* Header */}
+   691→   691→            <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
+   692→   692→              <h3 className="text-sm font-semibold">Notifications</h3>
+   693→   693→              {notifications.length > 0 && (
+   694→   694→                <button
+   695→   695→                  onClick={clearAllNotifications}
+   696→   696→                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+   697→   697→                >
+   698→   698→                  Clear all
+   699→   699→                </button>
+   700→   700→              )}
+   701→   701→            </div>
+   702→   702→
+   703→   703→            {/* Notification list */}
+   704→   704→            <div className="max-h-80 overflow-y-auto">
+   705→   705→              {notifications.length === 0 ? (
+   706→   706→                <div className="flex flex-col items-center justify-center py-8 text-center">
+   707→   707→                  <Bell className="h-8 w-8 text-muted-foreground/30 mb-2" />
+   708→   708→                  <p className="text-sm text-muted-foreground">No notifications yet</p>
+   709→   709→                </div>
+   710→   710→              ) : (
+   711→   711→                notifications.slice(0, 20).map((notif, idx) => {
+   712→   712→                  const Icon = getNotificationIcon(notif.type);
+   713→   713→                  return (
+   714→   714→                    <motion.button
+   715→   715→                      key={notif.id}
+   716→   716→                      initial={{ opacity: 0, x: -12 }}
+   717→   717→                      animate={{ opacity: 1, x: 0 }}
+   718→   718→                      transition={{ delay: idx * 0.04, duration: 0.2 }}
+   719→   719→                      onClick={() => handleNotificationClick(notif)}
+   720→   720→                      className={`w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-accent/30 transition-colors border-b border-border/20 last:border-b-0 ${
+   721→   721→                        !notif.read ? 'border-l-2 border-l-emerald-500' : ''
+   722→   722→                      }`}
+   723→   723→                    >
+   724→   724→                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg mt-0.5 ${
+   725→   725→                        !notif.read ? 'bg-emerald-500/10' : 'bg-muted/50'
+   726→   726→                      }`}>
+   727→   727→                        <Icon className={`h-4 w-4 ${!notif.read ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`} />
+   728→   728→                      </div>
+   729→   729→                      <div className="flex-1 min-w-0">
+   730→   730→                        <div className="flex items-center gap-2">
+   731→   731→                          <p className={`text-sm font-medium truncate ${!notif.read ? 'text-foreground' : 'text-muted-foreground'}`}>
+   732→   732→                            {notif.title}
+   733→   733→                          </p>
+   734→   734→                        </div>
+   735→   735→                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{notif.message}</p>
+   736→   736→                        <div className="flex items-center justify-between mt-1.5">
+   737→   737→                          <span className="text-[10px] text-muted-foreground/60">{formatRelativeTime(notif.createdAt)}</span>
+   738→   738→                          {notif.actionLabel && (
+   739→   739→                            <span className="text-[10px] font-medium text-primary">{notif.actionLabel}</span>
+   740→   740→                          )}
+   741→   741→                        </div>
+   742→   742→                      </div>
+   743→   743→                    </motion.button>
+   744→   744→                  );
+   745→   745→                })
+   746→   746→              )}
+   747→   747→            </div>
+   748→   748→
+   749→   749→            {/* Footer */}
+   750→   750→            {unreadCount > 0 && (
+   751→   751→              <div className="border-t border-border/40 px-4 py-2.5">
+   752→   752→                <button
+   753→   753→                  onClick={() => {
+   754→   754→                    notifications.filter((n) => !n.read).forEach((n) => markNotificationRead(n.id));
+   755→   755→                  }}
+   756→   756→                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors w-full justify-center"
+   757→   757→                >
+   758→   758→                  <CheckCheck className="h-3.5 w-3.5" />
+   759→   759→                  Mark all as read
+   760→   760→                </button>
+   761→   761→              </div>
+   762→   762→            )}
+   763→   763→          </motion.div>
+   764→   764→        )}
+   765→   765→      </AnimatePresence>
+   766→   766→    </div>
+   767→   767→  );
+   768→   768→}
+   769→   769→
+   770→   770→const fullViewportViews: Array<string> = ['landing', 'onboarding'];
+   771→   771→
+   772→   772→// Spring transition config for view changes
+   773→   773→const springTransition = { type: 'spring' as const, stiffness: 300, damping: 30 };
+   774→   774→
+   775→   775→export function AppShell() {
+   776→   776→  const { currentView, navigate } = useAppStore();
+   777→   777→  const isFullViewport = fullViewportViews.includes(currentView);
+   778→   778→  const [transitioning, setTransitioning] = useState(false);
+   779→   779→  const prevViewRef = useRef(currentView);
+   780→   780→
+   781→   781→  // Generate contextual notifications
+   782→   782→  useNotifications();
+   783→   783→
+   784→   784→  // Detect view changes to trigger transition indicator
+   785→   785→  useEffect(() => {
+   786→   786→    if (prevViewRef.current !== currentView) {
+   787→   787→      prevViewRef.current = currentView;
+   788→   788→      const timer = setTimeout(() => setTransitioning(false), 400);
+   789→   789→      // Use a microtask to avoid synchronous setState in effect
+   790→   790→      const raf = requestAnimationFrame(() => setTransitioning(true));
+   791→   791→      return () => {
+   792→   792→        clearTimeout(timer);
+   793→   793→        cancelAnimationFrame(raf);
+   794→   794→      };
+   795→   795→    }
+   796→   796→  }, [currentView]);
+   797→   797→
+   798→   798→  const handleGoDashboard = () => navigate('dashboard');
+   799→   799→
+   800→   800→  const renderView = () => {
+   801→   801→    switch (currentView) {
+   802→   802→      case 'landing':
+   803→   803→        return <LandingPage />;
+   804→   804→      case 'onboarding':
+   805→   805→        return <OnboardingFlow />;
+   806→   806→      case 'dashboard':
+   807→   807→        return <Dashboard />;
+   808→   808→      case 'tutor':
+   809→   809→        return <TutorView />;
+   810→   810→      case 'upload':
+   811→   811→        return <UploadView />;
+   812→   812→      case 'quiz':
+   813→   813→        return <QuizView />;
+   814→   814→      case 'profile':
+   815→   815→        return <ProfileView />;
+   816→   816→      case 'course-detail':
+   817→   817→        return <CourseDetail />;
+   818→   818→      case 'notes':
+   819→   819→        return <NotesView />;
+   820→   820→      case 'focus-timer':
+   821→   821→        return <FocusTimerView />;
+   822→   822→      case 'settings':
+   823→   823→        return <SettingsView />;
+   824→   824→      default:
+   825→   825→        return <Dashboard />;
+   826→   826→    }
+   827→   827→  };
+   828→   828→
+   829→   829→  const viewVariant = viewTransitions[currentView] || defaultTransition;
+   830→   830→
+   831→   831→  return (
+   832→   832→    <>
+   833→   833→      <StoreInitializer />
+   834→   834→      <SearchModal />
+   835→   835→      <KeyboardShortcuts />
+   836→   836→
+   837→   837→      <AnimatePresence mode="wait">
+   838→   838→        {isFullViewport ? (
+   839→   839→          <motion.div
+   840→   840→            key={currentView}
+   841→   841→            variants={viewVariant}
+   842→   842→            initial="initial"
+   843→   843→            animate="animate"
+   844→   844→            exit="exit"
+   845→   845→            transition={springTransition}
+   846→   846→            className="min-h-screen mesh-gradient"
+   847→   847→          >
+   848→   848→            <TransitionIndicator show={transitioning} />
+   849→   849→            <Suspense fallback={<ViewLoader />}>
+   850→   850→              <ErrorBoundary onGoDashboard={handleGoDashboard}>
+   851→   851→                {renderView()}
+   852→   852→              </ErrorBoundary>
+   853→   853→            </Suspense>
+   854→   854→          </motion.div>
+   855→   855→        ) : (
+   856→   856→          <motion.div
+   857→   857→            key={`app-${currentView}`}
+   858→   858→            variants={viewVariant}
+   859→   859→            initial="initial"
+   860→   860→            animate="animate"
+   861→   861→            exit="exit"
+   862→   862→            transition={springTransition}
+   863→   863→            className="flex min-h-screen"
+   864→   864→          >
+   865→   865→            <AppSidebar />
+   866→   866→            <main className={`relative flex-1 min-h-screen overflow-y-auto overflow-x-hidden ${currentView === 'tutor' ? '!p-0 !max-w-none' : ''}`}>
+   867→   867→              {/* Notification bell - top right */}
+   868→   868→              <div className="fixed top-4 right-4 z-40">
+   869→   869→                <NotificationBell />
+   870→   870→              </div>
+   871→   871→              {/* Animated mesh-gradient background */}
+   872→   872→              <div
+   873→   873→                className="pointer-events-none fixed inset-0 -z-10 opacity-40 dark:opacity-20"
+   874→   874→                aria-hidden="true"
+   875→   875→              >
+   876→   876→                <div
+   877→   877→                  className="absolute inset-0 blur-3xl"
+   878→   878→                  style={{
+   879→   879→                    background: 'linear-gradient(135deg, oklch(0.627 0.194 149.214 / 0.15) 0%, oklch(0.687 0.159 177.89 / 0.1) 25%, oklch(0.565 0.194 149.214 / 0.08) 50%, oklch(0.627 0.194 149.214 / 0.12) 75%, oklch(0.687 0.159 177.89 / 0.15) 100%)',
+   880→   880→                    backgroundSize: '400% 400%',
+   881→   881→                    animation: 'meshBgShift 20s ease-in-out infinite',
+   882→   882→                  }}
+   883→   883→                />
+   884→   884→              </div>
+   885→   885→              {/* Noise texture overlay */}
+   886→   886→              <div
+   887→   887→                className="pointer-events-none fixed inset-0 -z-[9] opacity-[0.015] dark:opacity-[0.03]"
+   888→   888→                aria-hidden="true"
+   889→   889→                style={{
+   890→   890→                  backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E")`,
+   891→   891→                  backgroundRepeat: 'repeat',
+   892→   892→                  backgroundSize: '128px 128px',
+   893→   893→                }}
+   894→   894→              />
+   895→   895→              <TransitionIndicator show={transitioning} />
+   896→   896→              <div className={`mx-auto max-w-6xl p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] lg:p-8 ${currentView === 'tutor' ? '!max-w-none !p-0' : ''}`}>
+   897→   897→                <Suspense fallback={<ViewLoader />}>
+   898→   898→                  <ErrorBoundary onGoDashboard={handleGoDashboard}>
+   899→   899→                    {renderView()}
+   900→   900→                  </ErrorBoundary>
+   901→   901→                </Suspense>
+   902→   902→              </div>
+   903→   903→            </main>
+   904→   904→          </motion.div>
+   905→   905→        )}
+   906→   906→      </AnimatePresence>
+   907→   907→    </>
+   908→   908→  );
+   909→   909→}

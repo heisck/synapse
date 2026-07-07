@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import {
   Brain,
@@ -9,6 +9,7 @@ import {
   BookOpen,
   MessageSquare,
   ClipboardCheck,
+  Trophy,
   User,
   Menu,
   BookMarked,
@@ -47,6 +48,7 @@ const navItems: NavItem[] = [
   { icon: BookOpen, label: 'My Courses', view: 'upload', shortcut: '' },
   { icon: MessageSquare, label: 'Tutor', view: 'tutor', shortcut: '\u23182' },
   { icon: ClipboardCheck, label: 'Quiz Mode', view: 'quiz', shortcut: '\u23184' },
+  { icon: Trophy, label: 'Leaderboard', view: 'leaderboard', shortcut: '' },
   { icon: BookMarked, label: 'Notes', view: 'notes', shortcut: '\u23185' },
   { icon: Timer, label: 'Focus Timer', view: 'focus-timer', shortcut: '\u23188' },
   { icon: User, label: 'Profile', view: 'profile', shortcut: '\u23186' },
@@ -58,6 +60,7 @@ const viewLabels: Record<string, string> = {
   tutor: 'Tutor',
   upload: 'Upload',
   quiz: 'Quiz',
+  leaderboard: 'Leaderboard',
   profile: 'Profile',
   notes: 'Notes',
   settings: 'Settings',
@@ -69,6 +72,7 @@ const viewIcons: Record<string, typeof LayoutDashboard> = {
   tutor: MessageSquare,
   upload: FileUp,
   quiz: ClipboardCheck,
+  leaderboard: Trophy,
   profile: User,
   notes: BookMarked,
   settings: Settings,
@@ -157,6 +161,8 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
 
   return (
     <div className="flex h-full flex-col relative">
+      {/* Animated gradient line at the very top of the sidebar */}
+      <div className="sidebar-top-gradient-line" />
       {/* Left gradient line (desktop only) */}
       {!isMobile && (
         <motion.div
@@ -185,15 +191,15 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
                 <GlassNavTooltip key={item.view + item.label} label={item.label} shortcut={item.shortcut}>
                   <motion.button
                     onClick={() => handleNav(item.view)}
-                    initial={isMobile ? { opacity: 0, x: -16 } : false}
-                    animate={isMobile ? { opacity: 1, x: 0 } : false}
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
                     transition={{
-                      delay: 0.05 + index * 0.04,
+                      delay: 0.06 + index * 0.05,
                       type: 'spring',
                       stiffness: 250,
                       damping: 25,
                     }}
-                    className={`relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors text-left w-full
+                    className={`relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors text-left w-full shimmer-slow
                       ${isActive
                         ? 'text-primary-foreground'
                         : 'text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground'
@@ -203,13 +209,22 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
                     whileTap={{ scale: 0.98 }}
                     transitionHover={{ type: 'spring', stiffness: 400, damping: 30 }}
                   >
-                    {/* Active indicator - desktop: gradient pill */}
+                    {/* Active indicator - desktop: gradient pill with left glow bar */}
                     {isActive && !isMobile && (
-                      <motion.div
-                        layoutId="sidebar-active"
-                        className="absolute inset-0 rounded-lg bg-primary/5 backdrop-blur-sm border border-primary/20"
-                        transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                      />
+                      <>
+                        <motion.div
+                          layoutId="sidebar-active"
+                          className="absolute inset-0 rounded-lg bg-gradient-to-r from-primary/8 to-transparent backdrop-blur-sm border border-primary/15"
+                          transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                        />
+                        <motion.div
+                          layoutId="sidebar-glow-bar"
+                          className="sidebar-active-glow-bar"
+                          initial={{ opacity: 0, scaleY: 0.5 }}
+                          animate={{ opacity: 1, scaleY: 1 }}
+                          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                        />
+                      </>
                     )}
                     {/* Active indicator - mobile: full gradient background */}
                     {isActive && isMobile && (

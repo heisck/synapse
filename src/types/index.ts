@@ -9,7 +9,8 @@ export type AppView =
   | 'course-detail'
   | 'notes'
   | 'focus-timer'
-  | 'settings';
+  | 'settings'
+  | 'leaderboard';
 
 export interface LearnerProfile {
   learningStyle: 'visual' | 'auditory' | 'reading' | 'kinesthetic';
@@ -182,4 +183,17 @@ export interface AdaptiveResult {
   correct: boolean;
   difficulty: string;
   timestamp: number;
+}
+
+export interface StudyBuddy {
+  id: string;
+  name: string;
+  avatarGradient: string;
+  totalXP: number;
+  level: number;
+  streak: number;
+  coursesCompleted: number;
+  quizAccuracy: number;
+  currentTopic: string;
+  isOnline: boolean;
 }

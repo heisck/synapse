@@ -608,7 +608,7 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate }: ChatB
             className={`relative px-4 py-2.5 text-sm leading-relaxed ${
               isUser
                 ? 'bg-emerald-600 text-white rounded-2xl rounded-br-md chat-bubble-user'
-                : 'bg-card/80 backdrop-blur-sm border rounded-2xl rounded-bl-md chat-bubble-assistant'
+                : 'tutor-ai-bubble rounded-2xl rounded-bl-md'
             } ${showCursor ? 'cursor-pointer' : ''}`}
           >
             {/* Gradient glow on new assistant messages */}

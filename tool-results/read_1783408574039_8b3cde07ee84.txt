@@ -1,0 +1,2002 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+     4→     4→import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
+     5→     5→import {
+     6→     6→  CheckCircle2,
+     7→     7→  XCircle,
+     8→     8→  ChevronRight,
+     9→     9→  ChevronLeft,
+    10→    10→  RotateCcw,
+    11→    11→  ArrowLeft,
+    12→    12→  Trophy,
+    13→    13→  Sparkles,
+    14→    14→  AlertTriangle,
+    15→    15→  BookOpen,
+    16→    16→  GripVertical,
+    17→    17→  Flame,
+    18→    18→  Zap,
+    19→    19→  Shuffle,
+    20→    20→  Layers,
+    21→    21→  HelpCircle,
+    22→    22→  Lightbulb,
+    23→    23→  Clock,
+    24→    24→  Copy,
+    25→    25→  Calendar,
+    26→    26→  Bookmark,
+    27→    27→  BookmarkCheck,
+    28→    28→  Brain,
+    29→    29→  ArrowRight,
+    30→    30→  ChevronDown,
+    31→    31→  ChevronUp,
+    32→    32→  Loader2,
+    33→    33→  X,
+    34→    34→  LayoutGrid,
+    35→    35→} from 'lucide-react';
+    36→    36→import { Button } from '@/components/ui/button';
+    37→    37→import { Progress } from '@/components/ui/progress';
+    38→    38→import { Input } from '@/components/ui/input';
+    39→    39→import { Badge } from '@/components/ui/badge';
+    40→    40→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+    41→    41→import { useAppStore } from '@/stores/appStore';
+    42→    42→import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
+    43→    43→import { toast } from 'sonner';
+    44→    44→import type { Question, AdaptiveResult, LearnerProfile } from '@/types';
+    45→    45→
+    46→    46→type StudyMode = 'quiz' | 'flashcard' | 'daily' | 'review';
+    47→    47→
+    48→    48→// ---------- Typo-tolerance helper ----------
+    49→    49→function levenshteinDistance(a: string, b: string): number {
+    50→    50→  const matrix: number[][] = [];
+    51→    51→  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    52→    52→  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    53→    53→  for (let i = 1; i <= b.length; i++) {
+    54→    54→    for (let j = 1; j <= a.length; j++) {
+    55→    55→      const cost = b[i - 1] === a[j - 1] ? 0 : 1;
+    56→    56→      matrix[i][j] = Math.min(
+    57→    57→        matrix[i - 1][j] + 1,
+    58→    58→        matrix[i][j - 1] + 1,
+    59→    59→        matrix[i - 1][j - 1] + cost,
+    60→    60→      );
+    61→    61→    }
+    62→    62→  }
+    63→    63→  return matrix[b.length][a.length];
+    64→    64→}
+    65→    65→
+    66→    66→function isFuzzyMatch(userAnswer: string, correctAnswer: string, maxDistance: number = 2): boolean {
+    67→    67→  const ua = userAnswer.trim().toLowerCase();
+    68→    68→  const ca = correctAnswer.trim().toLowerCase();
+    69→    69→  if (ua === ca) return true;
+    70→    70→  if (ua.includes(ca) || ca.includes(ua)) return true;
+    71→    71→  // Levenshtein distance for typo tolerance
+    72→    72→  const dist = levenshteinDistance(ua, ca);
+    73→    73→  // Allow 1 typo for short answers, 2 for longer ones
+    74→    74→  const threshold = maxDistance || (ca.length <= 4 ? 1 : 2);
+    75→    75→  if (dist <= threshold) return true;
+    76→    76→  // Word-level check: all words of correct answer present in user answer (in any order)
+    77→    77→  const correctWords = ca.split(/\s+/);
+    78→    78→  const userWords = ua.split(/\s+/);
+    79→    79→  if (correctWords.every((w) => userWords.some((uw) => uw.includes(w) || w.includes(uw)))) return true;
+    80→    80→  return false;
+    81→    81→}
+    82→    82→
+    83→    83→// ---------- Fill-in-blank grading with Levenshtein tolerance ----------
+    84→    84→type FillBlankGrade = { status: 'correct' | 'close' | 'wrong'; points: number; message: string };
+    85→    85→
+    86→    86→function gradeFillBlank(userAnswer: string, correctAnswer: string, hintUsed: boolean = false): FillBlankGrade {
+    87→    87→  const ua = userAnswer.trim().toLowerCase();
+    88→    88→  const ca = correctAnswer.trim().toLowerCase();
+    89→    89→  if (ua === ca) {
+    90→    90→    return { status: 'correct', points: hintUsed ? 0.75 : 1, message: '' };
+    91→    91→  }
+    92→    92→  const dist = levenshteinDistance(ua, ca);
+    93→    93→  let basePoints = 0;
+    94→    94→  if (dist <= 2) basePoints = 0.8;
+    95→    95→  else if (dist <= 3) basePoints = 0.5;
+    96→    96→  if (basePoints > 0) {
+    97→    97→    return { status: 'close', points: basePoints * (hintUsed ? 0.75 : 1), message: `Close! Did you mean: "${correctAnswer}"?` };
+    98→    98→  }
+    99→    99→  return { status: 'wrong', points: 0, message: '' };
+   100→   100→}
+   101→   101→
+   102→   102→// ---------- Timer helper ----------
+   103→   103→function formatTimer(seconds: number): string {
+   104→   104→  const m = Math.floor(seconds / 60);
+   105→   105→  const s = seconds % 60;
+   106→   106→  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+   107→   107→}
+   108→   108→
+   109→   109→// ---------- Mock questions for all 6 types ----------
+   110→   110→const MOCK_QUESTIONS: Question[] = [
+   111→   111→  {
+   112→   112→    id: 'mc-1',
+   113→   113→    type: 'multiple_choice',
+   114→   114→    question: 'What is the primary function of mitochondria in a cell?',
+   115→   115→    options: ['Protein synthesis', 'Energy production (ATP)', 'Cell division', 'Waste removal'],
+   116→   116→    answer: 'Energy production (ATP)',
+   117→   117→    explanation: 'Mitochondria are known as the "powerhouse of the cell" because they generate most of the cell\'s supply of ATP, used as a source of chemical energy.',
+   118→   118→    difficulty: 'easy',
+   119→   119→    concept: 'Cell Biology',
+   120→   120→    courseId: 'demo-course',
+   121→   121→  },
+   122→   122→  {
+   123→   123→    id: 'tf-1',
+   124→   124→    type: 'true_false',
+   125→   125→    question: 'Photosynthesis occurs in the mitochondria of plant cells.',
+   126→   126→    answer: 'False',
+   127→   127→    explanation: 'Photosynthesis occurs in the chloroplasts, not the mitochondria. Chloroplasts contain chlorophyll and are the site of the light-dependent and light-independent reactions.',
+   128→   128→    difficulty: 'easy',
+   129→   129→    concept: 'Cell Biology',
+   130→   130→    courseId: 'demo-course',
+   131→   131→  },
+   132→   132→  {
+   133→   133→    id: 'sa-1',
+   134→   134→    type: 'short_answer',
+   135→   135→    question: 'What is the chemical equation for cellular respiration?',
+   136→   136→    answer: 'C6H12O6 + 6O2 → 6CO2 + 6H2O + ATP',
+   137→   137→    explanation: 'Cellular respiration converts glucose and oxygen into carbon dioxide, water, and energy in the form of ATP.',
+   138→   138→    difficulty: 'medium',
+   139→   139→    concept: 'Biochemistry',
+   140→   140→    courseId: 'demo-course',
+   141→   141→  },
+   142→   142→  {
+   143→   143→    id: 'fb-1',
+   144→   144→    type: 'fill_blank',
+   145→   145→    question: 'The ____ is the control center of the cell, containing the genetic material DNA.',
+   146→   146→    answer: 'nucleus',
+   147→   147→    explanation: 'The nucleus is a membrane-bound organelle that contains the cell\'s chromosomes and regulates gene expression.',
+   148→   148→    difficulty: 'easy',
+   149→   149→    concept: 'Cell Biology',
+   150→   150→    courseId: 'demo-course',
+   151→   151→  },
+   152→   152→  {
+   153→   153→    id: 'fb-2',
+   154→   154→    type: 'fill_blank',
+   155→   155→    question: '____ is the process by which cells divide to form two identical daughter cells.',
+   156→   156→    answer: 'mitosis',
+   157→   157→    explanation: 'Mitosis ensures that each daughter cell receives an exact copy of the parent cell\'s DNA.',
+   158→   158→    difficulty: 'medium',
+   159→   159→    concept: 'Cell Biology',
+   160→   160→    courseId: 'demo-course',
+   161→   161→  },
+   162→   162→  {
+   163→   163→    id: 'match-1',
+   164→   164→    type: 'matching',
+   165→   165→    question: 'Match each cell organelle to its primary function.',
+   166→   166→    matchingPairs: [
+   167→   167→      { left: 'Ribosome', right: 'Protein synthesis' },
+   168→   168→      { left: 'Golgi apparatus', right: 'Packaging & shipping' },
+   169→   169→      { left: 'Lysosome', right: 'Digestion & recycling' },
+   170→   170→      { left: 'Endoplasmic reticulum', right: 'Lipid synthesis & transport' },
+   171→   171→    ],
+   172→   172→    answer: 'Ribosome-Protein synthesis, Golgi apparatus-Packaging & shipping, Lysosome-Digestion & recycling, Endoplasmic reticulum-Lipid synthesis & transport',
+   173→   173→    explanation: 'Each organelle has a specialized function that contributes to the overall operation of the cell.',
+   174→   174→    difficulty: 'medium',
+   175→   175→    concept: 'Cell Biology',
+   176→   176→    courseId: 'demo-course',
+   177→   177→  },
+   178→   178→  {
+   179→   179→    id: 'ec-1',
+   180→   180→    type: 'error_correction',
+   181→   181→    question: 'Identify and correct the errors in the following statement:',
+   182→   182→    errorText: 'Mitochondria are found only in animal cells. They are responsible for photosynthesis and converting sunlight into glucose. Plant cells do not have mitochondria.',
+   183→   183→    answer: 'Mitochondria are found in both animal and plant cells. They are responsible for cellular respiration and converting glucose into ATP (energy).',
+   184→   184→    explanation: 'The original text had three errors: (1) mitochondria are in both plant and animal cells, (2) they perform cellular respiration not photosynthesis, and (3) plant cells do have mitochondria.',
+   185→   185→    difficulty: 'hard',
+   186→   186→    concept: 'Cell Biology',
+   187→   187→    courseId: 'demo-course',
+   188→   188→  },
+   189→   189→  {
+   190→   190→    id: 'mc-2',
+   191→   191→    type: 'multiple_choice',
+   192→   192→    question: 'Which data structure uses LIFO (Last In, First Out) ordering?',
+   193→   193→    options: ['Queue', 'Stack', 'Linked List', 'Tree'],
+   194→   194→    answer: 'Stack',
+   195→   195→    explanation: 'A Stack follows LIFO ordering — the last element pushed onto the stack is the first one popped off. Think of a stack of plates.',
+   196→   196→    difficulty: 'easy',
+   197→   197→    concept: 'Data Structures',
+   198→   198→    courseId: 'cs-course',
+   199→   199→  },
+   200→   200→  {
+   201→   201→    id: 'sa-2',
+   202→   202→    type: 'short_answer',
+   203→   203→    question: 'What is the time complexity of binary search?',
+   204→   204→    answer: 'O(log n)',
+   205→   205→    explanation: 'Binary search divides the search space in half each step, giving logarithmic time complexity.',
+   206→   206→    difficulty: 'medium',
+   207→   207→    concept: 'Algorithms',
+   208→   208→    courseId: 'cs-course',
+   209→   209→  },
+   210→   210→];
+   211→   211→
+   212→   212→// ---------- Course filter ----------
+   213→   213→interface DailyChallengeData {
+   214→   214→  date: string;
+   215→   215→  completed: boolean;
+   216→   216→  score: number;
+   217→   217→  total: number;
+   218→   218→  questions: string[];
+   219→   219→}
+   220→   220→
+   221→   221→const DAILY_STORAGE_KEY = 'synapse-daily-challenge';
+   222→   222→const DAILY_STREAK_KEY = 'synapse-daily-streak';
+   223→   223→const DAILY_QUESTION_COUNT = 5;
+   224→   224→
+   225→   225→function getTodayStr(): string {
+   226→   226→  return new Date().toISOString().split('T')[0];
+   227→   227→}
+   228→   228→
+   229→   229→function loadDailyChallenge(): DailyChallengeData | null {
+   230→   230→  if (typeof window === 'undefined') return null;
+   231→   231→  try {
+   232→   232→    const raw = localStorage.getItem(DAILY_STORAGE_KEY);
+   233→   233→    return raw ? JSON.parse(raw) : null;
+   234→   234→  } catch {
+   235→   235→    return null;
+   236→   236→  }
+   237→   237→}
+   238→   238→
+   239→   239→function saveDailyChallenge(data: DailyChallengeData): void {
+   240→   240→  if (typeof window === 'undefined') return;
+   241→   241→  try {
+   242→   242→    localStorage.setItem(DAILY_STORAGE_KEY, JSON.stringify(data));
+   243→   243→  } catch {
+   244→   244→    // storage unavailable
+   245→   245→  }
+   246→   246→}
+   247→   247→
+   248→   248→function loadDailyStreak(): { current: number; best: number; lastDate: string } {
+   249→   249→  if (typeof window === 'undefined') return { current: 0, best: 0, lastDate: '' };
+   250→   250→  try {
+   251→   251→    const raw = localStorage.getItem(DAILY_STREAK_KEY);
+   252→   252→    return raw ? JSON.parse(raw) : { current: 0, best: 0, lastDate: '' };
+   253→   253→  } catch {
+   254→   254→    return { current: 0, best: 0, lastDate: '' };
+   255→   255→  }
+   256→   256→}
+   257→   257→
+   258→   258→function saveDailyStreak(data: { current: number; best: number; lastDate: string }): void {
+   259→   259→  if (typeof window === 'undefined') return;
+   260→   260→  try {
+   261→   261→    localStorage.setItem(DAILY_STREAK_KEY, JSON.stringify(data));
+   262→   262→  } catch {
+   263→   263→    // storage unavailable
+   264→   264→  }
+   265→   265→}
+   266→   266→
+   267→   267→function updateDailyStreak(): { current: number; best: number; lastDate: string } {
+   268→   268→  const streak = loadDailyStreak();
+   269→   269→  const today = getTodayStr();
+   270→   270→
+   271→   271→  if (streak.lastDate === today) return streak;
+   272→   272→
+   273→   273→  const yesterday = new Date();
+   274→   274→  yesterday.setDate(yesterday.getDate() - 1);
+   275→   275→  const yesterdayStr = yesterday.toISOString().split('T')[0];
+   276→   276→
+   277→   277→  let newCurrent: number;
+   278→   278→  if (streak.lastDate === yesterdayStr) {
+   279→   279→    newCurrent = streak.current + 1;
+   280→   280→  } else {
+   281→   281→    newCurrent = 1;
+   282→   282→  }
+   283→   283→
+   284→   284→  const newBest = Math.max(streak.best, newCurrent);
+   285→   285→  const updated = { current: newCurrent, best: newBest, lastDate: today };
+   286→   286→  saveDailyStreak(updated);
+   287→   287→  return updated;
+   288→   288→}
+   289→   289→
+   290→   290→function getTimeUntilMidnight(): { hours: number; minutes: number; seconds: number } {
+   291→   291→  const now = new Date();
+   292→   292→  const midnight = new Date(now);
+   293→   293→  midnight.setHours(24, 0, 0, 0);
+   294→   294→  const diff = midnight.getTime() - now.getTime();
+   295→   295→  return {
+   296→   296→    hours: Math.floor(diff / (1000 * 60 * 60)),
+   297→   297→    minutes: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
+   298→   298→    seconds: Math.floor((diff % (1000 * 60)) / 1000),
+   299→   299→  };
+   300→   300→}
+   301→   301→
+   302→   302→function selectDailyQuestions(allQs: Question[]): Question[] {
+   303→   303→  const seed = new Date().toISOString().split('T')[0];
+   304→   304→  const hash = seed.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+   305→   305→  // Seeded pseudo-random shuffle
+   306→   306→  const indexed = allQs.map((q, i) => ({ q, sortKey: ((hash * (i + 1) * 2654435761) >>> 0) % 100000 }));
+   307→   307→  indexed.sort((a, b) => a.sortKey - b.sortKey);
+   308→   308→  return indexed.slice(0, DAILY_QUESTION_COUNT).map((x) => x.q);
+   309→   309→}
+   310→   310→
+   311→   311→const COURSE_QUIZ_GROUPS = [
+   312→   312→  { id: 'all', label: 'All Questions', icon: BookOpen },
+   313→   313→  { id: 'demo-course', label: 'Cell Biology', icon: BookOpen },
+   314→   314→  { id: 'cs-course', label: 'Computer Science', icon: BookOpen },
+   315→   315→];
+   316→   316→
+   317→   317→// ---------- Adaptive Difficulty Helpers ----------
+   318→   318→const ADAPTIVE_STORAGE_KEY = 'synapse-adaptive-results';
+   319→   319→
+   320→   320→function loadAdaptiveResults(): AdaptiveResult[] {
+   321→   321→  if (typeof window === 'undefined') return [];
+   322→   322→  try {
+   323→   323→    const raw = localStorage.getItem(ADAPTIVE_STORAGE_KEY);
+   324→   324→    return raw ? JSON.parse(raw) : [];
+   325→   325→  } catch {
+   326→   326→    return [];
+   327→   327→  }
+   328→   328→}
+   329→   329→
+   330→   330→function saveAdaptiveResults(results: AdaptiveResult[]): void {
+   331→   331→  if (typeof window === 'undefined') return;
+   332→   332→  try {
+   333→   333→    localStorage.setItem(ADAPTIVE_STORAGE_KEY, JSON.stringify(results));
+   334→   334→  } catch {
+   335→   335→    // storage unavailable
+   336→   336→  }
+   337→   337→}
+   338→   338→
+   339→   339→interface AdaptiveScoringInput {
+   340→   340→  question: Question;
+   341→   341→  masteryMap: Record<string, { level: number; evidence: string[]; lastAssessed: number; attempts: number }>;
+   342→   342→  adaptiveResults: AdaptiveResult[];
+   343→   343→  dueConcepts: Set<string>;
+   344→   344→}
+   345→   345→
+   346→   346→interface ScoredQuestion {
+   347→   347→  question: Question;
+   348→   348→  score: number;
+   349→   349→  reasons: string[];
+   350→   350→}
+   351→   351→
+   352→   352→function scoreQuestionForAdaptive(input: AdaptiveScoringInput): ScoredQuestion {
+   353→   353→  const { question, masteryMap, adaptiveResults, dueConcepts } = input;
+   354→   354→  let score = 0;
+   355→   355→  const reasons: string[] = [];
+   356→   356→  const concept = question.concept || 'Unknown';
+   357→   357→  const mastery = masteryMap[concept];
+   358→   358→
+   359→   359→  // 1. Low mastery bonus (level 1-2)
+   360→   360→  if (mastery && mastery.level < 3) {
+   361→   361→    score += 3;
+   362→   362→    reasons.push('low mastery');
+   363→   363→  }
+   364→   364→
+   365→   365→  // 2. Spaced repetition due for review
+   366→   366→  if (dueConcepts.has(concept)) {
+   367→   367→    score += 2;
+   368→   368→    reasons.push('needs review');
+   369→   369→  }
+   370→   370→
+   371→   371→  // 3. Recent performance: last 5 results on concept
+   372→   372→  const conceptResults = adaptiveResults
+   373→   373→    .filter((r) => r.concept === concept)
+   374→   374→    .slice(-5);
+   375→   375→  const last3 = conceptResults.slice(-3);
+   376→   376→  const wrongCount = last3.filter((r) => !r.correct).length;
+   377→   377→  const correctCount = conceptResults.filter((r) => r.correct).length;
+   378→   378→
+   379→   379→  if (wrongCount >= 2) {
+   380→   380→    score += 2;
+   381→   381→    reasons.push('recent struggles');
+   382→   382→  }
+   383→   383→
+   384→   384→  // 4. Difficulty match bonus
+   385→   385→  const targetLevel = mastery ? Math.min(mastery.level + 1, 3) : 1;
+   386→   386→  const targetDifficulty = targetLevel === 1 ? 'easy' : targetLevel === 2 ? 'medium' : 'hard';
+   387→   387→  if (question.difficulty === targetDifficulty) {
+   388→   388→    score += 1;
+   389→   389→  } else if (
+   390→   390→    (targetDifficulty === 'medium' && question.difficulty === 'easy') ||
+   391→   391→    (targetDifficulty === 'hard' && question.difficulty === 'medium')
+   392→   392→  ) {
+   393→   393→    score += 0.5;
+   394→   394→  }
+   395→   395→
+   396→   396→  // 5. Boost for concepts with many wrong answers (weaker areas)
+   397→   397→  if (correctCount >= 3) {
+   398→   398→    score += 1;
+   399→   399→    reasons.push('ready for harder questions');
+   400→   400→  }
+   401→   401→
+   402→   402→  return { question, score, reasons };
+   403→   403→}
+   404→   404→
+   405→   405→function getAdaptiveReasoning(scored: ScoredQuestion[]): string {
+   406→   406→  if (scored.length === 0) return '';
+   407→   407→
+   408→   408→  const conceptReasons = new Map<string, string[]>();
+   409→   409→  for (const sq of scored.slice(0, 5)) {
+   410→   410→    const concept = sq.question.concept || 'Unknown';
+   411→   411→    const existing = conceptReasons.get(concept) || [];
+   412→   412→    conceptReasons.set(concept, [...existing, ...sq.reasons]);
+   413→   413→  }
+   414→   414→
+   415→   415→  const parts: string[] = [];
+   416→   416→  for (const [concept, reasons] of conceptReasons) {
+   417→   417→    const uniqueReasons = [...new Set(reasons)];
+   418→   418→    const desc = uniqueReasons.map((r) => {
+   419→   419→      switch (r) {
+   420→   420→        case 'low mastery': return 'low mastery';
+   421→   421→        case 'needs review': return 'needs review';
+   422→   422→        case 'recent struggles': return 'struggling recently';
+   423→   423→        case 'ready for harder questions': return 'ready for challenge';
+   424→   424→        default: return r;
+   425→   425→      }
+   426→   426→    }).join(', ');
+   427→   427→    parts.push(`${concept} (${desc})`);
+   428→   428→  }
+   429→   429→
+   430→   430→  return 'Focusing on: ' + parts.join(', ');
+   431→   431→}
+   432→   432→
+   433→   433→// ---------- Confetti particle ----------
+   434→   434→function ConfettiParticle({ delay, color }: { delay: number; color: string }) {
+   435→   435→  const x = Math.random() * 300 - 150;
+   436→   436→  const y = -(Math.random() * 200 + 100);
+   437→   437→  const rotation = Math.random() * 720 - 360;
+   438→   438→  const scale = Math.random() * 0.5 + 0.5;
+   439→   439→
+   440→   440→  return (
+   441→   441→    <motion.div
+   442→   442→      initial={{ opacity: 1, x: 0, y: 0, rotate: 0, scale }}
+   443→   443→      animate={{
+   444→   444→        opacity: 0,
+   445→   445→        x,
+   446→   446→        y,
+   447→   447→        rotate: rotation,
+   448→   448→        scale: scale * 0.3,
+   449→   449→      }}
+   450→   450→      transition={{ duration: 1.2, delay, ease: 'easeOut' }}
+   451→   451→      className="absolute h-3 w-3 rounded-sm pointer-events-none"
+   452→   452→      style={{ backgroundColor: color, top: '40%', left: '50%' }}
+   453→   453→    />
+   454→   454→  );
+   455→   455→}
+   456→   456→
+   457→   457→const CONFETTI_COLORS = ['#10b981', '#14b8a6', '#f59e0b', '#ffffff', '#06b6d4', '#f97316', '#22c55e', '#ec4899'];
+   458→   458→
+   459→   459→const DAILY_CONFETTI_COLORS = ['#10b981', '#14b8a6', '#f59e0b', '#ffffff'];
+   460→   460→const DAILY_TIMER_SECONDS = 180; // 3 minutes
+   461→   461→
+   462→   462→function getScoreMultiplier(streak: number): number {
+   463→   463→  if (streak >= 7) return 3;
+   464→   464→  if (streak >= 3) return 2;
+   465→   465→  return 1;
+   466→   466→}
+   467→   467→
+   468→   468→function getStars(score: number, total: number): number {
+   469→   469→  const pct = total > 0 ? score / total : 0;
+   470→   470→  if (pct >= 0.8) return 3;
+   471→   471→  if (pct >= 0.5) return 2;
+   472→   472→  if (pct > 0) return 1;
+   473→   473→  return 0;
+   474→   474→}
+   475→   475→
+   476→   476→// Star component with bounce animation
+   477→   477→function Star({ filled, delay }: { filled: boolean; delay: number }) {
+   478→   478→  return (
+   479→   479→    <motion.div
+   480→   480→      initial={{ scale: 0, opacity: 0 }}
+   481→   481→      animate={{ scale: filled ? 1 : 0.8, opacity: 1 }}
+   482→   482→      transition={{ type: 'spring', stiffness: 400, damping: 12, delay }}
+   483→   483→    >
+   484→   484→      <motion.div
+   485→   485→        animate={filled ? { scale: [1, 1.3, 1] } : {}}
+   486→   486→        transition={{ duration: 0.4, delay: delay + 0.2 }}
+   487→   487→        className={filled ? 'text-amber-400 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]' : 'text-muted-foreground/30'}
+   488→   488→      >
+   489→   489→        <svg width="36" height="36" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5">
+   490→   490→          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+   491→   491→        </svg>
+   492→   492→      </motion.div>
+   493→   493→    </motion.div>
+   494→   494→  );
+   495→   495→}
+   496→   496→
+   497→   497→// ---------- Animated counter hook ----------
+   498→   498→function useAnimatedCounter(target: number, duration: number = 1200) {
+   499→   499→  const [count, setCount] = useState(0);
+   500→   500→  const rafRef = useRef<number>(0);
+   501→   501→  useEffect(() => {
+   502→   502→    const start = performance.now();
+   503→   503→    const tick = (now: number) => {
+   504→   504→      const elapsed = now - start;
+   505→   505→      const progress = Math.min(elapsed / duration, 1);
+   506→   506→      const eased = 1 - Math.pow(1 - progress, 3);
+   507→   507→      setCount(Math.round(eased * target));
+   508→   508→      if (progress < 1) rafRef.current = requestAnimationFrame(tick);
+   509→   509→    };
+   510→   510→    rafRef.current = requestAnimationFrame(tick);
+   511→   511→    return () => cancelAnimationFrame(rafRef.current);
+   512→   512→  }, [target, duration]);
+   513→   513→  return count;
+   514→   514→}
+   515→   515→
+   516→   516→// ---------- Type badge gradient map ----------
+   517→   517→const TYPE_BADGE_GRADIENT: Record<string, string> = {
+   518→   518→  multiple_choice: 'bg-gradient-to-r from-emerald-500/15 to-teal-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+   519→   519→  true_false: 'bg-gradient-to-r from-amber-500/15 to-orange-500/15 text-amber-700 dark:text-amber-300 border-amber-500/20',
+   520→   520→  short_answer: 'bg-gradient-to-r from-cyan-500/15 to-sky-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/20',
+   521→   521→  fill_blank: 'bg-gradient-to-r from-violet-500/15 to-purple-500/15 text-violet-700 dark:text-violet-300 border-violet-500/20',
+   522→   522→  matching: 'bg-gradient-to-r from-rose-500/15 to-pink-500/15 text-rose-700 dark:text-rose-300 border-rose-500/20',
+   523→   523→  error_correction: 'bg-gradient-to-r from-red-500/15 to-destructive/15 text-red-700 dark:text-red-300 border-red-500/20',
+   524→   524→};
+   525→   525→
+   526→   526→// ---------- Error correction component ----------
+   527→   527→function ErrorCorrectionInput({
+   528→   528→  errorText,
+   529→   529→  onAnswer,
+   530→   530→}: {
+   531→   531→  errorText: string;
+   532→   532→  onAnswer: (answer: string) => void;
+   533→   533→}) {
+   534→   534→  const [correction, setCorrection] = useState('');
+   535→   535→
+   536→   536→  return (
+   537→   537→    <div className="space-y-4">
+   538→   538→      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+   539→   539→        <div className="flex items-center gap-2 mb-2">
+   540→   540→          <AlertTriangle className="h-4 w-4 text-destructive" />
+   541→   541→          <span className="text-sm font-medium text-destructive">Statement with errors:</span>
+   542→   542→        </div>
+   543→   543→        <p className="text-sm leading-relaxed">{errorText}</p>
+   544→   544→      </div>
+   545→   545→      <div className="space-y-2">
+   546→   546→        <p className="text-sm font-medium">Your corrected version:</p>
+   547→   547→        <textarea
+   548→   548→          value={correction}
+   549→   549→          onChange={(e) => setCorrection(e.target.value)}
+   550→   550→          rows={4}
+   551→   551→          className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+   552→   552→          placeholder="Type the corrected statement here..."
+   553→   553→        />
+   554→   554→        <Button
+   555→   555→          onClick={() => onAnswer(correction)}
+   556→   556→          disabled={!correction.trim()}
+   557→   557→          size="sm"
+   558→   558→          className="mt-2"
+   559→   559→        >
+   560→   560→          Submit Correction
+   561→   561→        </Button>
+   562→   562→      </div>
+   563→   563→    </div>
+   564→   564→  );
+   565→   565→}
+   566→   566→
+   567→   567→// ---------- Matching question component (drag-and-drop with SVG connectors) ----------
+   568→   568→function MatchingInput({
+   569→   569→  pairs,
+   570→   570→  onAnswer,
+   571→   571→}: {
+   572→   572→  pairs: Array<{ left: string; right: string }>;
+   573→   573→  onAnswer: (answer: string) => void;
+   574→   574→}) {
+   575→   575→  const shuffledRight = useMemo(() => {
+   576→   576→    const arr = [...pairs.map((p) => p.right)];
+   577→   577→    for (let i = arr.length - 1; i > 0; i--) {
+   578→   578→      const j = Math.floor(Math.random() * (i + 1));
+   579→   579→      [arr[i], arr[j]] = [arr[j], arr[i]];
+   580→   580→    }
+   581→   581→    return arr;
+   582→   582→  }, [pairs]);
+   583→   583→
+   584→   584→  const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
+   585→   585→  const [matches, setMatches] = useState<Record<string, string>>({});
+   586→   586→  const [dragItem, setDragItem] = useState<string | null>(null);
+   587→   587→  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
+   588→   588→  const [linePositions, setLinePositions] = useState<Array<{ id: string; x1: number; y1: number; x2: number; y2: number }>>([]);
+   589→   589→  const containerRef = useRef<HTMLDivElement>(null);
+   590→   590→
+   591→   591→  // Build index maps for safe DOM queries
+   592→   592→  const leftIdxMap = useMemo(() => {
+   593→   593→    const map: Record<string, number> = {};
+   594→   594→    pairs.forEach((p, i) => { map[p.left] = i; });
+   595→   595→    return map;
+   596→   596→  }, [pairs]);
+   597→   597→
+   598→   598→  const rightIdxMap = useMemo(() => {
+   599→   599→    const map: Record<string, number> = {};
+   600→   600→    shuffledRight.forEach((r, i) => { map[r] = i; });
+   601→   601→    return map;
+   602→   602→  }, [shuffledRight]);
+   603→   603→
+   604→   604→  // Compute SVG connector line positions
+   605→   605→  const updateLinePositions = useCallback(() => {
+   606→   606→    const container = containerRef.current;
+   607→   607→    if (!container) return;
+   608→   608→
+   609→   609→    requestAnimationFrame(() => {
+   610→   610→      if (!container) return;
+   611→   611→      const containerRect = container.getBoundingClientRect();
+   612→   612→      const positions: Array<{ id: string; x1: number; y1: number; x2: number; y2: number }> = [];
+   613→   613→
+   614→   614→      for (const [left, right] of Object.entries(matches)) {
+   615→   615→        const lIdx = leftIdxMap[left];
+   616→   616→        const rIdx = rightIdxMap[right];
+   617→   617→        if (lIdx === undefined || rIdx === undefined) continue;
+   618→   618→
+   619→   619→        const leftEl = container.querySelector(`[data-left-idx="${lIdx}"]`);
+   620→   620→        const rightEl = container.querySelector(`[data-right-idx="${rIdx}"]`);
+   621→   621→
+   622→   622→        if (leftEl && rightEl) {
+   623→   623→          const leftRect = leftEl.getBoundingClientRect();
+   624→   624→          const rightRect = rightEl.getBoundingClientRect();
+   625→   625→
+   626→   626→          positions.push({
+   627→   627→            id: `${left}-${right}`,
+   628→   628→            x1: leftRect.right - containerRect.left,
+   629→   629→            y1: leftRect.top + leftRect.height / 2 - containerRect.top,
+   630→   630→            x2: rightRect.left - containerRect.left,
+   631→   631→            y2: rightRect.top + rightRect.height / 2 - containerRect.top,
+   632→   632→          });
+   633→   633→        }
+   634→   634→      }
+   635→   635→
+   636→   636→      setLinePositions(positions);
+   637→   637→    });
+   638→   638→  }, [matches, leftIdxMap, rightIdxMap]);
+   639→   639→
+   640→   640→  // Recalculate on matches change
+   641→   641→  useEffect(() => {
+   642→   642→    updateLinePositions();
+   643→   643→  }, [updateLinePositions]);
+   644→   644→
+   645→   645→  // Recalculate on resize
+   646→   646→  useEffect(() => {
+   647→   647→    const container = containerRef.current;
+   648→   648→    if (!container) return;
+   649→   649→
+   650→   650→    const observer = new ResizeObserver(updateLinePositions);
+   651→   651→    observer.observe(container);
+   652→   652→
+   653→   653→    return () => observer.disconnect();
+   654→   654→  }, [updateLinePositions]);
+   655→   655→
+   656→   656→  const handleLeftClick = (left: string) => {
+   657→   657→    if (matches[left]) {
+   658→   658→      // Remove match by clicking connected left item
+   659→   659→      setMatches((prev) => {
+   660→   660→        const next = { ...prev };
+   661→   661→        delete next[left];
+   662→   662→        return next;
+   663→   663→      });
+   664→   664→      return;
+   665→   665→    }
+   666→   666→    setSelectedLeft(left);
+   667→   667→  };
+   668→   668→
+   669→   669→  const handleRightClick = (right: string) => {
+   670→   670→    if (!selectedLeft) return;
+   671→   671→    setMatches((prev) => ({ ...prev, [selectedLeft]: right }));
+   672→   672→    setSelectedLeft(null);
+   673→   673→  };
+   674→   674→
+   675→   675→  const handleDragStart = (e: React.DragEvent, left: string) => {
+   676→   676→    setDragItem(left);
+   677→   677→    e.dataTransfer.setData('text/plain', left);
+   678→   678→    e.dataTransfer.effectAllowed = 'link';
+   679→   679→  };
+   680→   680→
+   681→   681→  const handleDragOver = (e: React.DragEvent, right: string) => {
+   682→   682→    e.preventDefault();
+   683→   683→    e.dataTransfer.dropEffect = 'link';
+   684→   684→    const isUsedByOther = Object.entries(matches).some(
+   685→   685→      ([k, v]) => v === right && k !== dragItem,
+   686→   686→    );
+   687→   687→    if (dragItem && !isUsedByOther) {
+   688→   688→      setDragOverTarget(right);
+   689→   689→    }
+   690→   690→  };
+   691→   691→
+   692→   692→  const handleDragLeave = () => {
+   693→   693→    setDragOverTarget(null);
+   694→   694→  };
+   695→   695→
+   696→   696→  const handleDrop = (e: React.DragEvent, right: string) => {
+   697→   697→    e.preventDefault();
+   698→   698→    const left = e.dataTransfer.getData('text/plain') || dragItem;
+   699→   699→    if (left) {
+   700→   700→      // Remove any existing match for this left item first
+   701→   701→      setMatches((prev) => {
+   702→   702→        const next = { ...prev };
+   703→   703→        delete next[left];
+   704→   704→        next[left] = right;
+   705→   705→        return next;
+   706→   706→      });
+   707→   707→    }
+   708→   708→    setDragItem(null);
+   709→   709→    setDragOverTarget(null);
+   710→   710→  };
+   711→   711→
+   712→   712→  const handleDragEnd = () => {
+   713→   713→    setDragItem(null);
+   714→   714→    setDragOverTarget(null);
+   715→   715→  };
+   716→   716→
+   717→   717→  const handleSubmit = () => {
+   718→   718→    const answer = Object.entries(matches)
+   719→   719→      .map(([l, r]) => `${l}-${r}`)
+   720→   720→      .join(', ');
+   721→   721→    onAnswer(answer);
+   722→   722→  };
+   723→   723→
+   724→   724→  const allMatched = pairs.every((p) => matches[p.left]);
+   725→   725→  const usedRights = new Set(Object.values(matches));
+   726→   726→
+   727→   727→  return (
+   728→   728→    <div className="space-y-4">
+   729→   729→      <p className="text-sm text-muted-foreground">
+   730→   730→        Drag left items to their match on the right, or click to select. Click a connected left item to remove it.
+   731→   731→      </p>
+   732→   732→      <div ref={containerRef} className="relative grid grid-cols-2 gap-4">
+   733→   733→        {/* SVG Connector Overlay */}
+   734→   734→        <svg className="absolute inset-0 pointer-events-none z-10" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+   735→   735→          <defs>
+   736→   736→            <linearGradient id="connectorGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+   737→   737→              <stop offset="0%" stopColor="#10b981" />
+   738→   738→              <stop offset="50%" stopColor="#14b8a6" />
+   739→   739→              <stop offset="100%" stopColor="#0d9488" />
+   740→   740→            </linearGradient>
+   741→   741→          </defs>
+   742→   742→          <AnimatePresence>
+   743→   743→            {linePositions.map((pos) => {
+   744→   744→              const midX = (pos.x1 + pos.x2) / 2;
+   745→   745→              return (
+   746→   746→                <motion.path
+   747→   747→                  key={pos.id}
+   748→   748→                  d={`M ${pos.x1} ${pos.y1} C ${midX} ${pos.y1}, ${midX} ${pos.y2}, ${pos.x2} ${pos.y2}`}
+   749→   749→                  fill="none"
+   750→   750→                  stroke="url(#connectorGrad)"
+   751→   751→                  strokeWidth="2.5"
+   752→   752→                  strokeLinecap="round"
+   753→   753→                  initial={{ pathLength: 0, opacity: 0 }}
+   754→   754→                  animate={{ pathLength: 1, opacity: 0.85 }}
+   755→   755→                  exit={{ pathLength: 0, opacity: 0 }}
+   756→   756→                  transition={{ duration: 0.5, ease: 'easeOut' }}
+   757→   757→                />
+   758→   758→              );
+   759→   759→            })}
+   760→   760→          </AnimatePresence>
+   761→   761→        </svg>
+   762→   762→
+   763→   763→        {/* Left column */}
+   764→   764→        <div className="flex flex-col gap-2">
+   765→   765→          {pairs.map((p) => {
+   766→   766→            const isMatched = !!matches[p.left];
+   767→   767→            const isDragging = dragItem === p.left;
+   768→   768→            return (
+   769→   769→              <motion.button
+   770→   770→                key={p.left}
+   771→   771→                data-left-idx={leftIdxMap[p.left]}
+   772→   772→                draggable={!isMatched}
+   773→   773→                whileTap={{ scale: 0.98 }}
+   774→   774→                onClick={() => handleLeftClick(p.left)}
+   775→   775→                onDragStart={(e) => handleDragStart(e, p.left)}
+   776→   776→                onDragEnd={handleDragEnd}
+   777→   777→                className={`rounded-lg border p-3 text-left text-sm font-medium transition-all ${
+   778→   778→                  isDragging
+   779→   779→                    ? 'border-primary/50 bg-primary/5 opacity-50 scale-95'
+   780→   780→                    : selectedLeft === p.left
+   781→   781→                      ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary/30 shadow-sm shadow-primary/10'
+   782→   782→                      : isMatched
+   783→   783→                        ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 shadow-sm shadow-emerald-500/5'
+   784→   784→                        : 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-grab active:cursor-grabbing'
+   785→   785→                }`}
+   786→   786→              >
+   787→   787→                <div className="flex items-center gap-2">
+   788→   788→                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+   789→   789→                  <span className="flex-1">{p.left}</span>
+   790→   790→                  {isMatched && (
+   791→   791→                    <motion.span
+   792→   792→                      initial={{ opacity: 0, x: 10 }}
+   793→   793→                      animate={{ opacity: 1, x: 0 }}
+   794→   794→                      className="text-xs opacity-70 truncate max-w-[120px] text-emerald-600 dark:text-emerald-400"
+   795→   795→                    >
+   796→   796→                      {matches[p.left]}
+   797→   797→                    </motion.span>
+   798→   798→                  )}
+   799→   799→                </div>
+   800→   800→              </motion.button>
+   801→   801→            );
+   802→   802→          })}
+   803→   803→        </div>
+   804→   804→        {/* Right column */}
+   805→   805→        <div className="flex flex-col gap-2">
+   806→   806→          {shuffledRight.map((r) => {
+   807→   807→            const isUsed = usedRights.has(r);
+   808→   808→            const isDragOver = dragOverTarget === r && !isUsed;
+   809→   809→            return (
+   810→   810→              <motion.button
+   811→   811→                key={r}
+   812→   812→                data-right-idx={rightIdxMap[r]}
+   813→   813→                whileTap={{ scale: 0.98 }}
+   814→   814→                onClick={() => !isUsed && handleRightClick(r)}
+   815→   815→                onDragOver={(e) => handleDragOver(e, r)}
+   816→   816→                onDragLeave={handleDragLeave}
+   817→   817→                onDrop={(e) => handleDrop(e, r)}
+   818→   818→                disabled={isUsed}
+   819→   819→                className={`rounded-lg border p-3 text-left text-sm transition-all ${
+   820→   820→                  isDragOver
+   821→   821→                    ? 'border-emerald-500/60 bg-emerald-500/10 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-500/20 scale-[1.02]'
+   822→   822→                    : isUsed
+   823→   823→                      ? 'border-border bg-muted/50 text-muted-foreground line-through opacity-50'
+   824→   824→                      : selectedLeft
+   825→   825→                        ? 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-pointer hover:shadow-sm hover:shadow-primary/5'
+   826→   826→                        : 'border-border opacity-60'
+   827→   827→                }`}
+   828→   828→              >
+   829→   829→                <div className="flex items-center gap-2">
+   830→   830→                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+   831→   831→                  <span className="flex-1">{r}</span>
+   832→   832→                </div>
+   833→   833→              </motion.button>
+   834→   834→            );
+   835→   835→          })}
+   836→   836→        </div>
+   837→   837→      </div>
+   838→   838→      <div className="flex items-center justify-between">
+   839→   839→        <div className="flex items-center gap-2">
+   840→   840→          <div className="relative h-1.5 w-24 rounded-full bg-muted/50 overflow-hidden">
+   841→   841→            <motion.div
+   842→   842→              className="absolute inset-y-0 left-0 rounded-full"
+   843→   843→              style={{ background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))' }}
+   844→   844→              animate={{ width: `${(Object.keys(matches).length / pairs.length) * 100}%` }}
+   845→   845→              transition={{ duration: 0.3 }}
+   846→   846→            />
+   847→   847→          </div>
+   848→   848→          <span className="text-xs text-muted-foreground">
+   849→   849→            {Object.keys(matches).length}/{pairs.length} matched
+   850→   850→          </span>
+   851→   851→        </div>
+   852→   852→        <motion.div
+   853→   853→          whileHover={{ scale: 1.05 }}
+   854→   854→          whileTap={{ scale: 0.95 }}
+   855→   855→        >
+   856→   856→          <Button onClick={handleSubmit} disabled={!allMatched} size="sm" className={allMatched ? 'glow-emerald' : ''}>
+   857→   857→            Submit Matches
+   858→   858→          </Button>
+   859→   859→        </motion.div>
+   860→   860→      </div>
+   861→   861→    </div>
+   862→   862→  );
+   863→   863→}
+   864→   864→
+   865→   865→// ---------- Error Analysis Types ----------
+   866→   866→
+   867→   867→interface ErrorAnalysisResponse {
+   868→   868→  summary: string;
+   869→   869→  errorPatterns: Array<{
+   870→   870→    pattern: string;
+   871→   871→    frequency: number;
+   872→   872→    severity: string;
+   873→   873→    concepts: string[];
+   874→   874→  }>;
+   875→   875→  weakAreas: Array<{
+   876→   876→    concept: string;
+   877→   877→    masteryEstimate: number;
+   878→   878→    errorType: string;
+   879→   879→    remediation: string;
+   880→   880→    resources: string[];
+   881→   881→  }>;
+   882→   882→  studyPriority: string[];
+   883→   883→  encouragement: string;
+   884→   884→}
+   885→   885→
+   886→   886→const ERROR_REPORT_STORAGE_KEY = 'synapse-error-report';
+   887→   887→
+   888→   888→// ---------- Weakness Report Dialog ----------
+   889→   889→
+   890→   890→function WeaknessReportDialog({
+   891→   891→  open,
+   892→   892→  onOpenChange,
+   893→   893→  report,
+   894→   894→  loading,
+   895→   895→  onStartReview,
+   896→   896→}: {
+   897→   897→  open: boolean;
+   898→   898→  onOpenChange: (v: boolean) => void;
+   899→   899→  report: ErrorAnalysisResponse | null;
+   900→   900→  loading: boolean;
+   901→   901→  onStartReview: (topic: string) => void;
+   902→   902→}) {
+   903→   903→  const [expandedArea, setExpandedArea] = useState<string | null>(null);
+   904→   904→
+   905→   905→  const severityColor = (severity: string) => {
+   906→   906→    switch (severity) {
+   907→   907→      case 'high': return 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20';
+   908→   908→      case 'medium': return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+   909→   909→      default: return 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20';
+   910→   910→    }
+   911→   911→  };
+   912→   912→
+   913→   913→  const errorTypeColor = (type: string) => {
+   914→   914→    switch (type) {
+   915→   915→      case 'misconception': return 'bg-red-500/10 text-red-600 dark:text-red-400';
+   916→   916→      case 'gap': return 'bg-orange-500/10 text-orange-600 dark:text-orange-400';
+   917→   917→      case 'vocabulary': return 'bg-amber-500/10 text-amber-600 dark:text-amber-400';
+   918→   918→      case 'careless': return 'bg-teal-500/10 text-teal-600 dark:text-teal-400';
+   919→   919→      case 'partial': return 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400';
+   920→   920→      default: return 'bg-muted text-muted-foreground';
+   921→   921→    }
+   922→   922→  };
+   923→   923→
+   924→   924→  const masteryBarColor = (level: number) => {
+   925→   925→    if (level <= 1) return 'from-red-500 to-red-400';
+   926→   926→    if (level <= 2) return 'from-orange-500 to-amber-500';
+   927→   927→    if (level <= 3) return 'from-amber-500 to-yellow-400';
+   928→   928→    if (level <= 4) return 'from-teal-400 to-emerald-400';
+   929→   929→    return 'from-emerald-500 to-teal-500';
+   930→   930→  };
+   931→   931→
+   932→   932→  return (
+   933→   933→    <Dialog open={open} onOpenChange={onOpenChange}>
+   934→   934→      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto p-0">
+   935→   935→        <DialogHeader className="px-6 pt-6 pb-2">
+   936→   936→          <DialogTitle className="flex items-center gap-2 text-lg">
+   937→   937→            <Brain className="h-5 w-5 text-primary" />
+   938→   938→            Weakness Analysis Report
+   939→   939→          </DialogTitle>
+   940→   940→          <DialogDescription>
+   941→   941→            AI-powered analysis of your incorrect answers
+   942→   942→          </DialogDescription>
+   943→   943→        </DialogHeader>
+   944→   944→
+   945→   945→        <div className="px-6 pb-6 space-y-5">
+   946→   946→          {loading ? (
+   947→   947→            <div className="flex flex-col items-center justify-center py-16 gap-4">
+   948→   948→              <div className="relative">
+   949→   949→                <motion.div
+   950→   950→                  animate={{ scale: [1, 1.4, 1], opacity: [0.3, 0.6, 0.3] }}
+   951→   951→                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+   952→   952→                  className="absolute inset-0 rounded-full bg-primary/20"
+   953→   953→                />
+   954→   954→                <motion.div
+   955→   955→                  animate={{ scale: [1, 1.25, 1], opacity: [0.2, 0.4, 0.2] }}
+   956→   956→                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }}
+   957→   957→                  className="absolute -inset-3 rounded-full bg-primary/10"
+   958→   958→                />
+   959→   959→                <Brain className="h-10 w-10 text-primary relative z-10" />
+   960→   960→              </div>
+   961→   961→              <div className="text-center space-y-1">
+   962→   962→                <p className="text-sm font-medium">Analyzing your mistakes...</p>
+   963→   963→                <p className="text-xs text-muted-foreground">AI is identifying patterns and generating recommendations</p>
+   964→   964→              </div>
+   965→   965→            </div>
+   966→   966→          ) : report ? (
+   967→   967→            <>
+   968→   968→              {/* Summary */}
+   969→   969→              <motion.div
+   970→   970→                initial={{ opacity: 0, y: 10 }}
+   971→   971→                animate={{ opacity: 1, y: 0 }}
+   972→   972→                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+   973→   973→                className="glass rounded-xl p-4"
+   974→   974→              >
+   975→   975→                <h4 className="text-sm font-semibold mb-2">Overall Assessment</h4>
+   976→   976→                <p className="text-sm text-muted-foreground leading-relaxed">{report.summary}</p>
+   977→   977→              </motion.div>
+   978→   978→
+   979→   979→              {/* Error Patterns */}
+   980→   980→              {report.errorPatterns.length > 0 && (
+   981→   981→                <motion.div
+   982→   982→                  initial={{ opacity: 0, y: 10 }}
+   983→   983→                  animate={{ opacity: 1, y: 0 }}
+   984→   984→                  transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.1 }}
+   985→   985→                  className="space-y-3"
+   986→   986→                >
+   987→   987→                  <h4 className="text-sm font-semibold">Error Patterns</h4>
+   988→   988→                  <div className="space-y-2">
+   989→   989→                    {report.errorPatterns.map((ep, i) => (
+   990→   990→                      <motion.div
+   991→   991→                        key={i}
+   992→   992→                        initial={{ opacity: 0, x: -10 }}
+   993→   993→                        animate={{ opacity: 1, x: 0 }}
+   994→   994→                        transition={{ delay: 0.15 + i * 0.08, type: 'spring', stiffness: 350, damping: 25 }}
+   995→   995→                        className="glass rounded-lg p-3 space-y-2"
+   996→   996→                      >
+   997→   997→                        <div className="flex items-start justify-between gap-2">
+   998→   998→                          <p className="text-sm flex-1">{ep.pattern}</p>
+   999→   999→                          <div className="flex items-center gap-2 shrink-0">
+  1000→  1000→                            <Badge variant="outline" className={`text-[10px] ${severityColor(ep.severity)}`}>
+  1001→  1001→                              {ep.severity}
+  1002→  1002→                            </Badge>
+  1003→  1003→                            <Badge variant="secondary" className="text-[10px]">
+  1004→  1004→                              {ep.frequency}x
+  1005→  1005→                            </Badge>
+  1006→  1006→                          </div>
+  1007→  1007→                        </div>
+  1008→  1008→                        {ep.concepts.length > 0 && (
+  1009→  1009→                          <div className="flex flex-wrap gap-1">
+  1010→  1010→                            {ep.concepts.map((c, j) => (
+  1011→  1011→                              <Badge key={j} variant="outline" className="text-[10px] text-primary border-primary/20">
+  1012→  1012→                                {c}
+  1013→  1013→                              </Badge>
+  1014→  1014→                            ))}
+  1015→  1015→                          </div>
+  1016→  1016→                        )}
+  1017→  1017→                      </motion.div>
+  1018→  1018→                    ))}
+  1019→  1019→                  </div>
+  1020→  1020→                </motion.div>
+  1021→  1021→              )}
+  1022→  1022→
+  1023→  1023→              {/* Weak Areas */}
+  1024→  1024→              {report.weakAreas.length > 0 && (
+  1025→  1025→                <motion.div
+  1026→  1026→                  initial={{ opacity: 0, y: 10 }}
+  1027→  1027→                  animate={{ opacity: 1, y: 0 }}
+  1028→  1028→                  transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.2 }}
+  1029→  1029→                  className="space-y-3"
+  1030→  1030→                >
+  1031→  1031→                  <h4 className="text-sm font-semibold">Weak Areas</h4>
+  1032→  1032→                  <div className="space-y-2">
+  1033→  1033→                    {report.weakAreas.map((wa, i) => (
+  1034→  1034→                      <motion.div
+  1035→  1035→                        key={i}
+  1036→  1036→                        initial={{ opacity: 0, y: 8 }}
+  1037→  1037→                        animate={{ opacity: 1, y: 0 }}
+  1038→  1038→                        transition={{ delay: 0.25 + i * 0.08, type: 'spring', stiffness: 350, damping: 25 }}
+  1039→  1039→                        className="glass rounded-lg overflow-hidden"
+  1040→  1040→                      >
+  1041→  1041→                        <button
+  1042→  1042→                          onClick={() => setExpandedArea(expandedArea === wa.concept ? null : wa.concept)}
+  1043→  1043→                          className="w-full flex items-center gap-3 p-3 text-left hover:bg-accent/30 transition-colors"
+  1044→  1044→                        >
+  1045→  1045→                          <div className="flex-1 min-w-0 space-y-1.5">
+  1046→  1046→                            <div className="flex items-center gap-2 flex-wrap">
+  1047→  1047→                              <span className="text-sm font-medium">{wa.concept}</span>
+  1048→  1048→                              <Badge variant="outline" className={`text-[10px] ${errorTypeColor(wa.errorType)}`}>
+  1049→  1049→                                {wa.errorType}
+  1050→  1050→                              </Badge>
+  1051→  1051→                            </div>
+  1052→  1052→                            <div className="flex items-center gap-2 w-full">
+  1053→  1053→                              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+  1054→  1054→                                <motion.div
+  1055→  1055→                                  initial={{ width: 0 }}
+  1056→  1056→                                  animate={{ width: `${(wa.masteryEstimate / 5) * 100}%` }}
+  1057→  1057→                                  transition={{ duration: 0.8, delay: 0.3 + i * 0.08 }}
+  1058→  1058→                                  className={`h-full rounded-full bg-gradient-to-r ${masteryBarColor(wa.masteryEstimate)}`}
+  1059→  1059→                                />
+  1060→  1060→                              </div>
+  1061→  1061→                              <span className="text-[10px] text-muted-foreground shrink-0 w-5 text-right">
+  1062→  1062→                                {wa.masteryEstimate}/5
+  1063→  1063→                              </span>
+  1064→  1064→                            </div>
+  1065→  1065→                          </div>
+  1066→  1066→                          {expandedArea === wa.concept ? (
+  1067→  1067→                            <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+  1068→  1068→                          ) : (
+  1069→  1069→                            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+  1070→  1070→                          )}
+  1071→  1071→                        </button>
+  1072→  1072→                        <AnimatePresence>
+  1073→  1073→                          {expandedArea === wa.concept && (
+  1074→  1074→                            <motion.div
+  1075→  1075→                              initial={{ height: 0, opacity: 0 }}
+  1076→  1076→                              animate={{ height: 'auto', opacity: 1 }}
+  1077→  1077→                              exit={{ height: 0, opacity: 0 }}
+  1078→  1078→                              transition={{ duration: 0.2 }}
+  1079→  1079→                              className="overflow-hidden"
+  1080→  1080→                            >
+  1081→  1081→                              <div className="px-3 pb-3 space-y-2 border-t border-border/50 pt-3">
+  1082→  1082→                                <p className="text-sm text-muted-foreground leading-relaxed">{wa.remediation}</p>
+  1083→  1083→                                {wa.resources.length > 0 && (
+  1084→  1084→                                  <div className="space-y-1">
+  1085→  1085→                                    <p className="text-xs font-medium text-muted-foreground">Suggested Resources</p>
+  1086→  1086→                                    <ul className="space-y-1">
+  1087→  1087→                                      {wa.resources.map((r, j) => (
+  1088→  1088→                                        <li key={j} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+  1089→  1089→                                          <ArrowRight className="h-3 w-3 text-primary shrink-0" />
+  1090→  1090→                                          {r}
+  1091→  1091→                                        </li>
+  1092→  1092→                                      ))}
+  1093→  1093→                                    </ul>
+  1094→  1094→                                  </div>
+  1095→  1095→                                )}
+  1096→  1096→                              </div>
+  1097→  1097→                            </motion.div>
+  1098→  1098→                          )}
+  1099→  1099→                        </AnimatePresence>
+  1100→  1100→                      </motion.div>
+  1101→  1101→                    ))}
+  1102→  1102→                  </div>
+  1103→  1103→                </motion.div>
+  1104→  1104→              )}
+  1105→  1105→
+  1106→  1106→              {/* Study Priority */}
+  1107→  1107→              {report.studyPriority.length > 0 && (
+  1108→  1108→                <motion.div
+  1109→  1109→                  initial={{ opacity: 0, y: 10 }}
+  1110→  1110→                  animate={{ opacity: 1, y: 0 }}
+  1111→  1111→                  transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.35 }}
+  1112→  1112→                  className="space-y-3"
+  1113→  1113→                >
+  1114→  1114→                  <h4 className="text-sm font-semibold">Study Priority</h4>
+  1115→  1115→                  <div className="glass rounded-lg p-3 space-y-2">
+  1116→  1116→                    {report.studyPriority.slice(0, 3).map((topic, i) => (
+  1117→  1117→                      <motion.div
+  1118→  1118→                        key={i}
+  1119→  1119→                        initial={{ opacity: 0, x: -10 }}
+  1120→  1120→                        animate={{ opacity: 1, x: 0 }}
+  1121→  1121→                        transition={{ delay: 0.4 + i * 0.1, type: 'spring', stiffness: 350, damping: 25 }}
+  1122→  1122→                        className="flex items-center gap-3"
+  1123→  1123→                      >
+  1124→  1124→                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold">
+  1125→  1125→                          {i + 1}
+  1126→  1126→                        </div>
+  1127→  1127→                        <span className="text-sm">{topic}</span>
+  1128→  1128→                        <ArrowRight className="h-3.5 w-3.5 text-primary ml-auto shrink-0" />
+  1129→  1129→                      </motion.div>
+  1130→  1130→                    ))}
+  1131→  1131→                  </div>
+  1132→  1132→                </motion.div>
+  1133→  1133→              )}
+  1134→  1134→
+  1135→  1135→              {/* Encouragement */}
+  1136→  1136→              <motion.div
+  1137→  1137→                initial={{ opacity: 0, y: 5 }}
+  1138→  1138→                animate={{ opacity: 1, y: 0 }}
+  1139→  1139→                transition={{ delay: 0.6 }}
+  1140→  1140→                className="text-center pt-2 pb-1"
+  1141→  1141→              >
+  1142→  1142→                <p className="text-sm font-medium gradient-text">{report.encouragement}</p>
+  1143→  1143→              </motion.div>
+  1144→  1144→            </>
+  1145→  1145→          ) : null}
+  1146→  1146→        </div>
+  1147→  1147→
+  1148→  1148→        {!loading && report && (
+  1149→  1149→          <DialogFooter className="px-6 pb-6 flex gap-2">
+  1150→  1150→            {report.studyPriority.length > 0 && (
+  1151→  1151→              <Button
+  1152→  1152→                onClick={() => {
+  1153→  1153→                  onStartReview(report.studyPriority[0]);
+  1154→  1154→                  onOpenChange(false);
+  1155→  1155→                }}
+  1156→  1156→                className="glow-emerald"
+  1157→  1157→              >
+  1158→  1158→                <Brain className="h-4 w-4 mr-2" />
+  1159→  1159→                Start Review Session
+  1160→  1160→              </Button>
+  1161→  1161→            )}
+  1162→  1162→            <Button variant="outline" onClick={() => onOpenChange(false)}>
+  1163→  1163→              Close
+  1164→  1164→            </Button>
+  1165→  1165→          </DialogFooter>
+  1166→  1166→        )}
+  1167→  1167→      </DialogContent>
+  1168→  1168→    </Dialog>
+  1169→  1169→  );
+  1170→  1170→}
+  1171→  1171→
+  1172→  1172→// ---------- Main QuizView ----------
+  1173→  1173→export function QuizView() {
+  1174→  1174→  const { navigate, currentQuestions, activeCourse, updateMastery, adaptiveResults, addAdaptiveResult, masteryMap } = useAppStore();
+  1175→  1175→
+  1176→  1176→  const allQuestions = currentQuestions.length > 0 ? currentQuestions : MOCK_QUESTIONS;
+  1177→  1177→
+  1178→  1178→  const [studyMode, setStudyMode] = useState<StudyMode>('quiz');
+  1179→  1179→  const [adaptiveOn, setAdaptiveOn] = useState(false);
+  1180→  1180→  const [selectedCourse, setSelectedCourse] = useState<string>('all');
+  1181→  1181→  const [showBookmarked, setShowBookmarked] = useState(false);
+  1182→  1182→  const [bookmarkedQuestions, setBookmarkedQuestions] = useState<Set<string>>(new Set());
+  1183→  1183→  const [currentIndex, setCurrentIndex] = useState(0);
+  1184→  1184→  const [answers, setAnswers] = useState<Record<string, string>>({});
+  1185→  1185→  const [answered, setAnswered] = useState<Record<string, boolean>>({});
+  1186→  1186→  const [showExplanation, setShowExplanation] = useState(false);
+  1187→  1187→  const [showConfetti, setShowConfetti] = useState(false);
+  1188→  1188→  const [showResults, setShowResults] = useState(false);
+  1189→  1189→  const [streak, setStreak] = useState(0);
+  1190→  1190→  const [bestStreak, setBestStreak] = useState(0);
+  1191→  1191→  const [showStreakPopup, setShowStreakPopup] = useState(false);
+  1192→  1192→  const [showQuestionMap, setShowQuestionMap] = useState(false);
+  1193→  1193→  const [hintsUsed, setHintsUsed] = useState<Record<string, boolean>>({});
+  1194→  1194→  const [fillBlankValues, setFillBlankValues] = useState<Record<string, string>>({});
+  1195→  1195→  const [fillBlankGrades, setFillBlankGrades] = useState<Record<string, FillBlankGrade>>({});
+  1196→  1196→  const [weaknessReportOpen, setWeaknessReportOpen] = useState(false);
+  1197→  1197→  const [weaknessReportLoading, setWeaknessReportLoading] = useState(false);
+  1198→  1198→  const [weaknessReport, setWeaknessReport] = useState<ErrorAnalysisResponse | null>(null);
+  1199→  1199→  const [lastReportExists] = useState(() => {
+  1200→  1200→    if (typeof window === 'undefined') return false;
+  1201→  1201→    try {
+  1202→  1202→      return !!localStorage.getItem(ERROR_REPORT_STORAGE_KEY);
+  1203→  1203→    } catch {
+  1204→  1204→      return false;
+  1205→  1205→    }
+  1206→  1206→  });
+  1207→  1207→  const animatedScore = useAnimatedCounter(showResults ? score : 0, 1500);
+  1208→  1208→
+  1209→  1209→  // Spaced Repetition
+  1210→  1210→  const { dueItems, reviewItem, overdueCount } = useSpacedRepetition();
+  1211→  1211→  const [reviewShowResults, setReviewShowResults] = useState(false);
+  1212→  1212→  const [reviewedCount, setReviewedCount] = useState(0);
+  1213→  1213→
+  1214→  1214→  // Adaptive difficulty: compute adaptive questions and reasoning
+  1215→  1215→  const dueConcepts = useMemo(() => new Set(dueItems.map((item) => item.questionId)), [dueItems]);
+  1216→  1216→
+  1217→  1217→  const { adaptiveQuestions, adaptiveReasoning } = useMemo(() => {
+  1218→  1218→    if (!adaptiveOn || studyMode !== 'quiz') {
+  1219→  1219→      return { adaptiveQuestions: null as Question[] | null, adaptiveReasoning: '' };
+  1220→  1220→    }
+  1221→  1221→
+  1222→  1222→    // Load additional adaptive results from localStorage for richer history
+  1223→  1223→    const localStorageResults = loadAdaptiveResults();
+  1224→  1224→    const allAdaptiveResults = [...localStorageResults, ...adaptiveResults];
+  1225→  1225→
+  1226→  1226→    const pool = selectedCourse === 'all' ? allQuestions : allQuestions.filter((q) => q.courseId === selectedCourse);
+  1227→  1227→
+  1228→  1228→    const scored = pool
+  1229→  1229→      .filter((q) => q.concept)
+  1230→  1230→      .map((q) => scoreQuestionForAdaptive({
+  1231→  1231→        question: q,
+  1232→  1232→        masteryMap,
+  1233→  1233→        adaptiveResults: allAdaptiveResults,
+  1234→  1234→        dueConcepts,
+  1235→  1235→      }))
+  1236→  1236→      .sort((a, b) => b.score - a.score);
+  1237→  1237→
+  1238→  1238→    const top10 = scored.slice(0, 10).map((s) => s.question);
+  1239→  1239→    const reasoning = getAdaptiveReasoning(scored);
+  1240→  1240→
+  1241→  1241→    return { adaptiveQuestions: top10, adaptiveReasoning: reasoning };
+  1242→  1242→  }, [adaptiveOn, studyMode, selectedCourse, allQuestions, masteryMap, adaptiveResults, dueConcepts]);
+  1243→  1243→
+  1244→  1244→  // Review questions: match dueItems to actual questions by concept
+  1245→  1245→  const reviewQuestions = useMemo<Question[]>(() => {
+  1246→  1246→    const dueConcepts = new Set(dueItems.map((item) => item.questionId));
+  1247→  1247→    return allQuestions.filter((q) => q.concept && dueConcepts.has(q.concept));
+  1248→  1248→  }, [dueItems, allQuestions]);
+  1249→  1249→
+  1250→  1250→  const reviewCurrentQ = reviewQuestions[currentIndex];
+  1251→  1251→  const reviewProgress = reviewQuestions.length > 0
+  1252→  1252→    ? (reviewedCount / reviewQuestions.length) * 100
+  1253→  1253→    : 0;
+  1254→  1254→
+  1255→  1255→  // Listen for start-spaced-review custom event
+  1256→  1256→  useEffect(() => {
+  1257→  1257→    const handler = () => setStudyMode('review');
+  1258→  1258→    window.addEventListener('start-spaced-review', handler);
+  1259→  1259→    return () => window.removeEventListener('start-spaced-review', handler);
+  1260→  1260→  }, []);
+  1261→  1261→
+  1262→  1262→  // Daily Challenge state
+  1263→  1263→  const { dailyChallenge: storeDailyChallenge, setDailyChallenge: setStoreDailyChallenge } = useAppStore();
+  1264→  1264→  const [dailyChallenge, setDailyChallenge] = useState<DailyChallengeData | null>(null);
+  1265→  1265→  const [dailyStreak, setDailyStreak] = useState({ current: 0, best: 0, lastDate: '' });
+  1266→  1266→  const [dailyTimeLeft, setDailyTimeLeft] = useState({ hours: 0, minutes: 0, seconds: 0 });
+  1267→  1267→  const [dailyShowResults, setDailyShowResults] = useState(false);
+  1268→  1268→  const [dailyShareCopied, setDailyShareCopied] = useState(false);
+  1269→  1269→  const [dailyTimerLeft, setDailyTimerLeft] = useState(DAILY_TIMER_SECONDS);
+  1270→  1270→  const [dailyTimerActive, setDailyTimerActive] = useState(false);
+  1271→  1271→
+  1272→  1272→  // Compute wrong answers for error analysis
+  1273→  1273→  const wrongAnswers = useMemo(() => {
+  1274→  1274→    return questions
+  1275→  1275→      .filter((q) => answered[q.id] && !isCorrect(q, answers[q.id] || ''))
+  1276→  1276→      .map((q) => ({
+  1277→  1277→        question: q.question,
+  1278→  1278→        userAnswer: answers[q.id] || '',
+  1279→  1279→        correctAnswer: q.answer,
+  1280→  1280→        concept: q.concept || 'General',
+  1281→  1281→      }));
+  1282→  1282→  }, [questions, answered, answers, isCorrect]);
+  1283→  1283→
+  1284→  1284→  const handleAnalyzeMistakes = useCallback(async () => {
+  1285→  1285→    if (wrongAnswers.length === 0) return;
+  1286→  1286→    setWeaknessReportLoading(true);
+  1287→  1287→    setWeaknessReportOpen(true);
+  1288→  1288→    setWeaknessReport(null);
+  1289→  1289→    try {
+  1290→  1290→      const { learnerProfile } = useAppStore.getState();
+  1291→  1291→      const res = await fetch('/api/error-analysis', {
+  1292→  1292→        method: 'POST',
+  1293→  1293→        headers: { 'Content-Type': 'application/json' },
+  1294→  1294→        body: JSON.stringify({
+  1295→  1295→          wrongAnswers,
+  1296→  1296→          learnerProfile: learnerProfile || undefined,
+  1297→  1297→        }),
+  1298→  1298→      });
+  1299→  1299→      if (!res.ok) {
+  1300→  1300→        throw new Error('Failed to analyze errors');
+  1301→  1301→      }
+  1302→  1302→      const data: ErrorAnalysisResponse = await res.json();
+  1303→  1303→      setWeaknessReport(data);
+  1304→  1304→      // Persist to localStorage
+  1305→  1305→      try {
+  1306→  1306→        localStorage.setItem(ERROR_REPORT_STORAGE_KEY, JSON.stringify(data));
+  1307→  1307→      } catch {
+  1308→  1308→        // ignore storage errors
+  1309→  1309→      }
+  1310→  1310→    } catch {
+  1311→  1311→      toast.error('Failed to analyze mistakes. Please try again.');
+  1312→  1312→      setWeaknessReportOpen(false);
+  1313→  1313→    } finally {
+  1314→  1314→      setWeaknessReportLoading(false);
+  1315→  1315→    }
+  1316→  1316→  }, [wrongAnswers]);
+  1317→  1317→
+  1318→  1318→  const handleViewLastReport = useCallback(() => {
+  1319→  1319→    try {
+  1320→  1320→      const stored = localStorage.getItem(ERROR_REPORT_STORAGE_KEY);
+  1321→  1321→      if (stored) {
+  1322→  1322→        const data: ErrorAnalysisResponse = JSON.parse(stored);
+  1323→  1323→        setWeaknessReport(data);
+  1324→  1324→        setWeaknessReportOpen(true);
+  1325→  1325→      }
+  1326→  1326→    } catch {
+  1327→  1327→      // ignore
+  1328→  1328→    }
+  1329→  1329→  }, []);
+  1330→  1330→
+  1331→  1331→  const handleStartReviewFromReport = useCallback((topic: string) => {
+  1332→  1332→    const { setActiveTopic, navigate: nav } = useAppStore.getState();
+  1333→  1333→    setActiveTopic(topic);
+  1334→  1334→    nav('tutor');
+  1335→  1335→  }, []);
+  1336→  1336→  const dailyQuestions = useMemo<Question[]>(() => {
+  1337→  1337→    if (dailyChallenge?.questions) {
+  1338→  1338→      return dailyChallenge.questions
+  1339→  1339→        .map((id) => allQuestions.find((q) => q.id === id))
+  1340→  1340→        .filter((q): q is Question => !!q);
+  1341→  1341→    }
+  1342→  1342→    return [];
+  1343→  1343→  }, [dailyChallenge, allQuestions]);
+  1344→  1344→  const dailyCurrentQ = dailyQuestions[currentIndex];
+  1345→  1345→  const dailyProgress = dailyQuestions.length > 0
+  1346→  1346→    ? ((currentIndex + 1) / dailyQuestions.length) * 100
+  1347→  1347→    : 0;
+  1348→  1348→  const dailyScore = useMemo(() => {
+  1349→  1349→    return dailyQuestions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+  1350→  1350→  }, [dailyQuestions, answered, answers, isCorrect]);
+  1351→  1351→  const dailyCircumference = 2 * Math.PI * 62;
+  1352→  1352→  const dailyScorePercent = dailyQuestions.length > 0 ? dailyScore / dailyQuestions.length : 0;
+  1353→  1353→  const dailyStrokeDashoffset = dailyCircumference * (1 - dailyScorePercent);
+  1354→  1354→  const dailyAnimatedScore = useAnimatedCounter(dailyShowResults ? dailyScore : 0, 1500);
+  1355→  1355→  const dailyMultiplier = getScoreMultiplier(dailyStreak.current);
+  1356→  1356→  const dailyStars = getStars(dailyScore, dailyQuestions.length);
+  1357→  1357→  const dailyTimerCircumference = 2 * Math.PI * 28;
+  1358→  1358→  const dailyTimerPercent = dailyTimerLeft / DAILY_TIMER_SECONDS;
+  1359→  1359→  const dailyTimerStroke = dailyTimerCircumference * (1 - dailyTimerPercent);
+  1360→  1360→
+  1361→  1361→  // Validate streak from store on mount
+  1362→  1362→  useEffect(() => {
+  1363→  1363→    const dc = storeDailyChallenge;
+  1364→  1364→    if (!dc.lastCompletedDate) return;
+  1365→  1365→    const today = getTodayStr();
+  1366→  1366→    const yesterday = new Date();
+  1367→  1367→    yesterday.setDate(yesterday.getDate() - 1);
+  1368→  1368→    const yesterdayStr = yesterday.toISOString().split('T')[0];
+  1369→  1369→    if (dc.lastCompletedDate !== today && dc.lastCompletedDate !== yesterdayStr) {
+  1370→  1370→      setStoreDailyChallenge({ streak: 0 });
+  1371→  1371→    }
+  1372→  1372→  }, []);
+  1373→  1373→
+  1374→  1374→  // Load daily challenge data on mount and when mode changes
+  1375→  1375→  useEffect(() => {
+  1376→  1376→    if (studyMode !== 'daily') return;
+  1377→  1377→    const today = getTodayStr();
+  1378→  1378→    const saved = loadDailyChallenge();
+  1379→  1379→    const streakData = loadDailyStreak();
+  1380→  1380→    // Use store streak as source of truth if available
+  1381→  1381→    const effectiveStreak = storeDailyChallenge.streak > 0 ? { current: storeDailyChallenge.streak, best: Math.max(storeDailyChallenge.streak, streakData.best), lastDate: storeDailyChallenge.lastCompletedDate || streakData.lastDate } : streakData;
+  1382→  1382→
+  1383→  1383→    if (saved && saved.date === today) {
+  1384→  1384→      setDailyChallenge(saved);
+  1385→  1385→      setDailyStreak(effectiveStreak);
+  1386→  1386→      if (saved.completed) {
+  1387→  1387→        setDailyShowResults(true);
+  1388→  1388→        setDailyTimerActive(false);
+  1389→  1389→      }
+  1390→  1390→    } else {
+  1391→  1391→      // New day, new challenge
+  1392→  1392→      const selected = selectDailyQuestions(allQuestions);
+  1393→  1393→      const newChallenge: DailyChallengeData = {
+  1394→  1394→        date: today,
+  1395→  1395→        completed: false,
+  1396→  1396→        score: 0,
+  1397→  1397→        total: DAILY_QUESTION_COUNT,
+  1398→  1398→        questions: selected.map((q) => q.id),
+  1399→  1399→      };
+  1400→  1400→      saveDailyChallenge(newChallenge);
+  1401→  1401→      setDailyChallenge(newChallenge);
+  1402→  1402→      setDailyStreak(effectiveStreak);
+  1403→  1403→      setDailyShowResults(false);
+  1404→  1404→      setDailyTimerLeft(DAILY_TIMER_SECONDS);
+  1405→  1405→      setDailyTimerActive(false);
+  1406→  1406→    }
+  1407→  1407→  }, [studyMode, allQuestions, storeDailyChallenge.streak, storeDailyChallenge.lastCompletedDate]);
+  1408→  1408→
+  1409→  1409→  // Update daily countdown timer
+  1410→  1410→  useEffect(() => {
+  1411→  1411→    if (studyMode !== 'daily') return;
+  1412→  1412→    setDailyTimeLeft(getTimeUntilMidnight());
+  1413→  1413→    const interval = setInterval(() => {
+  1414→  1414→      setDailyTimeLeft(getTimeUntilMidnight());
+  1415→  1415→    }, 1000);
+  1416→  1416→    return () => clearInterval(interval);
+  1417→  1417→  }, [studyMode]);
+  1418→  1418→
+  1419→  1419→  // Daily challenge 3-minute countdown timer
+  1420→  1420→  useEffect(() => {
+  1421→  1421→    if (studyMode !== 'daily' || !dailyTimerActive || dailyShowResults) return;
+  1422→  1422→    if (dailyTimerLeft <= 0) {
+  1423→  1423→      // Time's up — auto-complete challenge
+  1424→  1424→      const finalScore = dailyQuestions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+  1425→  1425→      const updatedStreak = updateDailyStreak();
+  1426→  1426→      setDailyStreak(updatedStreak);
+  1427→  1427→      const completedData: DailyChallengeData = {
+  1428→  1428→        date: getTodayStr(),
+  1429→  1429→        completed: true,
+  1430→  1430→        score: finalScore,
+  1431→  1431→        total: dailyQuestions.length,
+  1432→  1432→        questions: dailyQuestions.map((q) => q.id),
+  1433→  1433→      };
+  1434→  1434→      saveDailyChallenge(completedData);
+  1435→  1435→      setDailyChallenge(completedData);
+  1436→  1436→      setDailyShowResults(true);
+  1437→  1437→      setDailyTimerActive(false);
+  1438→  1438→      const stars = getStars(finalScore, dailyQuestions.length);
+  1439→  1439→      setStoreDailyChallenge({
+  1440→  1440→        lastCompletedDate: getTodayStr(),
+  1441→  1441→        streak: updatedStreak.current,
+  1442→  1442→        bestScore: Math.max(storeDailyChallenge.bestScore, finalScore),
+  1443→  1443→        totalCompleted: storeDailyChallenge.totalCompleted + 1,
+  1444→  1444→        todayResults: { score: finalScore, total: dailyQuestions.length, timeTaken: DAILY_TIMER_SECONDS, stars },
+  1445→  1445→      });
+  1446→  1446→      return;
+  1447→  1447→    }
+  1448→  1448→    const timeout = setTimeout(() => setDailyTimerLeft((s) => s - 1), 1000);
+  1449→  1449→    return () => clearTimeout(timeout);
+  1450→  1450→  }, [studyMode, dailyTimerActive, dailyShowResults, dailyTimerLeft, dailyQuestions, answered, answers, isCorrect, storeDailyChallenge.bestScore, storeDailyChallenge.totalCompleted, setStoreDailyChallenge]);
+  1451→  1451→
+  1452→  1452→  const handleDailyAnswer = useCallback(
+  1453→  1453→    (answer: string) => {
+  1454→  1454→      if (!dailyCurrentQ || answered[dailyCurrentQ.id]) return;
+  1455→  1455→
+  1456→  1456→      if (!timerStarted) setTimerStarted(true);
+  1457→  1457→      if (!dailyTimerActive) setDailyTimerActive(true);
+  1458→  1458→
+  1459→  1459→      const newAnswers = { ...answers, [dailyCurrentQ.id]: answer };
+  1460→  1460→      const newAnswered = { ...answered, [dailyCurrentQ.id]: true };
+  1461→  1461→      setAnswers(newAnswers);
+  1462→  1462→      setAnswered(newAnswered);
+  1463→  1463→      setShowExplanation(true);
+  1464→  1464→
+  1465→  1465→      if (isCorrect(dailyCurrentQ, answer)) {
+  1466→  1466→        setShowConfetti(true);
+  1467→  1467→        setTimeout(() => setShowConfetti(false), 1500);
+  1468→  1468→        const newStreak = streak + 1;
+  1469→  1469→        setStreak(newStreak);
+  1470→  1470→        if (newStreak > bestStreak) setBestStreak(newStreak);
+  1471→  1471→        if (newStreak >= 3) {
+  1472→  1472→          setShowStreakPopup(true);
+  1473→  1473→          setTimeout(() => setShowStreakPopup(false), 1200);
+  1474→  1474→        }
+  1475→  1475→      } else {
+  1476→  1476→        setStreak(0);
+  1477→  1477→      }
+  1478→  1478→    },
+  1479→  1479→    [answered, answers, dailyCurrentQ, isCorrect, streak, bestStreak, timerStarted, dailyTimerActive],
+  1480→  1480→  );
+  1481→  1481→
+  1482→  1482→  const handleDailyNext = useCallback(() => {
+  1483→  1483→    setShowExplanation(false);
+  1484→  1484→    if (currentIndex < dailyQuestions.length - 1) {
+  1485→  1485→      setCurrentIndex(currentIndex + 1);
+  1486→  1486→    } else {
+  1487→  1487→      // Challenge complete — save results
+  1488→  1488→      const finalScore = dailyQuestions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+  1489→  1489→      const updatedStreak = updateDailyStreak();
+  1490→  1490→      setDailyStreak(updatedStreak);
+  1491→  1491→      const stars = getStars(finalScore, dailyQuestions.length);
+  1492→  1492→
+  1493→  1493→      const completedData: DailyChallengeData = {
+  1494→  1494→        date: getTodayStr(),
+  1495→  1495→        completed: true,
+  1496→  1496→        score: finalScore,
+  1497→  1497→        total: dailyQuestions.length,
+  1498→  1498→        questions: dailyQuestions.map((q) => q.id),
+  1499→  1499→      };
+  1500→  1500→      saveDailyChallenge(completedData);
+  1501→  1501→      setDailyChallenge(completedData);
+  1502→  1502→      setDailyShowResults(true);
+  1503→  1503→      setDailyTimerActive(false);
+  1504→  1504→
+  1505→  1505→      // Update Zustand store
+  1506→  1506→      const timeTaken = DAILY_TIMER_SECONDS - dailyTimerLeft;
+  1507→  1507→      setStoreDailyChallenge({
+  1508→  1508→        lastCompletedDate: getTodayStr(),
+  1509→  1509→        streak: updatedStreak.current,
+  1510→  1510→        bestScore: Math.max(storeDailyChallenge.bestScore, finalScore),
+  1511→  1511→        totalCompleted: storeDailyChallenge.totalCompleted + 1,
+  1512→  1512→        todayResults: { score: finalScore, total: dailyQuestions.length, timeTaken, stars },
+  1513→  1513→      });
+  1514→  1514→    }
+  1515→  1515→  }, [currentIndex, dailyQuestions, answered, answers, isCorrect, dailyTimerLeft, storeDailyChallenge.bestScore, storeDailyChallenge.totalCompleted, setStoreDailyChallenge]);
+  1516→  1516→
+  1517→  1517→  const handleDailyShare = useCallback(async () => {
+  1518→  1518→    const text = `SynapseLearn Daily Challenge - ${dailyScore}/${dailyQuestions.length} - ${dailyStreak.current} day streak`;
+  1519→  1519→    try {
+  1520→  1520→      await navigator.clipboard.writeText(text);
+  1521→  1521→      setDailyShareCopied(true);
+  1522→  1522→      setTimeout(() => setDailyShareCopied(false), 2000);
+  1523→  1523→    } catch {
+  1524→  1524→      // fallback
+  1525→  1525→    }
+  1526→  1526→  }, [dailyScore, dailyQuestions.length, dailyStreak.current]);
+  1527→  1527→
+  1528→  1528→  // Timer state
+  1529→  1529→  const [timerStarted, setTimerStarted] = useState(false);
+  1530→  1530→  const [timerSeconds, setTimerSeconds] = useState(0);
+  1531→  1531→
+  1532→  1532→  // Flashcard state
+  1533→  1533→  const [flipped, setFlipped] = useState(false);
+  1534→  1534→  const [knownCards, setKnownCards] = useState<Set<string>>(new Set());
+  1535→  1535→  const [stillLearningCards, setStillLearningCards] = useState<Set<string>>(new Set());
+  1536→  1536→  const [difficultCards, setDifficultCards] = useState<Set<string>>(new Set());
+  1537→  1537→  const [flashcardReviewed, setFlashcardReviewed] = useState<Set<string>>(new Set());
+  1538→  1538→  const [showFlashcardSummary, setShowFlashcardSummary] = useState(false);
+  1539→  1539→  const [hasEverFlipped, setHasEverFlipped] = useState(false);
+  1540→  1540→
+  1541→  1541→  // Swipe motion values for flashcard (no re-renders)
+  1542→  1542→  const dragXMotion = useMotionValue(0);
+  1543→  1543→
+  1544→  1544→  // Bookmark persistence
+  1545→  1545→  useEffect(() => {
+  1546→  1546→    try {
+  1547→  1547→      const stored = localStorage.getItem('synapse-bookmarked-questions');
+  1548→  1548→      if (stored) {
+  1549→  1549→        setBookmarkedQuestions(new Set(JSON.parse(stored) as string[]));
+  1550→  1550→      }
+  1551→  1551→    } catch { /* ignore */ }
+  1552→  1552→  }, []);
+  1553→  1553→
+  1554→  1554→  useEffect(() => {
+  1555→  1555→    try {
+  1556→  1556→      localStorage.setItem('synapse-bookmarked-questions', JSON.stringify([...bookmarkedQuestions]));
+  1557→  1557→    } catch { /* ignore */ }
+  1558→  1558→  }, [bookmarkedQuestions]);
+  1559→  1559→
+  1560→  1560→  const toggleBookmark = useCallback((questionId: string) => {
+  1561→  1561→    setBookmarkedQuestions((prev) => {
+  1562→  1562→      const next = new Set(prev);
+  1563→  1563→      if (next.has(questionId)) {
+  1564→  1564→        next.delete(questionId);
+  1565→  1565→      } else {
+  1566→  1566→        next.add(questionId);
+  1567→  1567→      }
+  1568→  1568→      return next;
+  1569→  1569→    });
+  1570→  1570→  }, []);
+  1571→  1571→
+  1572→  1572→  // checkOpacity and crossOpacity use the existing dragXMotion (defined above for flashcard swipe)
+  1573→  1573→  const checkOpacity = useTransform(dragXMotion, [0, 100], [0, 0.7]);
+  1574→  1574→  const crossOpacity = useTransform(dragXMotion, [-100, 0], [0.7, 0]);
+  1575→  1575→  const hasDraggedRef = useRef(false);
+  1576→  1576→
+  1577→  1577→  // Timer effect
+  1578→  1578→  useEffect(() => {
+  1579→  1579→    if (!timerStarted || showResults) return;
+  1580→  1580→    const interval = setInterval(() => {
+  1581→  1581→      setTimerSeconds((s) => s + 1);
+  1582→  1582→    }, 1000);
+  1583→  1583→    return () => clearInterval(interval);
+  1584→  1584→  }, [timerStarted, showResults]);
+  1585→  1585→
+  1586→  1586→  // Keyboard shortcuts for flashcard mode
+  1587→  1587→  useEffect(() => {
+  1588→  1588→    if (studyMode !== 'flashcard' || showFlashcardSummary) return;
+  1589→  1589→    const handleKeyDown = (e: KeyboardEvent) => {
+  1590→  1590→      // Ignore if user is typing in an input/textarea
+  1591→  1591→      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
+  1592→  1592→      switch (e.code) {
+  1593→  1593→        case 'Space':
+  1594→  1594→          e.preventDefault();
+  1595→  1595→          setFlipped((prev) => {
+  1596→  1596→            if (!prev) setHasEverFlipped(true);
+  1597→  1597→            return !prev;
+  1598→  1598→          });
+  1599→  1599→          break;
+  1600→  1600→        case 'ArrowLeft':
+  1601→  1601→          e.preventDefault();
+  1602→  1602→          handleFlashcardPrev();
+  1603→  1603→          break;
+  1604→  1604→        case 'ArrowRight':
+  1605→  1605→          e.preventDefault();
+  1606→  1606→          handleFlashcardNext();
+  1607→  1607→          break;
+  1608→  1608→      }
+  1609→  1609→    };
+  1610→  1610→    window.addEventListener('keydown', handleKeyDown);
+  1611→  1611→    return () => window.removeEventListener('keydown', handleKeyDown);
+  1612→  1612→  }, [studyMode, showFlashcardSummary, handleFlashcardPrev, handleFlashcardNext]);
+  1613→  1613→
+  1614→  1614→  const flashcardQuestions = useMemo(() => {
+  1615→  1615→    if (selectedCourse === 'all') return allQuestions;
+  1616→  1616→    return allQuestions.filter((q) => q.courseId === selectedCourse);
+  1617→  1617→  }, [allQuestions, selectedCourse]);
+  1618→  1618→
+  1619→  1619→  const flashcardProgress = flashcardQuestions.length > 0
+  1620→  1620→    ? (flashcardReviewed.size / flashcardQuestions.length) * 100
+  1621→  1621→    : 0;
+  1622→  1622→
+  1623→  1623→  // Difficulty distribution
+  1624→  1624→  const difficultyCounts = useMemo(() => {
+  1625→  1625→    if (studyMode === 'daily') return { easy: 0, medium: 0, hard: 0 };
+  1626→  1626→    const targetQuestions = studyMode === 'quiz' ? questions : flashcardQuestions;
+  1627→  1627→    return {
+  1628→  1628→      easy: targetQuestions.filter((q) => q.difficulty === 'easy').length,
+  1629→  1629→      medium: targetQuestions.filter((q) => q.difficulty === 'medium').length,
+  1630→  1630→      hard: targetQuestions.filter((q) => q.difficulty === 'hard').length,
+  1631→  1631→    };
+  1632→  1632→  }, [studyMode, questions, flashcardQuestions]);
+  1633→  1633→
+  1634→  1634→  const handleShuffle = useCallback(() => {
+  1635→  1635→    setCurrentIndex(0);
+  1636→  1636→    setFlipped(false);
+  1637→  1637→  }, []);
+  1638→  1638→
+  1639→  1639→  const handleFlashcardMark = useCallback((type: 'known' | 'learning') => {
+  1640→  1640→    if (!flashcardQuestions[currentIndex]) return;
+  1641→  1641→    const id = flashcardQuestions[currentIndex].id;
+  1642→  1642→    const newReviewed = new Set(flashcardReviewed);
+  1643→  1643→    newReviewed.add(id);
+  1644→  1644→    setFlashcardReviewed(newReviewed);
+  1645→  1645→
+  1646→  1646→    if (type === 'known') {
+  1647→  1647→      setKnownCards((prev) => new Set(prev).add(id));
+  1648→  1648→      setStillLearningCards((prev) => {
+  1649→  1649→        const next = new Set(prev);
+  1650→  1650→        next.delete(id);
+  1651→  1651→        return next;
+  1652→  1652→      });
+  1653→  1653→    } else {
+  1654→  1654→      setStillLearningCards((prev) => new Set(prev).add(id));
+  1655→  1655→      setKnownCards((prev) => {
+  1656→  1656→        const next = new Set(prev);
+  1657→  1657→        next.delete(id);
+  1658→  1658→        return next;
+  1659→  1659→      });
+  1660→  1660→    }
+  1661→  1661→
+  1662→  1662→    // Mark as difficult adds to review queue
+  1663→  1663→    if (type === 'learning' && !difficultCards.has(id)) {
+  1664→  1664→      setDifficultCards((prev) => new Set(prev).add(id));
+  1665→  1665→    }
+  1666→  1666→
+  1667→  1667→    setFlipped(false);
+  1668→  1668→    if (currentIndex < flashcardQuestions.length - 1) {
+  1669→  1669→      setCurrentIndex((prev) => prev + 1);
+  1670→  1670→    } else {
+  1671→  1671→      setShowFlashcardSummary(true);
+  1672→  1672→    }
+  1673→  1673→  }, [currentIndex, flashcardQuestions, flashcardReviewed]);
+  1674→  1674→
+  1675→  1675→  const handleFlashcardPrev = useCallback(() => {
+  1676→  1676→    setFlipped(false);
+  1677→  1677→    setCurrentIndex((prev) => Math.max(0, prev - 1));
+  1678→  1678→  }, []);
+  1679→  1679→
+  1680→  1680→  const handleFlashcardNext = useCallback(() => {
+  1681→  1681→    setFlipped(false);
+  1682→  1682→    if (currentIndex < flashcardQuestions.length - 1) {
+  1683→  1683→      setCurrentIndex((prev) => prev + 1);
+  1684→  1684→    }
+  1685→  1685→  }, [currentIndex, flashcardQuestions.length]);
+  1686→  1686→
+  1687→  1687→  const handleFlashcardReset = useCallback(() => {
+  1688→  1688→    setCurrentIndex(0);
+  1689→  1689→    setFlipped(false);
+  1690→  1690→    setKnownCards(new Set());
+  1691→  1691→    setStillLearningCards(new Set());
+  1692→  1692→    setDifficultCards(new Set());
+  1693→  1693→    setFlashcardReviewed(new Set());
+  1694→  1694→    setShowFlashcardSummary(false);
+  1695→  1695→    setHasEverFlipped(false);
+  1696→  1696→  }, []);
+  1697→  1697→
+  1698→  1698→  const handleMarkDifficult = useCallback(() => {
+  1699→  1699→    if (!flashcardQuestions[currentIndex]) return;
+  1700→  1700→    const id = flashcardQuestions[currentIndex].id;
+  1701→  1701→    setDifficultCards((prev) => {
+  1702→  1702→      const next = new Set(prev);
+  1703→  1703→      if (next.has(id)) {
+  1704→  1704→        next.delete(id);
+  1705→  1705→        toast('Removed from review queue');
+  1706→  1706→      } else {
+  1707→  1707→        next.add(id);
+  1708→  1708→        toast('Marked as difficult — added to review queue', {
+  1709→  1709→          icon: <AlertTriangle className="h-4 w-4 text-amber-500" />,
+  1710→  1710→        });
+  1711→  1711→      }
+  1712→  1712→      return next;
+  1713→  1713→    });
+  1714→  1714→  }, [currentIndex, flashcardQuestions]);
+  1715→  1715→
+  1716→  1716→  const handleCourseChange = (courseId: string) => {
+  1717→  1717→    setSelectedCourse(courseId);
+  1718→  1718→    setCurrentIndex(0);
+  1719→  1719→    setAnswers({});
+  1720→  1720→    setAnswered({});
+  1721→  1721→    setShowExplanation(false);
+  1722→  1722→    setShowResults(false);
+  1723→  1723→    setStreak(0);
+  1724→  1724→    setBestStreak(0);
+  1725→  1725→    setFlipped(false);
+  1726→  1726→    setKnownCards(new Set());
+  1727→  1727→    setStillLearningCards(new Set());
+  1728→  1728→    setDifficultCards(new Set());
+  1729→  1729→    setFlashcardReviewed(new Set());
+  1730→  1730→    setShowFlashcardSummary(false);
+  1731→  1731→    setHasEverFlipped(false);
+  1732→  1732→    setTimerStarted(false);
+  1733→  1733→    setTimerSeconds(0);
+  1734→  1734→    setHintsUsed({});
+  1735→  1735→    setFillBlankValues({});
+  1736→  1736→    setFillBlankGrades({});
+  1737→  1737→  };
+  1738→  1738→
+  1739→  1739→  const handleModeChange = (mode: StudyMode) => {
+  1740→  1740→    setStudyMode(mode);
+  1741→  1741→    setCurrentIndex(0);
+  1742→  1742→    setAnswers({});
+  1743→  1743→    setAnswered({});
+  1744→  1744→    setShowExplanation(false);
+  1745→  1745→    setShowResults(false);
+  1746→  1746→    setStreak(0);
+  1747→  1747→    setBestStreak(0);
+  1748→  1748→    setFlipped(false);
+  1749→  1749→    setKnownCards(new Set());
+  1750→  1750→    setStillLearningCards(new Set());
+  1751→  1751→    setDifficultCards(new Set());
+  1752→  1752→    setFlashcardReviewed(new Set());
+  1753→  1753→    setShowFlashcardSummary(false);
+  1754→  1754→    setHasEverFlipped(false);
+  1755→  1755→    setTimerStarted(false);
+  1756→  1756→    setTimerSeconds(0);
+  1757→  1757→    setDailyShowResults(false);
+  1758→  1758→    setDailyShareCopied(false);
+  1759→  1759→    setReviewShowResults(false);
+  1760→  1760→    setReviewedCount(0);
+  1761→  1761→    setDailyTimerLeft(DAILY_TIMER_SECONDS);
+  1762→  1762→    setDailyTimerActive(false);
+  1763→  1763→    setHintsUsed({});
+  1764→  1764→    setFillBlankValues({});
+  1765→  1765→    setFillBlankGrades({});
+  1766→  1766→  };
+  1767→  1767→
+  1768→  1768→  // Filter questions by selected course and bookmarked
+  1769→  1769→  const questions = useMemo(() => {
+  1770→  1770→    if (adaptiveOn && studyMode === 'quiz' && adaptiveQuestions) {
+  1771→  1771→      return adaptiveQuestions;
+  1772→  1772→    }
+  1773→  1773→    let filtered = selectedCourse === 'all' ? allQuestions : allQuestions.filter((q) => q.courseId === selectedCourse);
+  1774→  1774→    if (showBookmarked) {
+  1775→  1775→      filtered = filtered.filter((q) => bookmarkedQuestions.has(q.id));
+  1776→  1776→    }
+  1777→  1777→    return filtered;
+  1778→  1778→  }, [allQuestions, selectedCourse, showBookmarked, bookmarkedQuestions, adaptiveOn, studyMode, adaptiveQuestions]);
+  1779→  1779→
+  1780→  1780→  const currentQ = questions[currentIndex];
+  1781→  1781→  const progress = questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0;
+  1782→  1782→
+  1783→  1783→  const isCorrect = useCallback(
+  1784→  1784→    (q: Question, userAnswer: string): boolean => {
+  1785→  1785→      const ua = userAnswer.trim().toLowerCase();
+  1786→  1786→      const ca = q.answer.trim().toLowerCase();
+  1787→  1787→      if (q.type === 'short_answer' || q.type === 'error_correction') {
+  1788→  1788→        return isFuzzyMatch(userAnswer, q.answer, 3);
+  1789→  1789→      }
+  1790→  1790→      if (q.type === 'fill_blank') {
+  1791→  1791→        return userAnswer.trim().toLowerCase() === q.answer.trim().toLowerCase();
+  1792→  1792→      }
+  1793→  1793→      return ua === ca;
+  1794→  1794→    },
+  1795→  1795→    [],
+  1796→  1796→  );
+  1797→  1797→
+  1798→  1798→  const handleAnswer = useCallback(
+  1799→  1799→    (answer: string) => {
+  1800→  1800→      if (!currentQ || answered[currentQ.id]) return;
+  1801→  1801→
+  1802→  1802→      // Start timer on first answer
+  1803→  1803→      if (!timerStarted) setTimerStarted(true);
+  1804→  1804→
+  1805→  1805→      const newAnswers = { ...answers, [currentQ.id]: answer };
+  1806→  1806→      const newAnswered = { ...answered, [currentQ.id]: true };
+  1807→  1807→      setAnswers(newAnswers);
+  1808→  1808→      setAnswered(newAnswered);
+  1809→  1809→      setShowExplanation(true);
+  1810→  1810→
+  1811→  1811→      // Grade fill_blank with Levenshtein tolerance
+  1812→  1812→      if (currentQ.type === 'fill_blank') {
+  1813→  1813→        const grade = gradeFillBlank(answer, currentQ.answer, hintsUsed[currentQ.id] || false);
+  1814→  1814→        setFillBlankGrades((prev) => ({ ...prev, [currentQ.id]: grade }));
+  1815→  1815→      }
+  1816→  1816→
+  1817→  1817→      if (isCorrect(currentQ, answer)) {
+  1818→  1818→        setShowConfetti(true);
+  1819→  1819→        setTimeout(() => setShowConfetti(false), 1500);
+  1820→  1820→        const newStreak = streak + 1;
+  1821→  1821→        setStreak(newStreak);
+  1822→  1822→        if (newStreak > bestStreak) setBestStreak(newStreak);
+  1823→  1823→        if (newStreak >= 3) {
+  1824→  1824→          setShowStreakPopup(true);
+  1825→  1825→          setTimeout(() => setShowStreakPopup(false), 1200);
+  1826→  1826→        }
+  1827→  1827→        // Streak milestone toasts
+  1828→  1828→        if (newStreak > 0 && newStreak % 3 === 0 && newStreak % 5 !== 0) {
+  1829→  1829→          toast.success(`🔥 Hot streak! ${newStreak} in a row!`);
+  1830→  1830→        }
+  1831→  1831→        if (newStreak > 0 && newStreak % 5 === 0) {
+  1832→  1832→          toast.success(`🔥🔥 AMAZING! ${newStreak} in a row! Bonus points earned!`, {
+  1833→  1833→            description: `Score multiplier: ${getScoreMultiplier(newStreak)}x`,
+  1834→  1834→            duration: 4000,
+  1835→  1835→          });
+  1836→  1836→        }
+  1837→  1837→      } else {
+  1838→  1838→        setStreak(0);
+  1839→  1839→      }
+  1840→  1840→
+  1841→  1841→      // Track adaptive result
+  1842→  1842→      if (adaptiveOn && studyMode === 'quiz' && currentQ.concept) {
+  1843→  1843→        const result: AdaptiveResult = {
+  1844→  1844→          concept: currentQ.concept,
+  1845→  1845→          correct: isCorrect(currentQ, answer),
+  1846→  1846→          difficulty: currentQ.difficulty,
+  1847→  1847→          timestamp: Date.now(),
+  1848→  1848→        };
+  1849→  1849→        addAdaptiveResult(result);
+  1850→  1850→        saveAdaptiveResults([...adaptiveResults, result].slice(-200));
+  1851→  1851→      }
+  1852→  1852→    },
+  1853→  1853→    [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted, adaptiveOn, studyMode, adaptiveResults, addAdaptiveResult, hintsUsed],
+  1854→  1854→  );
+  1855→  1855→
+  1856→  1856→  // Review mode answer handler
+  1857→  1857→  const handleReviewAnswer = useCallback(
+  1858→  1858→    (answer: string) => {
+  1859→  1859→      if (!reviewCurrentQ || answered[reviewCurrentQ.id]) return;
+  1860→  1860→
+  1861→  1861→      const newAnswers = { ...answers, [reviewCurrentQ.id]: answer };
+  1862→  1862→      const newAnswered = { ...answered, [reviewCurrentQ.id]: true };
+  1863→  1863→      setAnswers(newAnswers);
+  1864→  1864→      setAnswered(newAnswered);
+  1865→  1865→      setShowExplanation(true);
+  1866→  1866→
+  1867→  1867→      const correct = isCorrect(reviewCurrentQ, answer);
+  1868→  1868→      const quality = correct ? 5 : 0;
+  1869→  1869→
+  1870→  1870→      // Update spaced repetition
+  1871→  1871→      if (reviewCurrentQ.concept) {
+  1872→  1872→        reviewItem(reviewCurrentQ.concept, quality);
+  1873→  1873→      }
+  1874→  1874→
+  1875→  1875→      // Update mastery in app store
+  1876→  1876→      if (reviewCurrentQ.concept) {
+  1877→  1877→        const newLevel = correct ? 5 : 1;
+  1878→  1878→        updateMastery(
+  1879→  1879→          reviewCurrentQ.concept,
+  1880→  1880→          newLevel,
+  1881→  1881→          `Spaced review: ${correct ? 'correct' : 'incorrect'}`,
+  1882→  1882→        );
+  1883→  1883→      }
+  1884→  1884→
+  1885→  1885→      // Show confetti on correct
+  1886→  1886→      if (correct) {
+  1887→  1887→        setShowConfetti(true);
+  1888→  1888→        setTimeout(() => setShowConfetti(false), 1500);
+  1889→  1889→      }
+  1890→  1890→
+  1891→  1891→      // Track reviewed count
+  1892→  1892→      setReviewedCount((prev) => prev + 1);
+  1893→  1893→    },
+  1894→  1894→    [reviewCurrentQ, answered, answers, isCorrect, reviewItem, updateMastery],
+  1895→  1895→  );
+  1896→  1896→
+  1897→  1897→  const handleNext = () => {
+  1898→  1898→    setShowExplanation(false);
+  1899→  1899→    if (studyMode === 'review') {
+  1900→  1900→      if (currentIndex < reviewQuestions.length - 1) {
+  1901→  1901→        setCurrentIndex(currentIndex + 1);
+  1902→  1902→      } else {
+  1903→  1903→        setReviewShowResults(true);
+  1904→  1904→      }
+  1905→  1905→    } else if (currentIndex < questions.length - 1) {
+  1906→  1906→      setCurrentIndex(currentIndex + 1);
+  1907→  1907→    } else {
+  1908→  1908→      setShowResults(true);
+  1909→  1909→    }
+  1910→  1910→  };
+  1911→  1911→
+  1912→  1912→  const handleRetry = () => {
+  1913→  1913→    setCurrentIndex(0);
+  1914→  1914→    setAnswers({});
+  1915→  1915→    setAnswered({});
+  1916→  1916→    setShowExplanation(false);
+  1917→  1917→    setShowResults(false);
+  1918→  1918→    setShowConfetti(false);
+  1919→  1919→    setStreak(0);
+  1920→  1920→    setBestStreak(0);
+  1921→  1921→    setTimerStarted(false);
+  1922→  1922→    setTimerSeconds(0);
+  1923→  1923→    setShowBookmarked(false);
+  1924→  1924→    setHintsUsed({});
+  1925→  1925→    setFillBlankValues({});
+  1926→  1926→    setFillBlankGrades({});
+  1927→  1927→  };
+  1928→  1928→
+  1929→  1929→  const score = useMemo(() => {
+  1930→  1930→    return questions.reduce((total, q) => {
+  1931→  1931→      if (!answered[q.id]) return total;
+  1932→  1932→      const userAnswer = answers[q.id] || '';
+  1933→  1933→      if (q.type === 'fill_blank') {
+  1934→  1934→        const grade = fillBlankGrades[q.id];
+  1935→  1935→        if (grade) return total + grade.points;
+  1936→  1936→        return total + (isCorrect(q, userAnswer) ? 1 : 0);
+  1937→  1937→      }
+  1938→  1938→      return total + (isCorrect(q, userAnswer) ? 1 : 0);
+  1939→  1939→    }, 0);
+  1940→  1940→  }, [questions, answered, answers, isCorrect, fillBlankGrades]);
+  1941→  1941→
+  1942→  1942→  const circumference = 2 * Math.PI * 62;
+  1943→  1943→  const scorePercent = questions.length > 0 ? score / questions.length : 0;
+  1944→  1944→  const strokeDashoffset = circumference * (1 - scorePercent);
+  1945→  1945→
+  1946→  1946→  const difficultyTotal = difficultyCounts.easy + difficultyCounts.medium + difficultyCounts.hard;
+  1947→  1947→
+  1948→  1948→  // ---------- Empty State ----------
+  1949→  1949→  if (studyMode !== 'daily' && studyMode !== 'review' && questions.length === 0 && flashcardQuestions.length === 0) {
+  1950→  1950→    return (
+  1951→  1951→      <motion.div
+  1952→  1952→        initial={{ opacity: 0, y: 20 }}
+  1953→  1953→        animate={{ opacity: 1, y: 0 }}
+  1954→  1954→        className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
+  1955→  1955→      >
+  1956→  1956→        <div className="glass rounded-2xl p-8 text-center space-y-4 max-w-md">
+  1957→  1957→          <BookOpen className="h-16 w-16 text-primary/30 mx-auto" />
+  1958→  1958→          <h2 className="text-xl font-bold">No questions available</h2>
+  1959→  1959→          <p className="text-muted-foreground text-sm">
+  1960→  1960→            {selectedCourse !== 'all'
+  1961→  1961→              ? `No questions found for this course. Try selecting a different category.`
+  1962→  1962→              : 'Upload some study materials or generate questions from your courses to start practicing.'}
+  1963→  1963→          </p>
+  1964→  1964→          <div className="flex justify-center gap-3">
+  1965→  1965→            <Button onClick={() => navigate('upload')}>
+  1966→  1966→              <BookOpen className="h-4 w-4 mr-2" />
+  1967→  1967→              Upload Slides
+  1968→  1968→            </Button>
+  1969→  1969→            <Button variant="outline" onClick={() => navigate('dashboard')}>
+  1970→  1970→              <ArrowLeft className="h-4 w-4 mr-2" />
+  1971→  1971→              Back to Dashboard
+  1972→  1972→            </Button>
+  1973→  1973→          </div>
+  1974→  1974→        </div>
+  1975→  1975→      </motion.div>
+  1976→  1976→    );
+  1977→  1977→  }
+  1978→  1978→
+  1979→  1979→  // ---------- Results Screen ----------
+  1980→  1980→  if (showResults) {
+  1981→  1981→    return (
+  1982→  1982→      <motion.div
+  1983→  1983→        initial={{ opacity: 0, scale: 0.9 }}
+  1984→  1984→        animate={{ opacity: 1, scale: 1 }}
+  1985→  1985→        transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+  1986→  1986→        className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
+  1987→  1987→      >
+  1988→  1988→        {/* Confetti burst for high scores */}
+  1989→  1989→        <AnimatePresence>
+  1990→  1990→          {scorePercent >= 0.8 && (
+  1991→  1991→            <div className="fixed inset-0 pointer-events-none z-50">
+  1992→  1992→              {Array.from({ length: 32 }).map((_, i) => (
+  1993→  1993→                <ConfettiParticle
+  1994→  1994→                  key={`result-${i}`}
+  1995→  1995→                  delay={i * 0.04}
+  1996→  1996→                  color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
+  1997→  1997→                />
+  1998→  1998→              ))}
+  1999→  1999→            </div>
+  2000→  2000→          )}
+
+[showing lines 1-2000 of 2002; use offset=2001 with limit to continue reading]

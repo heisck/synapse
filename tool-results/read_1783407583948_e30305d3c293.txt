@@ -1,0 +1,1703 @@
+     1→'use client'
+     2→
+     3→import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+     4→import { useAppStore } from '@/stores/appStore'
+     5→import { Badge } from '@/components/ui/badge'
+     6→import { Button } from '@/components/ui/button'
+     7→import { Textarea } from '@/components/ui/textarea'
+     8→import { ScrollArea } from '@/components/ui/scroll-area'
+     9→import { Separator } from '@/components/ui/separator'
+    10→import {
+    11→  DropdownMenu,
+    12→  DropdownMenuContent,
+    13→  DropdownMenuItem,
+    14→  DropdownMenuTrigger,
+    15→} from '@/components/ui/dropdown-menu'
+    16→import {
+    17→  PanelRightOpen,
+    18→  PanelRightClose,
+    19→  Send,
+    20→  Lightbulb,
+    21→  MessageSquareText,
+    22→  ListChecks,
+    23→  MoreHorizontal,
+    24→  BookOpen,
+    25→  MessageCircle,
+    26→  Columns,
+    27→  Play,
+    28→  Pause,
+    29→  RotateCcw,
+    30→  SkipForward,
+    31→  Timer,
+    32→  Coffee,
+    33→  Brain,
+    34→  Mic,
+    35→  Maximize2,
+    36→  ChevronDown,
+    37→  ChevronUp,
+    38→  Search,
+    39→  X,
+    40→  LogOut,
+    41→  Trophy,
+    42→  Sparkles,
+    43→  BookMarked,
+    44→  Target,
+    45→  Clock,
+    46→  CheckCircle2,
+    47→  Download,
+    48→} from 'lucide-react'
+    49→import { toast } from 'sonner'
+    50→import { motion, AnimatePresence } from 'framer-motion'
+    51→import { Loader2 } from 'lucide-react'
+    52→
+    53→// ---------- SpeechRecognition Types ----------
+    54→type SpeechRecognitionResultType = {
+    55→  isFinal: boolean
+    56→  readonly length: number
+    57→  item(index: number): SpeechRecognitionAlternativeType
+    58→  [index: number]: SpeechRecognitionAlternativeType
+    59→}
+    60→type SpeechRecognitionAlternativeType = {
+    61→  readonly transcript: string
+    62→  readonly confidence: number
+    63→}
+    64→type SpeechRecognitionEventType = {
+    65→  readonly resultIndex: number
+    66→  readonly results: SpeechRecognitionResultListType
+    67→}
+    68→type SpeechRecognitionResultListType = {
+    69→  readonly length: number
+    70→  item(index: number): SpeechRecognitionResultType
+    71→  [index: number]: SpeechRecognitionResultType
+    72→}
+    73→type SpeechRecognitionInstance = {
+    74→  lang: string
+    75→  continuous: boolean
+    76→  interimResults: boolean
+    77→  maxAlternatives: number
+    78→  start(): void
+    79→  stop(): void
+    80→  abort(): void
+    81→  onresult: ((event: SpeechRecognitionEventType) => void) | null
+    82→  onerror: ((event: { error: string }) => void) | null
+    83→  onend: (() => void) | null
+    84→  onstart: (() => void) | null
+    85→}
+    86→
+    87→function getSpeechRecognition(): (new () => SpeechRecognitionInstance) | null {
+    88→  if (typeof window === 'undefined') return null
+    89→  return (
+    90→    (window as unknown as Record<string, unknown>).SpeechRecognition ||
+    91→    (window as unknown as Record<string, unknown>).webkitSpeechRecognition
+    92→  ) as (new () => SpeechRecognitionInstance) | null
+    93→}
+    94→
+    95→import { ChatBubble, stopAllTTS } from './ChatBubble'
+    96→import { TypingIndicator } from './TypingIndicator'
+    97→import { MasteryTracker } from './MasteryTracker'
+    98→import { SessionControls } from './SessionControls'
+    99→import { TipInput } from './TipInput'
+   100→import { FeedbackBar } from './FeedbackBar'
+   101→import { CourseContextPanel } from './CourseContextPanel'
+   102→import { PersonaSelector } from './PersonaSelector'
+   103→
+   104→// ---------- Pomodoro Timer ----------
+   105→const POMODORO_MODES = [
+   106→  { id: 'focus' as const, label: 'Focus', duration: 25 * 60, icon: Brain, color: 'text-emerald-600 dark:text-emerald-400' },
+   107→  { id: 'shortBreak' as const, label: 'Short Break', duration: 5 * 60, icon: Coffee, color: 'text-teal-600 dark:text-teal-400' },
+   108→  { id: 'longBreak' as const, label: 'Long Break', duration: 15 * 60, icon: Timer, color: 'text-cyan-600 dark:text-cyan-400' },
+   109→]
+   110→
+   111→function playBeep() {
+   112→  try {
+   113→    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+   114→    const osc = ctx.createOscillator()
+   115→    const gain = ctx.createGain()
+   116→    osc.connect(gain)
+   117→    gain.connect(ctx.destination)
+   118→    osc.frequency.value = 660
+   119→    osc.type = 'sine'
+   120→    gain.gain.value = 0.3
+   121→    osc.start()
+   122→    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+   123→    osc.stop(ctx.currentTime + 0.5)
+   124→    // Second beep
+   125→    setTimeout(() => {
+   126→      const osc2 = ctx.createOscillator()
+   127→      const gain2 = ctx.createGain()
+   128→      osc2.connect(gain2)
+   129→      gain2.connect(ctx.destination)
+   130→      osc2.frequency.value = 880
+   131→      osc2.type = 'sine'
+   132→      gain2.gain.value = 0.3
+   133→      osc2.start()
+   134→      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+   135→      osc2.stop(ctx.currentTime + 0.5)
+   136→    }, 200)
+   137→  } catch {
+   138→    // Audio not available
+   139→  }
+   140→}
+   141→
+   142→const QUICK_TOPICS = ['Cell Biology', 'Data Structures', 'World History', 'Calculus', 'Creative Writing']
+   143→
+   144→const QUICK_ACTIONS = [
+   145→  { label: 'Give hint', icon: Lightbulb, prompt: 'Give me a hint about what we were just discussing.' },
+   146→  { label: 'Explain differently', icon: MessageSquareText, prompt: 'Can you explain that differently?' },
+   147→  { label: 'Show example', icon: ListChecks, prompt: 'Can you show me an example?' },
+   148→  { label: 'Quiz me', icon: ListChecks, prompt: 'Quiz me on what we just covered.' },
+   149→]
+   150→
+   151→const SUGGESTED_PROMPTS = [
+   152→  'Explain this concept',
+   153→  'Give me a quiz',
+   154→  'Show examples',
+   155→  'Summarize key points',
+   156→]
+   157→
+   158→const CONTEXTUAL_SUGGESTIONS = [
+   159→  'Explain in simpler terms',
+   160→  'Give me an example',
+   161→  'Quiz me on this',
+   162→  'Go deeper',
+   163→]
+   164→
+   165→const MAX_INPUT_CHARS = 500
+   166→
+   167→type InputSize = 'small' | 'medium' | 'large'
+   168→
+   169→const INPUT_SIZES: Record<InputSize, { minH: number; maxH: number; rows: number; label: string }> = {
+   170→  small: { minH: 40, maxH: 80, rows: 1, label: 'Small' },
+   171→  medium: { minH: 40, maxH: 150, rows: 1, label: 'Medium' },
+   172→  large: { minH: 80, maxH: 300, rows: 3, label: 'Large' },
+   173→}
+   174→
+   175→const INPUT_SIZE_CYCLE: InputSize[] = ['small', 'medium', 'large']
+   176→
+   177→const TUTOR_MODES = [
+   178→  { id: 'text' as const, label: 'Chat', icon: MessageCircle, desc: 'Text-only conversation' },
+   179→  { id: 'slide' as const, label: 'Slides', icon: BookOpen, desc: 'Slide-focused learning' },
+   180→  { id: 'hybrid' as const, label: 'Hybrid', icon: Columns, desc: 'Chat + slides together' },
+   181→]
+   182→
+   183→function formatTimer(seconds: number): string {
+   184→  const h = Math.floor(seconds / 3600)
+   185→  const m = Math.floor((seconds % 3600) / 60)
+   186→  const s = seconds % 60
+   187→  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+   188→}
+   189→
+   190→function getPhaseColor(phase: string): string {
+   191→  switch (phase) {
+   192→    case 'discovery': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+   193→    case 'starter': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+   194→    case 'teaching': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+   195→    default: return 'bg-muted text-muted-foreground'
+   196→  }
+   197→}
+   198→
+   199→export function TutorView() {
+   200→  const {
+   201→    messages,
+   202→    addMessage,
+   203→    sessionPhase,
+   204→    activeSessionId,
+   205→    activeTopic,
+   206→    setActiveTopic,
+   207→    setActiveSession,
+   208→    setSessionPhase,
+   209→    learnerProfile,
+   210→    masteryMap,
+   211→    userName,
+   212→    setLoading,
+   213→    isLoading,
+   214→    activePersona,
+   215→    moodSettings,
+   216→    tutorMode,
+   217→    setTutorMode,
+   218→    activeSlides,
+   219→    currentSlideIndex,
+   220→    setCurrentSlideIndex,
+   221→    navigate,
+   222→  } = useAppStore()
+   223→
+   224→  const [input, setInput] = useState('')
+   225→  const [inputFocused, setInputFocused] = useState(false)
+   226→  const [inputSize, setInputSize] = useState<InputSize>('medium')
+   227→  const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'processing' | 'error'>('idle')
+   228→  const speechRef = useRef<SpeechRecognitionInstance | null>(null)
+   229→  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   230→  const [rightPanelOpen, setRightPanelOpen] = useState(true)
+   231→  const [timerSeconds, setTimerSeconds] = useState(0)
+   232→  const timerStarted = useRef(false)
+   233→  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+   234→  const scrollRef = useRef<HTMLDivElement>(null)
+   235→  const textareaRef = useRef<HTMLTextAreaElement>(null)
+   236→
+   237→  // Pomodoro state
+   238→  const [pomodoroExpanded, setPomodoroExpanded] = useState(false)
+   239→  const [pomodoroRunning, setPomodoroRunning] = useState(false)
+   240→  const [pomodoroModeIndex, setPomodoroModeIndex] = useState(0)
+   241→  const [pomodoroTimeLeft, setPomodoroTimeLeft] = useState(POMODORO_MODES[0].duration)
+   242→  const [pomodoroSessions, setPomodoroSessions] = useState(0)
+   243→  const pomodoroRef = useRef<ReturnType<typeof setInterval> | null>(null)
+   244→
+   245→  const currentPomodoroMode = POMODORO_MODES[pomodoroModeIndex]
+   246→  const pomodoroProgress = 1 - pomodoroTimeLeft / currentPomodoroMode.duration
+   247→  const pomodoroCircumference = 2 * Math.PI * 16
+   248→  const pomodoroStrokeOffset = pomodoroCircumference * (1 - pomodoroProgress)
+   249→
+   250→  const handlePomodoroToggle = useCallback(() => {
+   251→    setPomodoroRunning((prev) => !prev)
+   252→  }, [])
+   253→
+   254→  const handlePomodoroReset = useCallback(() => {
+   255→    setPomodoroRunning(false)
+   256→    setPomodoroTimeLeft(currentPomodoroMode.duration)
+   257→  }, [currentPomodoroMode.duration])
+   258→
+   259→  const handleExportChat = useCallback(() => {
+   260→    if (messages.length === 0) {
+   261→      toast.error('No messages to export')
+   262→      return
+   263→    }
+   264→    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+   265→    let md = `# SynapseLearn Chat Session\nDate: ${dateStr}\n\n`
+   266→    for (const msg of messages) {
+   267→      const time = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString() : ''
+   268→      const role = msg.role === 'user' ? 'User' : 'Assistant'
+   269→      md += `## ${role}${time ? ` - ${time}` : ''}\n${msg.content}\n\n---\n\n`
+   270→    }
+   271→    const blob = new Blob([md], { type: 'text/markdown' })
+   272→    const url = URL.createObjectURL(blob)
+   273→    const a = document.createElement('a')
+   274→    a.href = url
+   275→    a.download = `synapse-chat-${new Date().toISOString().split('T')[0]}.md`
+   276→    document.body.appendChild(a)
+   277→    a.click()
+   278→    document.body.removeChild(a)
+   279→    URL.revokeObjectURL(url)
+   280→    toast.success('Chat exported successfully')
+   281→  }, [messages])
+   282→
+   283→  const handlePomodoroSkip = useCallback(() => {
+   284→    setPomodoroRunning(false)
+   285→    const nextIndex = (pomodoroModeIndex + 1) % POMODORO_MODES.length
+   286→    // Auto-transition: Focus -> Short Break, every 4th Focus -> Long Break
+   287→    if (pomodoroModeIndex === 0) {
+   288→      // Was in focus mode
+   289→      const newSessionCount = pomodoroSessions + 1
+   290→      setPomodoroSessions(newSessionCount)
+   291→      if (newSessionCount % 4 === 0) {
+   292→        // Every 4th: go to long break
+   293→        setPomodoroModeIndex(2)
+   294→        setPomodoroTimeLeft(POMODORO_MODES[2].duration)
+   295→        return
+   296→      }
+   297→    }
+   298→    setPomodoroModeIndex(nextIndex)
+   299→    setPomodoroTimeLeft(POMODORO_MODES[nextIndex].duration)
+   300→  }, [pomodoroModeIndex, pomodoroSessions])
+   301→
+   302→  // Pomodoro tick
+   303→  useEffect(() => {
+   304→    if (pomodoroRunning) {
+   305→      pomodoroRef.current = setInterval(() => {
+   306→        setPomodoroTimeLeft((prev) => {
+   307→          if (prev <= 1) {
+   308→            playBeep()
+   309→            toast.success(`${currentPomodoroMode.label} session complete!`)
+   310→            return 0
+   311→          }
+   312→          return prev - 1
+   313→        })
+   314→      }, 1000)
+   315→    } else if (pomodoroRef.current) {
+   316→      clearInterval(pomodoroRef.current)
+   317→      pomodoroRef.current = null
+   318→    }
+   319→    return () => {
+   320→      if (pomodoroRef.current) clearInterval(pomodoroRef.current)
+   321→    }
+   322→  }, [pomodoroRunning, currentPomodoroMode.label])
+   323→
+   324→  // Auto-stop pomodoro when time reaches 0
+   325→  useEffect(() => {
+   326→    if (pomodoroTimeLeft === 0 && pomodoroRunning) {
+   327→      setPomodoroRunning(false)
+   328→    }
+   329→  }, [pomodoroTimeLeft, pomodoroRunning])
+   330→
+   331→  // ---------- Session Summary & Search State ----------
+   332→  const [showEndSession, setShowEndSession] = useState(false)
+   333→  const [searchOpen, setSearchOpen] = useState(false)
+   334→  const [searchQuery, setSearchQuery] = useState('')
+   335→  const [confettiParticles] = useState(() =>
+   336→    Array.from({ length: 40 }, (_, i) => ({
+   337→      id: i,
+   338→      x: Math.random() * 100,
+   339→      y: Math.random() * -60 - 10,
+   340→      rotation: Math.random() * 360,
+   341→      scale: Math.random() * 0.6 + 0.4,
+   342→      color: ['#10b981', '#14b8a6', '#06b6d4', '#f59e0b', '#ec4899', '#8b5cf6'][Math.floor(Math.random() * 6)],
+   343→      delay: Math.random() * 0.5,
+   344→      drift: (Math.random() - 0.5) * 60,
+   345→    }))
+   346→  )
+   347→
+   348→  const searchInputRef = useRef<HTMLInputElement>(null)
+   349→
+   350→  // Focus search input when opened
+   351→  useEffect(() => {
+   352→    if (searchOpen && searchInputRef.current) {
+   353→      searchInputRef.current.focus()
+   354→    }
+   355→  }, [searchOpen])
+   356→
+   357→  // Close search on Escape
+   358→  useEffect(() => {
+   359→    const handleKeyDown = (e: KeyboardEvent) => {
+   360→      if (e.key === 'Escape' && searchOpen) {
+   361→        setSearchOpen(false)
+   362→        setSearchQuery('')
+   363→      }
+   364→    }
+   365→    window.addEventListener('keydown', handleKeyDown)
+   366→    return () => window.removeEventListener('keydown', handleKeyDown)
+   367→  }, [searchOpen])
+   368→
+   369→  // ---------- Computed Session Stats ----------
+   370→  const sessionStats = useMemo(() => {
+   371→    const userMsgs = messages.filter((m) => m.role === 'user')
+   372→    const assistantMsgs = messages.filter((m) => m.role === 'assistant')
+   373→    const messagesExchanged = userMsgs.length + assistantMsgs.length
+   374→    const conceptsExplored = Object.keys(masteryMap).length
+   375→    const masteryValues = Object.values(masteryMap)
+   376→    const avgMastery = masteryValues.length > 0
+   377→      ? Math.round(masteryValues.reduce((sum, c) => sum + c.level, 0) / masteryValues.length)
+   378→      : 0
+   379→    const topicsCovered = new Set<string>()
+   380→    if (activeTopic) topicsCovered.add(activeTopic)
+   381→    Object.keys(masteryMap).forEach((k) => topicsCovered.add(k))
+   382→    const keyTakeaways = assistantMsgs
+   383→      .filter((m) => m.content.length > 20)
+   384→      .slice(-3)
+   385→      .map((m) => m.content.length > 100 ? m.content.slice(0, 100) + '…' : m.content)
+   386→    return {
+   387→      duration: timerSeconds,
+   388→      messagesExchanged,
+   389→      topicsCovered: Array.from(topicsCovered),
+   390→      conceptsExplored,
+   391→      avgMastery,
+   392→      keyTakeaways,
+   393→      showConfetti: timerSeconds > 600, // > 10 minutes
+   394→    }
+   395→  }, [messages, masteryMap, activeTopic, timerSeconds])
+   396→
+   397→  // ---------- Chat Search ----------
+   398→  const searchMatches = useMemo(() => {
+   399→    if (!searchQuery.trim()) return { filtered: messages, matchCount: 0 }
+   400→    const q = searchQuery.toLowerCase()
+   401→    const matched = messages.filter((m) => m.content.toLowerCase().includes(q))
+   402→    return { filtered: matched, matchCount: matched.length }
+   403→  }, [messages, searchQuery])
+   404→
+   405→  // Highlight text with emerald background
+   406→  const highlightText = useCallback((text: string, query: string) => {
+   407→    if (!query.trim()) return text
+   408→    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+   409→    const parts = text.split(new RegExp(`(${escaped})`, 'gi'))
+   410→    return parts.map((part, i) =>
+   411→      part.toLowerCase() === query.toLowerCase()
+   412→        ? <mark key={i} className="bg-emerald-300/60 dark:bg-emerald-500/40 text-inherit rounded-sm px-0.5">{part}</mark>
+   413→        : part
+   414→    )
+   415→  }, [])
+   416→
+   417→  const showSlidePanel = (tutorMode === 'slide' || tutorMode === 'hybrid') && activeSlides.length > 0
+   418→
+   419→  // Initialize session on mount
+   420→  useEffect(() => {
+   421→    if (!activeSessionId) {
+   422→      const sessionId = crypto.randomUUID()
+   423→      setActiveSession(sessionId)
+   424→      addMessage({
+   425→        id: crypto.randomUUID(),
+   426→        sessionId,
+   427→        role: 'assistant',
+   428→        content: `Welcome${userName ? ', ' + userName : ''}! I'm your AI tutor. What would you like to learn about today? Pick a topic below or type your own!`,
+   429→        createdAt: new Date().toISOString(),
+   430→      })
+   431→    }
+   432→  }, [])
+   433→
+   434→  // Timer
+   435→  useEffect(() => {
+   436→    if (messages.length > 0 && !timerStarted.current) {
+   437→      timerStarted.current = true
+   438→      timerRef.current = setInterval(() => {
+   439→        setTimerSeconds((s) => s + 1)
+   440→      }, 1000)
+   441→    }
+   442→    return () => {
+   443→      if (timerRef.current) clearInterval(timerRef.current)
+   444→    }
+   445→  }, [messages.length])
+   446→
+   447→  // Auto-scroll to bottom & stop TTS on new messages
+   448→  const prevMessagesLen = useRef(messages.length)
+   449→  useEffect(() => {
+   450→    if (scrollRef.current) {
+   451→      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+   452→    }
+   453→    if (messages.length > prevMessagesLen.current) {
+   454→      stopAllTTS()
+   455→    }
+   456→    prevMessagesLen.current = messages.length
+   457→  }, [messages, isLoading])
+   458→
+   459→  // Auto-resize textarea
+   460→  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+   461→    setInput(e.target.value)
+   462→    const el = e.target
+   463→    const size = INPUT_SIZES[inputSize]
+   464→    el.style.height = 'auto'
+   465→    el.style.height = `${Math.min(el.scrollHeight, size.maxH)}px`
+   466→  }, [inputSize])
+   467→
+   468→  const cycleInputSize = useCallback(() => {
+   469→    setInputSize((prev) => {
+   470→      const idx = INPUT_SIZE_CYCLE.indexOf(prev)
+   471→      const next = INPUT_SIZE_CYCLE[(idx + 1) % INPUT_SIZE_CYCLE.length]
+   472→      return next
+   473→    })
+   474→  }, [])
+   475→
+   476→  const charCount = input.length
+   477→  const charColorClass = charCount < 350 ? 'text-emerald-600 dark:text-emerald-400' : charCount < 450 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'
+   478→
+   479→  // ── Voice Input ──
+   480→  const resetSilenceTimer = useCallback(() => {
+   481→    if (silenceTimerRef.current) {
+   482→      clearTimeout(silenceTimerRef.current)
+   483→    }
+   484→    silenceTimerRef.current = setTimeout(() => {
+   485→      if (speechRef.current && voiceState === 'listening') {
+   486→        speechRef.current.stop()
+   487→      }
+   488→    }, 5000)
+   489→  }, [voiceState])
+   490→
+   491→  const stopVoice = useCallback(() => {
+   492→    if (silenceTimerRef.current) {
+   493→      clearTimeout(silenceTimerRef.current)
+   494→      silenceTimerRef.current = null
+   495→    }
+   496→    if (speechRef.current) {
+   497→      speechRef.current.abort()
+   498→      speechRef.current = null
+   499→    }
+   500→    setVoiceState('idle')
+   501→  }, [])
+   502→
+   503→  const toggleVoice = useCallback(() => {
+   504→    if (voiceState === 'listening') {
+   505→      stopVoice()
+   506→      return
+   507→    }
+   508→
+   509→    const SpeechRecognition = getSpeechRecognition()
+   510→    if (!SpeechRecognition) {
+   511→      toast.error('Voice input is not supported in this browser')
+   512→      return
+   513→    }
+   514→
+   515→    const recognition = new SpeechRecognition()
+   516→    recognition.lang = document.documentElement.lang || navigator.language || 'en-US'
+   517→    recognition.continuous = true
+   518→    recognition.interimResults = true
+   519→    recognition.maxAlternatives = 1
+   520→
+   521→    recognition.onstart = () => {
+   522→      setVoiceState('listening')
+   523→      resetSilenceTimer()
+   524→    }
+   525→
+   526→    recognition.onresult = (event: SpeechRecognitionEventType) => {
+   527→      resetSilenceTimer()
+   528→      let finalTranscript = ''
+   529→      for (let i = event.resultIndex; i < event.results.length; i++) {
+   530→        const result = event.results[i]
+   531→        if (result.isFinal) {
+   532→          finalTranscript += result[0].transcript + ' '
+   533→        }
+   534→      }
+   535→      if (finalTranscript) {
+   536→        setVoiceState('processing')
+   537→        setInput((prev) => {
+   538→          const base = prev.endsWith(' ') ? prev : prev ? prev + ' ' : ''
+   539→          const combined = base + finalTranscript.trim()
+   540→          return combined.length > MAX_INPUT_CHARS ? combined.slice(0, MAX_INPUT_CHARS) : combined
+   541→        })
+   542→        setTimeout(() => {
+   543→          if (voiceState === 'processing') {
+   544→            setVoiceState('listening')
+   545→          }
+   546→        }, 300)
+   547→      }
+   548→    }
+   549→
+   550→    recognition.onerror = (event: { error: string }) => {
+   551→      if (event.error === 'no-speech' || event.error === 'aborted') {
+   552→        setVoiceState('idle')
+   553→      } else {
+   554→        setVoiceState('error')
+   555→        toast.error(`Voice input error: ${event.error}`)
+   556→        setTimeout(() => setVoiceState('idle'), 2000)
+   557→      }
+   558→    }
+   559→
+   560→    recognition.onend = () => {
+   561→      if (silenceTimerRef.current) {
+   562→        clearTimeout(silenceTimerRef.current)
+   563→        silenceTimerRef.current = null
+   564→      }
+   565→      speechRef.current = null
+   566→      setVoiceState('idle')
+   567→    }
+   568→
+   569→    speechRef.current = recognition
+   570→    try {
+   571→      recognition.start()
+   572→    } catch {
+   573→      toast.error('Failed to start voice input')
+   574→      setVoiceState('idle')
+   575→    }
+   576→  }, [voiceState, stopVoice, resetSilenceTimer])
+   577→
+   578→  // Stop voice on Escape key
+   579→  useEffect(() => {
+   580→    const handleKeyDown = (e: KeyboardEvent) => {
+   581→      if (e.key === 'Escape' && voiceState === 'listening') {
+   582→        stopVoice()
+   583→      }
+   584→    }
+   585→    window.addEventListener('keydown', handleKeyDown)
+   586→    return () => window.removeEventListener('keydown', handleKeyDown)
+   587→  }, [voiceState, stopVoice])
+   588→
+   589→  // Cleanup on unmount
+   590→  useEffect(() => {
+   591→    return () => {
+   592→      if (speechRef.current) {
+   593→        speechRef.current.abort()
+   594→      }
+   595→      if (silenceTimerRef.current) {
+   596→        clearTimeout(silenceTimerRef.current)
+   597→      }
+   598→    }
+   599→  }, [])
+   600→
+   601→  const speechSupported = useMemo(() => typeof window !== 'undefined' && !!getSpeechRecognition(), [])
+   602→
+   603→  const handleSend = useCallback(async (text?: string) => {
+   604→    const content = (text || input).trim()
+   605→    if (!content) return
+   606→
+   607→    const sessionId = activeSessionId || crypto.randomUUID()
+   608→    if (!activeSessionId) {
+   609→      setActiveSession(sessionId)
+   610→    }
+   611→
+   612→    const userMsg = {
+   613→      id: crypto.randomUUID(),
+   614→      sessionId,
+   615→      role: 'user' as const,
+   616→      content,
+   617→      createdAt: new Date().toISOString(),
+   618→    }
+   619→    addMessage(userMsg)
+   620→    setInput('')
+   621→
+   622→    if (textareaRef.current) {
+   623→      textareaRef.current.style.height = 'auto'
+   624→    }
+   625→
+   626→    setLoading(true)
+   627→
+   628→    try {
+   629→      const history = messages.map((m) => ({ role: m.role, content: m.content }))
+   630→
+   631→      const res = await fetch('/api/chat', {
+   632→        method: 'POST',
+   633→        headers: { 'Content-Type': 'application/json' },
+   634→        body: JSON.stringify({
+   635→          message: content,
+   636→          phase: sessionPhase,
+   637→          learnerProfile,
+   638→          masteryMap,
+   639→          history,
+   640→          persona: activePersona,
+   641→          moodSettings,
+   642→        }),
+   643→      })
+   644→
+   645→      if (!res.ok) throw new Error('Failed to get response')
+   646→
+   647→      const data = await res.json()
+   648→      const responseText = data.response || data.message || data.content || "I'm sorry, I couldn't generate a response. Please try again."
+   649→
+   650→      addMessage({
+   651→        id: crypto.randomUUID(),
+   652→        sessionId,
+   653→        role: 'assistant',
+   654→        content: responseText,
+   655→        createdAt: new Date().toISOString(),
+   656→      })
+   657→
+   658→      if (sessionPhase === 'discovery' || sessionPhase === 'starter') {
+   659→        setSessionPhase('teaching')
+   660→      }
+   661→    } catch {
+   662→      addMessage({
+   663→        id: crypto.randomUUID(),
+   664→        sessionId,
+   665→        role: 'assistant',
+   666→        content: "Hmm, I ran into an issue. Let me try again — could you repeat your question?",
+   667→        createdAt: new Date().toISOString(),
+   668→      })
+   669→      toast.error('Failed to get a response. Please try again.')
+   670→    } finally {
+   671→      setLoading(false)
+   672→    }
+   673→  }, [input, activeSessionId, messages, sessionPhase, learnerProfile, masteryMap, addMessage, setActiveSession, setLoading, setSessionPhase, activePersona])
+   674→
+   675→  const handleRegenerate = useCallback((messageId: string) => {
+   676→    // Find the user message that preceded this assistant message
+   677→    const msgIndex = messages.findIndex((m) => m.id === messageId)
+   678→    if (msgIndex > 0) {
+   679→      const prevMsg = messages[msgIndex - 1]
+   680→      if (prevMsg.role === 'user') {
+   681→        handleSend(prevMsg.content)
+   682→      }
+   683→    }
+   684→  }, [messages, handleSend])
+   685→
+   686→  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+   687→    if (e.key === 'Enter' && !e.shiftKey) {
+   688→      e.preventDefault()
+   689→      handleSend()
+   690→    }
+   691→  }
+   692→
+   693→  const handleTopicClick = (topic: string) => {
+   694→    setActiveTopic(topic)
+   695→    handleSend(`I'd like to learn about ${topic}`)
+   696→  }
+   697→
+   698→  const handleQuickAction = (prompt: string) => {
+   699→    handleSend(prompt)
+   700→  }
+   701→
+   702→  const handleSaveAndClose = useCallback(() => {
+   703→    navigate('dashboard')
+   704→  }, [navigate])
+   705→
+   706→  return (
+   707→    <div className="h-screen flex flex-col bg-background">
+   708→      {/* Header - Frosted glass */}
+   709→      <header className="glass-header flex items-center justify-between px-4 py-3 z-10">
+   710→        <div className="flex items-center gap-3">
+   711→          {/* AI Active indicator + name */}
+   712→          <div className="flex items-center gap-2">
+   713→            <motion.span
+   714→              className="relative flex h-2.5 w-2.5"
+   715→              animate={{
+   716→                boxShadow: [
+   717→                  '0 0 0 0 rgba(16, 185, 129, 0.5)',
+   718→                  '0 0 0 5px rgba(16, 185, 129, 0)',
+   719→                ],
+   720→              }}
+   721→              transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+   722→            >
+   723→              <span className="absolute inset-0 rounded-full bg-emerald-500" />
+   724→            </motion.span>
+   725→            <h1 className="text-lg font-semibold">
+   726→              {activeTopic || 'AI Tutor'}
+   727→            </h1>
+   728→          </div>
+   729→          <Badge variant="secondary" className={getPhaseColor(sessionPhase)}>
+   730→            {sessionPhase}
+   731→          </Badge>
+   732→          {/* Mode Selector - Pill toggle with sliding indicator */}
+   733→          <div className="hidden sm:flex items-center rounded-lg border border-border bg-background/50 p-0.5 relative">
+   734→            <AnimatePresence>
+   735→              {tutorMode && (
+   736→                <motion.div
+   737→                  layoutId="tutor-mode-indicator"
+   738→                  className="absolute inset-y-0.5 rounded-md bg-primary shadow-sm"
+   739→                  style={{
+   740→                    left: TUTOR_MODES.findIndex((m) => m.id === tutorMode) === 0
+   741→                      ? '2px'
+   742→                      : TUTOR_MODES.findIndex((m) => m.id === tutorMode) === 1
+   743→                        ? `${100 / 3}%`
+   744→                        : `${(200 / 3)}%`,
+   745→                    width: `${100 / 3}%`,
+   746→                  }}
+   747→                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+   748→                />
+   749→              )}
+   750→            </AnimatePresence>
+   751→            {TUTOR_MODES.map((mode) => {
+   752→              const Icon = mode.icon
+   753→              const isActive = tutorMode === mode.id
+   754→              return (
+   755→                <motion.button
+   756→                  key={mode.id}
+   757→                  onClick={() => setTutorMode(mode.id)}
+   758→                  whileHover={{ scale: 1.04 }}
+   759→                  whileTap={{ scale: 0.96 }}
+   760→                  className={`relative z-10 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+   761→                    isActive
+   762→                      ? 'text-primary-foreground'
+   763→                      : 'text-muted-foreground hover:text-foreground'
+   764→                  }`}
+   765→                  title={mode.desc}
+   766→                >
+   767→                  <Icon className="w-3.5 h-3.5" />
+   768→                  {mode.label}
+   769→                </motion.button>
+   770→              )
+   771→            })}
+   772→          </div>
+   773→        </div>
+   774→        <div className="flex items-center gap-3">
+   775→          {/* Collapsible Pomodoro Timer */}
+   776→          <div className="relative">
+   777→            <button
+   778→              onClick={() => setPomodoroExpanded(!pomodoroExpanded)}
+   779→              className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-border glass hover:bg-accent/50 transition-colors"
+   780→              aria-label="Toggle Pomodoro timer"
+   781→            >
+   782→              <svg width="20" height="20" className="-rotate-90">
+   783→                <circle
+   784→                  cx="10"
+   785→                  cy="10"
+   786→                  r="8"
+   787→                  fill="none"
+   788→                  stroke="currentColor"
+   789→                  strokeWidth="2"
+   790→                  className="text-muted/30"
+   791→                />
+   792→                <circle
+   793→                  cx="10"
+   794→                  cy="10"
+   795→                  r="8"
+   796→                  fill="none"
+   797→                  stroke="url(#pomoGrad)"
+   798→                  strokeWidth="2"
+   799→                  strokeLinecap="round"
+   800→                  strokeDasharray={pomodoroCircumference}
+   801→                  strokeDashoffset={pomodoroStrokeOffset}
+   802→                  className="transition-all duration-500"
+   803→                />
+   804→                <defs>
+   805→                  <linearGradient id="pomoGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+   806→                    <stop offset="0%" stopColor="#10b981" />
+   807→                    <stop offset="100%" stopColor="#14b8a6" />
+   808→                  </linearGradient>
+   809→                </defs>
+   810→              </svg>
+   811→              <span className={`font-mono text-xs font-medium ${currentPomodoroMode.color}`}>
+   812→                {Math.floor(pomodoroTimeLeft / 60)}:{String(pomodoroTimeLeft % 60).padStart(2, '0')}
+   813→              </span>
+   814→            </button>
+   815→
+   816→            {/* Expanded Pomodoro Panel */}
+   817→            <AnimatePresence>
+   818→              {pomodoroExpanded && (
+   819→                <motion.div
+   820→                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
+   821→                  animate={{ opacity: 1, y: 0, scale: 1 }}
+   822→                  exit={{ opacity: 0, y: -8, scale: 0.95 }}
+   823→                  transition={{ duration: 0.2, ease: 'easeOut' }}
+   824→                  className="absolute top-full right-0 mt-2 z-50 w-64 rounded-xl border bg-card p-4 shadow-lg space-y-3"
+   825→                >
+   826→                  {/* Mode tabs */}
+   827→                  <div className="flex items-center rounded-lg border border-border bg-background/50 p-0.5">
+   828→                    {POMODORO_MODES.map((mode, i) => {
+   829→                      const Icon = mode.icon
+   830→                      return (
+   831→                        <button
+   832→                          key={mode.id}
+   833→                          onClick={() => {
+   834→                            setPomodoroModeIndex(i)
+   835→                            setPomodoroTimeLeft(mode.duration)
+   836→                            setPomodoroRunning(false)
+   837→                          }}
+   838→                          className={`flex-1 flex items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all ${
+   839→                            pomodoroModeIndex === i
+   840→                              ? 'bg-primary text-primary-foreground shadow-sm'
+   841→                              : 'text-muted-foreground hover:text-foreground'
+   842→                          }`}
+   843→                        >
+   844→                          <Icon className="w-3 h-3" />
+   845→                          <span className="hidden sm:inline">{mode.label}</span>
+   846→                        </button>
+   847→                      )
+   848→                    })}
+   849→                  </div>
+   850→
+   851→                  {/* Circular timer */}
+   852→                  <div className="flex justify-center">
+   853→                    <div className="relative">
+   854→                      <svg width="96" height="96" className="-rotate-90">
+   855→                        <circle
+   856→                          cx="48"
+   857→                          cy="48"
+   858→                          r="42"
+   859→                          fill="none"
+   860→                          stroke="currentColor"
+   861→                          strokeWidth="4"
+   862→                          className="text-muted/20"
+   863→                        />
+   864→                        <motion.circle
+   865→                          cx="48"
+   866→                          cy="48"
+   867→                          r="42"
+   868→                          fill="none"
+   869→                          stroke="url(#pomoGradLarge)"
+   870→                          strokeWidth="4"
+   871→                          strokeLinecap="round"
+   872→                          strokeDasharray={2 * Math.PI * 42}
+   873→                          strokeDashoffset={2 * Math.PI * 42 * (1 - pomodoroProgress)}
+   874→                          className="transition-all duration-1000"
+   875→                        />
+   876→                        <defs>
+   877→                          <linearGradient id="pomoGradLarge" x1="0%" y1="0%" x2="100%" y2="0%">
+   878→                            <stop offset="0%" stopColor="#10b981" />
+   879→                            <stop offset="100%" stopColor="#14b8a6" />
+   880→                          </linearGradient>
+   881→                        </defs>
+   882→                      </svg>
+   883→                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+   884→                        <span className={`text-2xl font-bold font-mono ${currentPomodoroMode.color}`}>
+   885→                          {Math.floor(pomodoroTimeLeft / 60)}:{String(pomodoroTimeLeft % 60).padStart(2, '0')}
+   886→                        </span>
+   887→                        <span className="text-[10px] text-muted-foreground mt-0.5">{currentPomodoroMode.label}</span>
+   888→                      </div>
+   889→                    </div>
+   890→                  </div>
+   891→
+   892→                  {/* Session count */}
+   893→                  <div className="text-center">
+   894→                    <span className="text-xs text-muted-foreground">
+   895→                      Session <span className={`font-bold ${currentPomodoroMode.color}`}>{(pomodoroSessions % 4) + 1}</span> / 4
+   896→                    </span>
+   897→                  </div>
+   898→
+   899→                  {/* Controls */}
+   900→                  <div className="flex items-center justify-center gap-2">
+   901→                    <Button
+   902→                      variant="outline"
+   903→                      size="icon"
+   904→                      className="h-8 w-8"
+   905→                      onClick={handlePomodoroReset}
+   906→                      aria-label="Reset timer"
+   907→                    >
+   908→                      <RotateCcw className="w-3.5 h-3.5" />
+   909→                    </Button>
+   910→                    <Button
+   911→                      size="icon"
+   912→                      className="h-9 w-9"
+   913→                      onClick={handlePomodoroToggle}
+   914→                      aria-label={pomodoroRunning ? 'Pause' : 'Start'}
+   915→                    >
+   916→                      {pomodoroRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+   917→                    </Button>
+   918→                    <Button
+   919→                      variant="outline"
+   920→                      size="icon"
+   921→                      className="h-8 w-8"
+   922→                      onClick={handlePomodoroSkip}
+   923→                      aria-label="Skip to next"
+   924→                    >
+   925→                      <SkipForward className="w-3.5 h-3.5" />
+   926→                    </Button>
+   927→                  </div>
+   928→                </motion.div>
+   929→              )}
+   930→            </AnimatePresence>
+   931→          </div>
+   932→
+   933→          {/* Session timer with pulsing emerald ring when running */}
+   934→          <motion.div
+   935→            className="relative"
+   936→            animate={timerSeconds > 0 ? {
+   937→              boxShadow: [
+   938→                '0 0 0 0 rgba(16, 185, 129, 0.2)',
+   939→                '0 0 0 4px rgba(16, 185, 129, 0)',
+   940→              ],
+   941→            } : {}}
+   942→            transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+   943→          >
+   944→            <Badge variant="outline" className="font-mono text-xs rounded-full">
+   945→              <span className={timerSeconds > 0 ? 'text-emerald-600 dark:text-emerald-400' : ''}>
+   946→                {formatTimer(timerSeconds)}
+   947→              </span>
+   948→            </Badge>
+   949→          </motion.div>
+   950→          {/* Word Count Stats Pill */}
+   951→          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 glass text-xs text-muted-foreground">
+   952→            <MessageCircle className="w-3 h-3 text-emerald-500" />
+   953→            <span className="font-mono font-medium tabular-nums">{messages.length}</span>
+   954→            <span className="text-muted-foreground/60">·</span>
+   955→            <Clock className="w-3 h-3 text-emerald-500" />
+   956→            <span className="font-mono font-medium tabular-nums">{formatTimer(timerSeconds)}</span>
+   957→          </div>
+   958→          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
+   959→            <Button
+   960→              variant="ghost"
+   961→              size="icon"
+   962→              onClick={() => setRightPanelOpen(!rightPanelOpen)}
+   963→              className="gradient-border rounded-lg"
+   964→              aria-label={rightPanelOpen ? 'Close side panel' : 'Open side panel'}
+   965→            >
+   966→              {rightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+   967→            </Button>
+   968→          </motion.div>
+   969→        </div>
+   970→      </header>
+   971→
+   972→      {/* Main Content */}
+   973→      <div className="flex-1 flex overflow-hidden">
+   974→        {/* Slide Panel - visible in slide or hybrid mode when slides exist */}
+   975→        {showSlidePanel && (
+   976→          <motion.div
+   977→            initial={{ width: 0, opacity: 0 }}
+   978→            animate={{ width: tutorMode === 'slide' ? '50%' : '40%', opacity: 1 }}
+   979→            transition={{ duration: 0.3, ease: 'easeInOut' }}
+   980→            className="border-r glass overflow-hidden flex flex-col card-shadow"
+   981→          >
+   982→            <div className="p-3 border-b">
+   983→              <div className="flex items-center justify-between">
+   984→                <div className="flex items-center gap-2">
+   985→                  <BookOpen className="w-4 h-4 text-primary" />
+   986→                  <span className="text-sm font-semibold">Course Slides</span>
+   987→                </div>
+   988→                <Badge variant="secondary" className="text-[10px]">
+   989→                  {currentSlideIndex + 1} / {activeSlides.length}
+   990→                </Badge>
+   991→              </div>
+   992→            </div>
+   993→            <ScrollArea className="flex-1">
+   994→              <div className="p-4">
+   995→                {/* Slide navigation dots */}
+   996→                <div className="flex gap-1 mb-3 flex-wrap">
+   997→                  {activeSlides.map((_, idx) => (
+   998→                    <button
+   999→                      key={idx}
+  1000→                      onClick={() => setCurrentSlideIndex(idx)}
+  1001→                      className={`h-2 rounded-full transition-all ${
+  1002→                        idx === currentSlideIndex
+  1003→                          ? 'bg-primary w-6'
+  1004→                          : 'bg-muted w-2 hover:bg-primary/50'
+  1005→                      }`}
+  1006→                    />
+  1007→                  ))}
+  1008→                </div>
+  1009→                {activeSlides[currentSlideIndex] && (
+  1010→                  <div className="space-y-3">
+  1011→                    <h3 className="text-sm font-semibold text-foreground">
+  1012→                      {activeSlides[currentSlideIndex].title}
+  1013→                    </h3>
+  1014→                    <div className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
+  1015→                      {activeSlides[currentSlideIndex].content}
+  1016→                    </div>
+  1017→                    <div className="flex gap-2 pt-2">
+  1018→                      <Button
+  1019→                        variant="outline"
+  1020→                        size="sm"
+  1021→                        className="h-7 text-xs"
+  1022→                        disabled={currentSlideIndex === 0}
+  1023→                        onClick={() => setCurrentSlideIndex(currentSlideIndex - 1)}
+  1024→                      >
+  1025→                        Previous
+  1026→                      </Button>
+  1027→                      <Button
+  1028→                        variant="outline"
+  1029→                        size="sm"
+  1030→                        className="h-7 text-xs"
+  1031→                        disabled={currentSlideIndex === activeSlides.length - 1}
+  1032→                        onClick={() => setCurrentSlideIndex(currentSlideIndex + 1)}
+  1033→                      >
+  1034→                        Next
+  1035→                      </Button>
+  1036→                    </div>
+  1037→                  </div>
+  1038→                )}
+  1039→              </div>
+  1040→            </ScrollArea>
+  1041→          </motion.div>
+  1042→        )}
+  1043→
+  1044→        {/* Chat Panel */}
+  1045→        <div className="flex-1 flex flex-col min-w-0">
+  1046→          {/* Course Context Panel - fallback when no dedicated slide panel */}
+  1047→          {!showSlidePanel && <CourseContextPanel />}
+  1048→
+  1049→          {/* Chat sub-header with search button */}
+  1050→          <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
+  1051→            <span className="text-xs text-muted-foreground">
+  1052→              {activeTopic ? `Studying: ${activeTopic}` : 'Ready to learn'}
+  1053→            </span>
+  1054→            <motion.button
+  1055→              whileHover={{ scale: 1.08 }}
+  1056→              whileTap={{ scale: 0.92 }}
+  1057→              onClick={() => { setSearchOpen(!searchOpen); if (searchOpen) setSearchQuery('') }}
+  1058→              className={`p-1.5 rounded-lg transition-colors ${searchOpen ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' : 'hover:bg-accent text-muted-foreground hover:text-foreground'}`}
+  1059→              aria-label="Search within chat"
+  1060→            >
+  1061→              <Search className="w-4 h-4" />
+  1062→            </motion.button>
+  1063→          </div>
+  1064→
+  1065→          {/* Search Bar - slides down with framer-motion */}
+  1066→          <AnimatePresence>
+  1067→            {searchOpen && (
+  1068→              <motion.div
+  1069→                initial={{ height: 0, opacity: 0 }}
+  1070→                animate={{ height: 'auto', opacity: 1 }}
+  1071→                exit={{ height: 0, opacity: 0 }}
+  1072→                transition={{ duration: 0.2, ease: 'easeOut' }}
+  1073→                className="overflow-hidden border-b border-border/60"
+  1074→              >
+  1075→                <div className="flex items-center gap-2 px-4 py-2 glass">
+  1076→                  <Search className="w-4 h-4 text-muted-foreground shrink-0" />
+  1077→                  <input
+  1078→                    ref={searchInputRef}
+  1079→                    type="text"
+  1080→                    value={searchQuery}
+  1081→                    onChange={(e) => setSearchQuery(e.target.value)}
+  1082→                    placeholder="Search within chat..."
+  1083→                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+  1084→                  />
+  1085→                  {searchQuery && (
+  1086→                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+  1087→                      {searchMatches.matchCount} match{searchMatches.matchCount !== 1 ? 'es' : ''}
+  1088→                    </span>
+  1089→                  )}
+  1090→                  <button
+  1091→                    onClick={() => { setSearchOpen(false); setSearchQuery('') }}
+  1092→                    className="shrink-0 p-0.5 rounded-md hover:bg-accent transition-colors"
+  1093→                    aria-label="Close search"
+  1094→                  >
+  1095→                    <X className="w-3.5 h-3.5 text-muted-foreground" />
+  1096→                  </button>
+  1097→                </div>
+  1098→              </motion.div>
+  1099→            )}
+  1100→          </AnimatePresence>
+  1101→
+  1102→          <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+  1103→            {/* Quick topic chips when no topic is set */}
+  1104→            {!activeTopic && messages.length <= 1 && (
+  1105→              <div className="flex flex-wrap gap-2 mb-4 justify-center">
+  1106→                {QUICK_TOPICS.map((topic) => (
+  1107→                  <Button
+  1108→                    key={topic}
+  1109→                    variant="outline"
+  1110→                    size="sm"
+  1111→                    className="rounded-full text-xs"
+  1112→                    onClick={() => handleTopicClick(topic)}
+  1113→                  >
+  1114→                    {topic}
+  1115→                  </Button>
+  1116→                ))}
+  1117→              </div>
+  1118→            )}
+  1119→
+  1120→            {searchOpen && searchQuery.trim()
+  1121→              ? searchMatches.matchCount > 0
+  1122→                ? searchMatches.filtered.map((msg) => (
+  1123→                    <motion.div
+  1124→                      key={msg.id}
+  1125→                      initial={{ opacity: 0, y: 4 }}
+  1126→                      animate={{ opacity: 1, y: 0 }}
+  1127→                      transition={{ duration: 0.15 }}
+  1128→                      className={`rounded-xl p-3 mb-2 border ${
+  1129→                        msg.role === 'user'
+  1130→                          ? 'ml-8 bg-primary/5 border-primary/20'
+  1131→                          : 'mr-8 glass border-border/40'
+  1132→                      }`}
+  1133→                    >
+  1134→                      <div className="flex items-center gap-1.5 mb-1.5">
+  1135→                        <span className={`text-[10px] font-semibold uppercase tracking-wide ${msg.role === 'user' ? 'text-primary' : 'text-emerald-600 dark:text-emerald-400'}`}>
+  1136→                          {msg.role === 'user' ? 'You' : 'AI Tutor'}
+  1137→                        </span>
+  1138→                      </div>
+  1139→                      <div className="text-sm leading-relaxed text-foreground/90">
+  1140→                        {highlightText(msg.content, searchQuery)}
+  1141→                      </div>
+  1142→                    </motion.div>
+  1143→                  ))
+  1144→                : (
+  1145→                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+  1146→                      <Search className="w-8 h-8 mb-2 opacity-40" />
+  1147→                      <p className="text-sm">No messages match "{searchQuery}"</p>
+  1148→                    </div>
+  1149→                  )
+  1150→              : messages.map((msg) => (
+  1151→                  <ChatBubble
+  1152→                    key={msg.id}
+  1153→                    message={msg}
+  1154→                    isStreaming={false}
+  1155→                    onRegenerate={msg.role === 'assistant' ? handleRegenerate : undefined}
+  1156→                  />
+  1157→                ))
+  1158→            }
+  1159→
+  1160→            {isLoading && <TypingIndicator />}
+  1161→          </ScrollArea>
+  1162→
+  1163→          {/* Input Area */}
+  1164→          <div className="border-t glass gradient-border">
+  1165→            {/* Suggested Prompts Bar */}
+  1166→            <AnimatePresence>
+  1167→              {!inputFocused && input.trim() === '' && !isLoading && (
+  1168→                <motion.div
+  1169→                  initial={{ opacity: 0, height: 0 }}
+  1170→                  animate={{ opacity: 1, height: 'auto' }}
+  1171→                  exit={{ opacity: 0, height: 0 }}
+  1172→                  transition={{ duration: 0.2, ease: 'easeOut' }}
+  1173→                  className="overflow-hidden"
+  1174→                >
+  1175→                  <div className="px-3 pt-2.5 pb-1 max-w-3xl mx-auto">
+  1176→                    <div className="flex flex-wrap gap-1.5">
+  1177→                      {SUGGESTED_PROMPTS.map((prompt) => (
+  1178→                        <motion.button
+  1179→                          key={prompt}
+  1180→                          whileHover={{ scale: 1.03, y: -1 }}
+  1181→                          whileTap={{ scale: 0.97 }}
+  1182→                          onClick={() => handleSend(prompt)}
+  1183→                          className="px-3 py-1.5 text-xs font-medium rounded-full border border-border/60 glass-hover text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors"
+  1184→                        >
+  1185→                          {prompt}
+  1186→                        </motion.button>
+  1187→                      ))}
+  1188→                    </div>
+  1189→                  </div>
+  1190→                </motion.div>
+  1191→              )}
+  1192→            </AnimatePresence>
+  1193→
+  1194→            <div className="px-3 pb-3 pt-1">
+  1195→              <div className="max-w-3xl mx-auto">
+  1196→                {/* Gradient border glow wrapper */}
+  1197→                <div className="relative gradient-border rounded-xl">
+  1198→                  {inputFocused && (
+  1199→                    <motion.div
+  1200→                      layoutId="input-glow"
+  1201→                      className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-emerald-500/30 via-teal-500/30 to-emerald-500/30 blur-sm -z-10"
+  1202→                      initial={{ opacity: 0 }}
+  1203→                      animate={{ opacity: 1 }}
+  1204→                      exit={{ opacity: 0 }}
+  1205→                      transition={{ duration: 0.3 }}
+  1206→                    />
+  1207→                  )}
+  1208→                  <div className="flex items-end gap-1.5 glass rounded-xl border border-border/60 p-1.5 transition-shadow duration-300">
+  1209→                    <Textarea
+  1210→                      ref={textareaRef}
+  1211→                      placeholder="Ask me anything..."
+  1212→                      value={input}
+  1213→                      onChange={handleInputChange}
+  1214→                      onKeyDown={handleKeyDown}
+  1215→                      onFocus={() => setInputFocused(true)}
+  1216→                      onBlur={() => setInputFocused(false)}
+  1217→                      className="resize-none flex-1 border-0 shadow-none focus-visible:ring-0 p-2 text-sm bg-transparent placeholder:text-muted-foreground"
+  1218→                      style={{ minHeight: INPUT_SIZES[inputSize].minH, maxHeight: INPUT_SIZES[inputSize].maxH }}
+  1219→                      rows={INPUT_SIZES[inputSize].rows}
+  1220→                    />
+  1221→
+  1222→                    {/* Character count */}
+  1223→                    <div className="flex items-center gap-1 pb-1.5 pr-1">
+  1224→                      {charCount > 0 && (
+  1225→                        <motion.span
+  1226→                          initial={{ opacity: 0, x: 4 }}
+  1227→                          animate={{ opacity: 1, x: 0 }}
+  1228→                          exit={{ opacity: 0, x: 4 }}
+  1229→                          className={`text-[10px] font-mono tabular-nums ${charColorClass}`}
+  1230→                        >
+  1231→                          {charCount}/{MAX_INPUT_CHARS}
+  1232→                        </motion.span>
+  1233→                      )}
+  1234→
+  1235→                      {/* Voice Input (Mic) Button */}
+  1236→                      <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
+  1237→                        <Button
+  1238→                          variant="ghost"
+  1239→                          size="icon"
+  1240→                          className={`h-7 w-7 rounded-lg transition-all ${
+  1241→                            voiceState === 'listening'
+  1242→                              ? 'text-red-500 dark:text-red-400'
+  1243→                              : voiceState === 'error'
+  1244→                                ? 'text-red-500 dark:text-red-400'
+  1245→                                : voiceState === 'processing'
+  1246→                                  ? 'text-amber-500 dark:text-amber-400'
+  1247→                                  : speechSupported
+  1248→                                    ? 'text-muted-foreground hover:text-foreground'
+  1249→                                    : 'text-muted-foreground/30 cursor-not-allowed'
+  1250→                          }`}
+  1251→                          onClick={toggleVoice}
+  1252→                          disabled={!speechSupported || voiceState === 'processing'}
+  1253→                          aria-label={
+  1254→                            voiceState === 'listening'
+  1255→                              ? 'Stop voice input'
+  1256→                              : voiceState === 'processing'
+  1257→                                ? 'Processing voice...'
+  1258→                                : speechSupported
+  1259→                                  ? 'Start voice input'
+  1260→                                  : 'Voice input not supported'
+  1261→                          }
+  1262→                          title={
+  1263→                            !speechSupported
+  1264→                              ? 'Voice input not supported in this browser'
+  1265→                              : voiceState === 'listening'
+  1266→                                ? 'Click to stop'
+  1267→                                : 'Voice input'
+  1268→                          }
+  1269→                        >
+  1270→                          <AnimatePresence mode="wait">
+  1271→                            {voiceState === 'listening' ? (
+  1272→                              <motion.span
+  1273→                                key="listening"
+  1274→                                initial={{ scale: 0.8, opacity: 0 }}
+  1275→                                animate={{ scale: 1, opacity: 1 }}
+  1276→                                exit={{ scale: 0.8, opacity: 0 }}
+  1277→                                className="relative flex items-center justify-center"
+  1278→                              >
+  1279→                                {/* Pulsing ring */}
+  1280→                                <motion.span
+  1281→                                  className="absolute inset-0 rounded-full bg-red-500/20"
+  1282→                                  animate={{ scale: [1, 1.8], opacity: [0.6, 0] }}
+  1283→                                  transition={{ duration: 1.2, repeat: Infinity, ease: 'easeOut' }}
+  1284→                                />
+  1285→                                <motion.span
+  1286→                                  className="absolute inset-0 rounded-full bg-red-500/15"
+  1287→                                  animate={{ scale: [1, 2.2], opacity: [0.4, 0] }}
+  1288→                                  transition={{ duration: 1.2, repeat: Infinity, ease: 'easeOut', delay: 0.4 }}
+  1289→                                />
+  1290→                                <Mic className="w-3.5 h-3.5 relative z-10" />
+  1291→                              </motion.span>
+  1292→                            ) : voiceState === 'processing' ? (
+  1293→                              <motion.span
+  1294→                                key="processing"
+  1295→                                initial={{ scale: 0.8, opacity: 0 }}
+  1296→                                animate={{ scale: 1, opacity: 1 }}
+  1297→                                exit={{ scale: 0.8, opacity: 0 }}
+  1298→                              >
+  1299→                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+  1300→                              </motion.span>
+  1301→                            ) : (
+  1302→                              <motion.span
+  1303→                                key="idle"
+  1304→                                initial={{ scale: 0.8, opacity: 0 }}
+  1305→                                animate={{ scale: 1, opacity: 1 }}
+  1306→                                exit={{ scale: 0.8, opacity: 0 }}
+  1307→                              >
+  1308→                                <Mic className="w-3.5 h-3.5" />
+  1309→                              </motion.span>
+  1310→                            )}
+  1311→                          </AnimatePresence>
+  1312→                        </Button>
+  1313→                      </motion.div>
+  1314→
+  1315→                      {/* Waveform animation when listening */}
+  1316→                      <AnimatePresence>
+  1317→                        {voiceState === 'listening' && (
+  1318→                          <motion.div
+  1319→                            initial={{ opacity: 0, width: 0 }}
+  1320→                            animate={{ opacity: 1, width: 'auto' }}
+  1321→                            exit={{ opacity: 0, width: 0 }}
+  1322→                            className="flex items-center gap-0.5 overflow-hidden"
+  1323→                          >
+  1324→                            {[0, 1, 2].map((i) => (
+  1325→                              <motion.div
+  1326→                                key={i}
+  1327→                                className="w-0.5 bg-red-500 dark:bg-red-400 rounded-full"
+  1328→                                animate={{
+  1329→                                  height: [4, 12 + i * 4, 4],
+  1330→                                }}
+  1331→                                transition={{
+  1332→                                  duration: 0.6,
+  1333→                                  repeat: Infinity,
+  1334→                                  ease: 'easeInOut',
+  1335→                                  delay: i * 0.15,
+  1336→                                }}
+  1337→                              />
+  1338→                            ))}
+  1339→                            <span className="text-[10px] text-red-500 dark:text-red-400 font-medium ml-1 whitespace-nowrap">
+  1340→                              Listening...
+  1341→                            </span>
+  1342→                          </motion.div>
+  1343→                        )}
+  1344→                      </AnimatePresence>
+  1345→
+  1346→                      {/* Expand/Collapse button */}
+  1347→                      <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
+  1348→                        <Button
+  1349→                          variant="ghost"
+  1350→                          size="icon"
+  1351→                          className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+  1352→                          onClick={cycleInputSize}
+  1353→                          aria-label={`Input size: ${INPUT_SIZES[inputSize].label}. Click to change.`}
+  1354→                        >
+  1355→                          {inputSize === 'small' ? (
+  1356→                            <ChevronUp className="w-3.5 h-3.5" />
+  1357→                          ) : inputSize === 'large' ? (
+  1358→                            <ChevronDown className="w-3.5 h-3.5" />
+  1359→                          ) : (
+  1360→                            <Maximize2 className="w-3.5 h-3.5" />
+  1361→                          )}
+  1362→                        </Button>
+  1363→                      </motion.div>
+  1364→
+  1365→                      {/* Quick actions menu */}
+  1366→                      <DropdownMenu>
+  1367→                        <DropdownMenuTrigger asChild>
+  1368→                          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" aria-label="Quick actions">
+  1369→                            <MoreHorizontal className="w-3.5 h-3.5" />
+  1370→                          </Button>
+  1371→                        </DropdownMenuTrigger>
+  1372→                        <DropdownMenuContent align="end" className="w-48">
+  1373→                          {QUICK_ACTIONS.map((action) => (
+  1374→                            <DropdownMenuItem
+  1375→                              key={action.label}
+  1376→                              onClick={() => handleQuickAction(action.prompt)}
+  1377→                              className="gap-2"
+  1378→                            >
+  1379→                              <action.icon className="w-4 h-4" />
+  1380→                              {action.label}
+  1381→                            </DropdownMenuItem>
+  1382→                          ))}
+  1383→                        </DropdownMenuContent>
+  1384→                      </DropdownMenu>
+  1385→
+  1386→                      {/* Send button */}
+  1387→                      <Button
+  1388→                        size="icon"
+  1389→                        className={`shrink-0 h-7 w-7 rounded-lg ${input.trim() ? 'pulse-glow' : ''}`}
+  1390→                        onClick={() => handleSend()}
+  1391→                        disabled={!input.trim() || isLoading}
+  1392→                        aria-label="Send message"
+  1393→                      >
+  1394→                        <Send className="w-3.5 h-3.5" />
+  1395→                      </Button>
+  1396→                    </div>
+  1397→                  </div>
+  1398→                </div>
+  1399→
+  1400→                {/* Contextual suggestion chips below input */}
+  1401→                <AnimatePresence>
+  1402→                  {!isLoading && (
+  1403→                    <motion.div
+  1404→                      initial={{ opacity: 0, y: 6 }}
+  1405→                      animate={{ opacity: 1, y: 0 }}
+  1406→                      exit={{ opacity: 0, y: 6 }}
+  1407→                      transition={{ duration: 0.25, ease: 'easeOut' }}
+  1408→                      className="flex flex-wrap gap-1.5 mt-2 justify-center"
+  1409→                    >
+  1410→                      {CONTEXTUAL_SUGGESTIONS.map((suggestion, index) => (
+  1411→                        <motion.button
+  1412→                          key={suggestion}
+  1413→                          initial={{ opacity: 0, y: 8, scale: 0.95 }}
+  1414→                          animate={{ opacity: 1, y: 0, scale: 1 }}
+  1415→                          transition={{
+  1416→                            type: 'spring',
+  1417→                            stiffness: 400,
+  1418→                            damping: 28,
+  1419→                            delay: index * 0.06,
+  1420→                          }}
+  1421→                          whileHover={{ scale: 1.05, y: -1 }}
+  1422→                          whileTap={{ scale: 0.95 }}
+  1423→                          onClick={() => handleSend(suggestion)}
+  1424→                          className="px-3 py-1 text-[11px] font-medium rounded-full border border-border/60 bg-background/40 text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-primary/5 transition-colors"
+  1425→                        >
+  1426→                          {suggestion}
+  1427→                        </motion.button>
+  1428→                      ))}
+  1429→                    </motion.div>
+  1430→                  )}
+  1431→                </AnimatePresence>
+  1432→              </div>
+  1433→            </div>
+  1434→          </div>
+  1435→        </div>
+  1436→
+  1437→        {/* Right Panel */}
+  1438→        {rightPanelOpen && (
+  1439→          <div className="w-72 border-l glass overflow-y-auto hidden md:block card-shadow">
+  1440→            <div className="p-4 space-y-5">
+  1441→              {/* Session Phase */}
+  1442→              <div className="space-y-2">
+  1443→                <h4 className="text-sm font-semibold text-foreground">Session Phase</h4>
+  1444→                <Badge className={getPhaseColor(sessionPhase)}>
+  1445→                  {sessionPhase.charAt(0).toUpperCase() + sessionPhase.slice(1)}
+  1446→                </Badge>
+  1447→              </div>
+  1448→
+  1449→              <Separator />
+  1450→
+  1451→              {/* Learner Profile */}
+  1452→              {learnerProfile && (
+  1453→                <div className="space-y-2">
+  1454→                  <h4 className="text-sm font-semibold text-foreground">Learner Profile</h4>
+  1455→                  <div className="text-xs text-muted-foreground space-y-1">
+  1456→                    <p><span className="font-medium text-foreground">Style:</span> {learnerProfile.learningStyle}</p>
+  1457→                    <p><span className="font-medium text-foreground">Pace:</span> {learnerProfile.pace}</p>
+  1458→                  </div>
+  1459→                </div>
+  1460→              )}
+  1461→
+  1462→              <Separator />
+  1463→
+  1464→              {/* Mastery Tracker */}
+  1465→              <MasteryTracker />
+  1466→
+  1467→              <Separator />
+  1468→
+  1469→              {/* Session Controls */}
+  1470→              <SessionControls />
+  1471→
+  1472→              {/* End Session Button */}
+  1473→              <div className="flex gap-2">
+  1474→                <motion.div whileTap={{ scale: 0.95 }} className="flex-1">
+  1475→                  <Button
+  1476→                    variant="outline"
+  1477→                    className="w-full gap-2 text-sm border-emerald-200 dark:border-emerald-900/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors glass"
+  1478→                    onClick={handleExportChat}
+  1479→                  >
+  1480→                    <Download className="w-4 h-4" />
+  1481→                    Export Chat
+  1482→                  </Button>
+  1483→                </motion.div>
+  1484→                <motion.div whileTap={{ scale: 0.95 }} className="flex-1">
+  1485→                  <Button
+  1486→                    variant="outline"
+  1487→                    className="w-full gap-2 text-sm border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+  1488→                    onClick={() => setShowEndSession(true)}
+  1489→                  >
+  1490→                    <LogOut className="w-4 h-4" />
+  1491→                    End Session
+  1492→                  </Button>
+  1493→                </motion.div>
+  1494→              </div>
+  1495→
+  1496→              <Separator />
+  1497→
+  1498→              {/* Tip Input */}
+  1499→              <TipInput />
+  1500→
+  1501→              <Separator />
+  1502→
+  1503→              {/* Persona Selector */}
+  1504→              <PersonaSelector />
+  1505→
+  1506→              <Separator />
+  1507→
+  1508→              {/* Feedback Bar */}
+  1509→              <FeedbackBar />
+  1510→            </div>
+  1511→          </div>
+  1512→        )}
+  1513→      </div>
+  1514→
+  1515→      {/* End Session Summary Panel */}
+  1516→      <AnimatePresence>
+  1517→        {showEndSession && (
+  1518→          <motion.div
+  1519→            className="fixed inset-0 z-50 flex items-end justify-center"
+  1520→            initial={{ opacity: 0 }}
+  1521→            animate={{ opacity: 1 }}
+  1522→            exit={{ opacity: 0 }}
+  1523→            transition={{ duration: 0.2 }}
+  1524→          >
+  1525→            {/* Backdrop */}
+  1526→            <motion.div
+  1527→              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+  1528→              onClick={() => setShowEndSession(false)}
+  1529→            />
+  1530→
+  1531→            {/* Confetti Particles */}
+  1532→            {sessionStats.showConfetti && (
+  1533→              <div className="absolute inset-0 pointer-events-none overflow-hidden">
+  1534→                {confettiParticles.map((p) => (
+  1535→                  <motion.div
+  1536→                    key={p.id}
+  1537→                    className="absolute w-2 h-2 rounded-sm"
+  1538→                    style={{ backgroundColor: p.color, left: `${p.x}%`, top: `${p.y}%` }}
+  1539→                    initial={{ y: 0, opacity: 1, rotate: 0, x: 0 }}
+  1540→                    animate={{
+  1541→                      y: [0, 200, 400, 600],
+  1542→                      x: [0, p.drift * 0.3, p.drift * 0.7, p.drift],
+  1543→                      opacity: [1, 1, 0.8, 0],
+  1544→                      rotate: [p.rotation, p.rotation + 360],
+  1545→                    }}
+  1546→                    transition={{
+  1547→                      duration: 3,
+  1548→                      delay: p.delay,
+  1549→                      ease: 'easeIn',
+  1550→                    }}
+  1551→                  />
+  1552→                ))}
+  1553→              </div>
+  1554→            )}
+  1555→
+  1556→            {/* Panel */}
+  1557→            <motion.div
+  1558→              className="relative z-10 w-full max-w-lg mx-4 mb-4 rounded-2xl glass card-shadow border border-border/50 overflow-hidden"
+  1559→              initial={{ y: '100%', opacity: 0, scale: 0.95 }}
+  1560→              animate={{ y: 0, opacity: 1, scale: 1 }}
+  1561→              exit={{ y: '100%', opacity: 0, scale: 0.95 }}
+  1562→              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+  1563→            >
+  1564→              {/* Panel Header */}
+  1565→              <div className="flex items-center justify-between px-6 pt-6 pb-4">
+  1566→                <div className="flex items-center gap-2">
+  1567→                  {sessionStats.showConfetti && <Trophy className="w-5 h-5 text-amber-500" />}
+  1568→                  <h2 className="text-lg font-bold gradient-text">Session Summary</h2>
+  1569→                </div>
+  1570→                <button
+  1571→                  onClick={() => setShowEndSession(false)}
+  1572→                  className="p-1 rounded-lg hover:bg-accent transition-colors"
+  1573→                  aria-label="Close summary"
+  1574→                >
+  1575→                  <X className="w-4 h-4 text-muted-foreground" />
+  1576→                </button>
+  1577→              </div>
+  1578→
+  1579→              <div className="px-6 pb-6 space-y-5">
+  1580→                {/* Session Stats Grid */}
+  1581→                <div className="grid grid-cols-2 gap-3">
+  1582→                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-1 card-shadow">
+  1583→                    <div className="flex items-center gap-1.5 text-muted-foreground">
+  1584→                      <Clock className="w-3.5 h-3.5" />
+  1585→                      <span className="text-xs font-medium">Duration</span>
+  1586→                    </div>
+  1587→                    <p className="text-sm font-bold font-mono tabular-nums text-foreground">
+  1588→                      {formatTimer(sessionStats.duration)}
+  1589→                    </p>
+  1590→                  </div>
+  1591→                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-1 card-shadow">
+  1592→                    <div className="flex items-center gap-1.5 text-muted-foreground">
+  1593→                      <MessageCircle className="w-3.5 h-3.5" />
+  1594→                      <span className="text-xs font-medium">Messages</span>
+  1595→                    </div>
+  1596→                    <p className="text-sm font-bold font-mono tabular-nums text-foreground">
+  1597→                      {sessionStats.messagesExchanged}
+  1598→                    </p>
+  1599→                  </div>
+  1600→                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-1 card-shadow">
+  1601→                    <div className="flex items-center gap-1.5 text-muted-foreground">
+  1602→                      <BookMarked className="w-3.5 h-3.5" />
+  1603→                      <span className="text-xs font-medium">Topics Covered</span>
+  1604→                    </div>
+  1605→                    <p className="text-sm font-bold font-mono tabular-nums text-foreground">
+  1606→                      {sessionStats.topicsCovered.length}
+  1607→                    </p>
+  1608→                  </div>
+  1609→                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-1 card-shadow">
+  1610→                    <div className="flex items-center gap-1.5 text-muted-foreground">
+  1611→                      <Target className="w-3.5 h-3.5" />
+  1612→                      <span className="text-xs font-medium">Concepts Explored</span>
+  1613→                    </div>
+  1614→                    <p className="text-sm font-bold font-mono tabular-nums text-foreground">
+  1615→                      {sessionStats.conceptsExplored}
+  1616→                    </p>
+  1617→                  </div>
+  1618→                </div>
+  1619→
+  1620→                {/* Mastery Progress Bar */}
+  1621→                {sessionStats.conceptsExplored > 0 && (
+  1622→                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-2 card-shadow">
+  1623→                    <div className="flex items-center justify-between">
+  1624→                      <div className="flex items-center gap-1.5 text-muted-foreground">
+  1625→                        <Sparkles className="w-3.5 h-3.5" />
+  1626→                        <span className="text-xs font-medium">Avg Mastery Gained</span>
+  1627→                      </div>
+  1628→                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+  1629→                        {sessionStats.avgMastery}%
+  1630→                      </span>
+  1631→                    </div>
+  1632→                    <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+  1633→                      <motion.div
+  1634→                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+  1635→                        initial={{ width: 0 }}
+  1636→                        animate={{ width: `${sessionStats.avgMastery}%` }}
+  1637→                        transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 }}
+  1638→                      />
+  1639→                    </div>
+  1640→                  </div>
+  1641→                )}
+  1642→
+  1643→                {/* Topics List */}
+  1644→                {sessionStats.topicsCovered.length > 0 && (
+  1645→                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-2 card-shadow">
+  1646→                    <div className="flex items-center gap-1.5 text-muted-foreground">
+  1647→                      <BookOpen className="w-3.5 h-3.5" />
+  1648→                      <span className="text-xs font-medium">Topics</span>
+  1649→                    </div>
+  1650→                    <div className="flex flex-wrap gap-1.5">
+  1651→                      {sessionStats.topicsCovered.map((topic) => (
+  1652→                        <Badge key={topic} variant="secondary" className="text-xs">
+  1653→                          {topic}
+  1654→                        </Badge>
+  1655→                      ))}
+  1656→                    </div>
+  1657→                  </div>
+  1658→                )}
+  1659→
+  1660→                {/* Key Takeaways */}
+  1661→                {sessionStats.keyTakeaways.length > 0 && (
+  1662→                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-2 card-shadow">
+  1663→                    <div className="flex items-center gap-1.5 text-muted-foreground">
+  1664→                      <CheckCircle2 className="w-3.5 h-3.5" />
+  1665→                      <span className="text-xs font-medium">Key Takeaways</span>
+  1666→                    </div>
+  1667→                    <ul className="space-y-1.5">
+  1668→                      {sessionStats.keyTakeaways.map((takeaway, i) => (
+  1669→                        <li key={i} className="flex items-start gap-2 text-xs text-foreground/80 leading-relaxed">
+  1670→                          <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+  1671→                          {takeaway}
+  1672→                        </li>
+  1673→                      ))}
+  1674→                    </ul>
+  1675→                  </div>
+  1676→                )}
+  1677→
+  1678→                {/* Actions */}
+  1679→                <div className="flex gap-3 pt-1">
+  1680→                  <Button
+  1681→                    variant="outline"
+  1682→                    className="flex-1"
+  1683→                    onClick={() => setShowEndSession(false)}
+  1684→                  >
+  1685→                    Continue Studying
+  1686→                  </Button>
+  1687→                  <Button
+  1688→                    className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+  1689→                    onClick={handleSaveAndClose}
+  1690→                  >
+  1691→                    <CheckCircle2 className="w-4 h-4 mr-1.5" />
+  1692→                    Save & Close
+  1693→                  </Button>
+  1694→                </div>
+  1695→              </div>
+  1696→            </motion.div>
+  1697→          </motion.div>
+  1698→        )}
+  1699→      </AnimatePresence>
+  1700→    </div>
+  1701→  )
+  1702→}
+  1703→

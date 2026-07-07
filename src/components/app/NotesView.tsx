@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookMarked,
@@ -13,6 +13,8 @@ import {
   FileText,
   Pencil,
   Type,
+  Check,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
@@ -79,6 +81,10 @@ export function NotesView() {
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newTags, setNewTags] = useState<string[]>([]);
+
+  // Auto-save indicator state
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const filteredNotes = useMemo(() => {
     let result = [...notes];
@@ -147,14 +153,46 @@ export function NotesView() {
 
   const handleSaveEdit = () => {
     if (editingId) {
+      setSaveStatus('saving');
       updateNote(editingId, {
         title: editTitle.trim() || 'Untitled Note',
         content: editContent.trim(),
         tags: editTags,
       });
-      setEditingId(null);
+      // Visual feedback for save
+      setTimeout(() => {
+        setSaveStatus('saved');
+        setEditingId(null);
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      }, 200);
     }
   };
+
+  // Auto-save with debounce: show "Saving..." on type, "Saved ✓" after 500ms idle
+  const handleEditChange = useCallback((field: 'title' | 'content', value: string) => {
+    if (field === 'title') setEditTitle(value);
+    else setEditContent(value);
+    setSaveStatus('saving');
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (editingId) {
+        updateNote(editingId, {
+          title: (field === 'title' ? value : editTitle).trim() || 'Untitled Note',
+          content: (field === 'content' ? value : editContent).trim(),
+          tags: editTags,
+        });
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      }
+    }, 500);
+  }, [editingId, editTitle, editContent, editTags, updateNote]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
 
   const handleCancelEdit = () => {
     setEditingId(null);
@@ -497,15 +535,48 @@ export function NotesView() {
                   {editingId === note.id ? (
                     /* Edit Mode */
                     <div className="p-4 space-y-4 relative z-10">
+                      {/* Auto-save indicator */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Pencil className="h-4 w-4 text-primary" />
+                          <h3 className="text-sm font-semibold">Editing Note</h3>
+                        </div>
+                        <AnimatePresence mode="wait">
+                          {saveStatus === 'saving' && (
+                            <motion.span
+                              key="saving"
+                              initial={{ opacity: 0, x: 5 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: -5 }}
+                              className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400"
+                            >
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Saving...
+                            </motion.span>
+                          )}
+                          {saveStatus === 'saved' && (
+                            <motion.span
+                              key="saved"
+                              initial={{ opacity: 0, x: 5 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: -5 }}
+                              className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400"
+                            >
+                              <Check className="h-3 w-3" />
+                              Saved ✓
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </div>
                       <Input
                         value={editTitle}
-                        onChange={(e) => setEditTitle(e.target.value)}
+                        onChange={(e) => handleEditChange('title', e.target.value)}
                         placeholder="Note title..."
                         autoFocus
                       />
                       <Textarea
                         value={editContent}
-                        onChange={(e) => setEditContent(e.target.value)}
+                        onChange={(e) => handleEditChange('content', e.target.value)}
                         className="min-h-[120px] resize-y"
                         placeholder="Note content..."
                       />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useSpring, useMotionValue, useTransform } from 'framer-motion';
 import {
   Mail,
@@ -41,6 +41,11 @@ import {
   Share2,
   CalendarDays,
   ChevronDown,
+  Copy,
+  ExternalLink,
+  X,
+  CheckCheck as CheckCheckIcon,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -77,6 +82,22 @@ const iconMap: Record<string, typeof Eye> = {
 const stagger = {
   animate: { transition: { staggerChildren: 0.08 } },
 };
+
+// Helper: draw rounded rectangle on canvas
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
 const fadeUp = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
@@ -343,6 +364,7 @@ export function ProfileView() {
 
   const [activeCategory, setActiveCategory] = useState<'all' | Achievement['category']>('all');
   const [studyStatsExpanded, setStudyStatsExpanded] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
   const initials = userName
     ? userName
@@ -423,6 +445,123 @@ export function ProfileView() {
     clearSessionStorage();
     navigate('landing');
   };
+
+  // Export study statistics as image using Canvas API
+  const handleExportStatsImage = useCallback(() => {
+    const canvas = document.createElement('canvas');
+    const width = 600;
+    const height = 340;
+    canvas.width = width * 2; // 2x for retina
+    canvas.height = height * 2;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      toast.error('Canvas not supported');
+      return;
+    }
+    ctx.scale(2, 2);
+
+    // Gradient background
+    const grad = ctx.createLinearGradient(0, 0, width, height);
+    grad.addColorStop(0, '#059669');
+    grad.addColorStop(0.5, '#0d9488');
+    grad.addColorStop(1, '#0f766e');
+    ctx.fillStyle = grad;
+    roundRect(ctx, 0, 0, width, height, 20);
+    ctx.fill();
+
+    // Subtle pattern overlay
+    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    for (let i = 0; i < width; i += 20) {
+      for (let j = 0; j < height; j += 20) {
+        ctx.fillRect(i, j, 10, 10);
+      }
+    }
+
+    // Title
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🧠 SynapseLearn Study Stats', width / 2, 48);
+
+    // User name
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.font = '15px system-ui, -apple-system, sans-serif';
+    ctx.fillText(userName || 'Student', width / 2, 74);
+
+    // Divider
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(60, 92);
+    ctx.lineTo(width - 60, 92);
+    ctx.stroke();
+
+    // Stats data
+    const studyHours = Math.floor(totalStudyTime / 60);
+    const quizAccuracy = quizTotal && quizTotal > 0 ? Math.round((quizScore! / quizTotal) * 100) : 0;
+    const masteryEntries = Object.values(masteryMap);
+    const avgMastery = masteryEntries.length > 0
+      ? (masteryEntries.reduce((s, c) => s + c.level, 0) / masteryEntries.length).toFixed(1)
+      : '0.0';
+
+    const stats = [
+      { label: 'Study Hours', value: `${studyHours}h`, icon: '📚' },
+      { label: 'Quiz Score', value: `${quizAccuracy}%`, icon: '🎯' },
+      { label: 'Streak', value: `${currentStreak} days`, icon: '🔥' },
+      { label: 'Mastery', value: `${avgMastery}/5`, icon: '⚡' },
+    ];
+
+    const cardW = 110;
+    const cardH = 110;
+    const gap = 20;
+    const totalW = stats.length * cardW + (stats.length - 1) * gap;
+    const startX = (width - totalW) / 2;
+    const startY = 115;
+
+    stats.forEach((stat, i) => {
+      const x = startX + i * (cardW + gap);
+
+      // Card background
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      roundRect(ctx, x, startY, cardW, cardH, 14);
+      ctx.fill();
+
+      // Card border
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      roundRect(ctx, x, startY, cardW, cardH, 14);
+      ctx.stroke();
+
+      // Icon
+      ctx.font = '24px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillText(stat.icon, x + cardW / 2, startY + 38);
+
+      // Value
+      ctx.font = 'bold 24px system-ui, -apple-system, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,1)';
+      ctx.fillText(stat.value, x + cardW / 2, startY + 70);
+
+      // Label
+      ctx.font = '12px system-ui, -apple-system, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillText(stat.label, x + cardW / 2, startY + 92);
+    });
+
+    // Footer
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '11px system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Generated by SynapseLearn · AI-Powered Learning', width / 2, height - 22);
+
+    // Download
+    const link = document.createElement('a');
+    link.download = `synapselearn-stats-${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    toast.success('Stats image exported!');
+  }, [userName, totalStudyTime, quizScore, quizTotal, currentStreak, masteryMap]);
 
   const styleInfo = learnerProfile ? styleLabels[learnerProfile.learningStyle] : null;
   const paceInfo = learnerProfile ? paceLabels[learnerProfile.pace] : null;
@@ -1324,38 +1463,30 @@ export function ProfileView() {
                 {/* ── 7d. Share Stats ── */}
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-muted-foreground">Share your learning progress with others</p>
-                  <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300 hover:border-emerald-500/40 transition-all"
-                      onClick={() => {
-                        const totalMastery = Object.values(masteryMap);
-                        const avgMastery = totalMastery.length > 0
-                          ? (totalMastery.reduce((s, c) => s + c.level, 0) / totalMastery.length).toFixed(1)
-                          : '0';
-                        const text = [
-                          `SynapseLearn Study Stats`,
-                          ``,
-                          `Sessions: ${studySessions.length}`,
-                          `Total Study Time: ${Math.floor(totalStudyTime / 60)}h ${totalStudyTime % 60}m`,
-                          `Concepts Tracked: ${totalMastery.length}`,
-                          `Average Mastery: ${avgMastery}/5`,
-                          `Current Streak: ${currentStreak} days`,
-                          `Best Streak: ${bestStreak} days`,
-                          quizTotal > 0 ? `Quiz Accuracy: ${Math.round((quizScore / quizTotal) * 100)}%` : '',
-                        ].filter(Boolean).join('\n');
-                        navigator.clipboard.writeText(text).then(() => {
-                          toast.success('Stats copied to clipboard!');
-                        }).catch(() => {
-                          toast.error('Failed to copy stats');
-                        });
-                      }}
-                    >
-                      <Share2 className="h-3.5 w-3.5 mr-1.5" />
-                      Share Stats
-                    </Button>
-                  </motion.div>
+                  <div className="flex items-center gap-2">
+                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300 hover:border-emerald-500/40 transition-all"
+                        onClick={handleExportStatsImage}
+                      >
+                        <Download className="h-3.5 w-3.5 mr-1.5" />
+                        Export Image
+                      </Button>
+                    </motion.div>
+                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300 hover:border-emerald-500/40 transition-all"
+                        onClick={() => setShareModalOpen(true)}
+                      >
+                        <Share2 className="h-3.5 w-3.5 mr-1.5" />
+                        Share Stats
+                      </Button>
+                    </motion.div>
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -1388,6 +1519,138 @@ export function ProfileView() {
           </Button>
         </motion.div>
       </motion.div>
+
+      {/* Profile Share Stats Modal */}
+      <ProfileShareModal
+        open={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        studySessions={studySessions}
+        masteryMap={masteryMap}
+        currentStreak={currentStreak}
+        totalStudyTime={totalStudyTime}
+        quizScore={quizScore}
+        quizTotal={quizTotal}
+      />
     </motion.div>
+  );
+}
+
+// Profile Share Stats Modal with ASCII art card
+function ProfileShareModal({
+  open,
+  onClose,
+  studySessions,
+  masteryMap,
+  currentStreak,
+  totalStudyTime,
+  quizScore,
+  quizTotal,
+}: {
+  open: boolean;
+  onClose: () => void;
+  studySessions: StudySession[];
+  masteryMap: Record<string, { level: number }>;
+  currentStreak: number;
+  totalStudyTime: number;
+  quizScore: number | null;
+  quizTotal: number | null;
+}) {
+  const totalMastery = Object.values(masteryMap);
+  const avgMastery = totalMastery.length > 0
+    ? (totalMastery.reduce((s, c) => s + c.level, 0) / totalMastery.length).toFixed(1)
+    : '0';
+  const quizAccuracy = quizTotal && quizTotal > 0 ? Math.round((quizScore! / quizTotal) * 100) : 0;
+  const totalXP = studySessions.reduce((sum, s) => sum + s.duration * 10, 0) + quizAccuracy * 5;
+  const level = Math.max(1, Math.min(50, Math.floor(Math.sqrt(totalXP / 100)) + 1));
+  const hours = Math.floor(totalStudyTime / 60);
+
+  const statsText = useMemo(() => {
+    return [
+      '╔══════════════════════════════════════╗',
+      '║      🧠 SynapseLearn Stats 🧠        ║',
+      '╠══════════════════════════════════════╣',
+      `║  📊 Level:    ${String(level).padEnd(24)}║`,
+      `║  ⭐ XP:       ${String(totalXP.toLocaleString()).padEnd(24)}║`,
+      `║  🔥 Streak:   ${String(`${currentStreak} days`).padEnd(24)}║`,
+      `║  📚 Sessions: ${String(studySessions.length.toString()).padEnd(24)}║`,
+      `║  🎯 Mastery:  ${String(`${avgMastery}/5 avg`).padEnd(24)}║`,
+      `║  📝 Accuracy: ${String(`${quizAccuracy}%`).padEnd(24)}║`,
+      `║  ⏱️ Study:    ${String(`${hours}+ hours`).padEnd(24)}║`,
+      '╠══════════════════════════════════════╣',
+      '║   Join me on SynapseLearn! 🚀       ║',
+      '╚══════════════════════════════════════╝',
+    ].join('\n');
+  }, [level, totalXP, currentStreak, studySessions.length, avgMastery, quizAccuracy, hours]);
+
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(statsText);
+      setCopied(true);
+      toast.success('Stats copied to clipboard!');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Failed to copy to clipboard');
+    }
+  };
+
+  const handleTwitter = () => {
+    const tweetText = `🧠 SynapseLearn Stats:\nLevel ${level} | ${totalXP.toLocaleString()} XP | ${currentStreak}-day streak | ${quizAccuracy}% quiz accuracy\n\nJoin me on SynapseLearn! 🚀`;
+    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    toast.success('Opening Twitter share dialog...');
+  };
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            onClick={(e) => e.stopPropagation()}
+            className="glass rounded-2xl p-6 w-full max-w-md border border-border/50"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-lg gradient-text">Share Your Stats</h3>
+              <motion.button
+                whileHover={{ rotate: 90, scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={onClose}
+                className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-accent transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </motion.button>
+            </div>
+
+            <div className="bg-muted/50 rounded-xl p-4 mb-4 overflow-x-auto">
+              <pre className="text-xs font-mono text-foreground/80 whitespace-pre leading-relaxed">
+                {statsText}
+              </pre>
+            </div>
+
+            <div className="flex gap-2">
+              <Button onClick={handleCopy} className="flex-1">
+                {copied ? <CheckCheckIcon className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+                {copied ? 'Copied!' : 'Copy to Clipboard'}
+              </Button>
+              <Button variant="outline" onClick={handleTwitter} className="flex-1">
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Share on Twitter
+              </Button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

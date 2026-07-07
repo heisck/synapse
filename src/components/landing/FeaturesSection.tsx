@@ -6,7 +6,10 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { motion, useInView } from 'framer-motion';
 import { Brain, FileUp, ShieldCheck, Layers, Activity, RefreshCw } from 'lucide-react';
 
-gsap.registerPlugin(ScrollTrigger);
+// Only register GSAP plugins on the client side to avoid SSR/hydration errors
+if (typeof window !== 'undefined') {
+  gsap.registerPlugin(ScrollTrigger);
+}
 
 const features = [
   {

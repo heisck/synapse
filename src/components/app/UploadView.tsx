@@ -336,8 +336,8 @@ function UploadHistoryPanel({ history, onReupload }: { history: UploadHistoryIte
               key={item.id}
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.05 }}
-              className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/20 transition-colors"
+              transition={{ delay: idx * 0.08, type: 'spring', stiffness: 300, damping: 25 }}
+              className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/20 transition-colors hover-lift"
             >
               <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${isFailed ? 'bg-destructive/10' : 'bg-emerald-500/10'}`}>
                 {isFailed
@@ -850,9 +850,9 @@ export function UploadView() {
           onDragLeave={() => setIsDragOver(false)}
           onDrop={handleDrop}
           onClick={() => inputRef.current?.click()}
-          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all overflow-hidden glass ${
+          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all overflow-hidden glass upload-glass-focus upload-drag-animated dropzone-particles ${
             isDragOver
-              ? 'border-primary bg-primary/5 scale-[1.01] glow-emerald-strong pulse-glow gradient-border'
+              ? 'dragging border-primary bg-primary/5 scale-[1.01] glow-emerald-strong pulse-glow gradient-border'
               : 'border-border/60 hover:border-primary/40 hover:bg-accent/20'
           }`}
         >

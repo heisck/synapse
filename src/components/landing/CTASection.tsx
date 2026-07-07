@@ -8,7 +8,10 @@ import { ArrowRight, Sparkles, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/stores/appStore';
 
-gsap.registerPlugin(ScrollTrigger);
+// Only register GSAP plugins on the client side to avoid SSR/hydration errors
+if (typeof window !== 'undefined') {
+  gsap.registerPlugin(ScrollTrigger);
+}
 
 interface Particle {
   id: number;
@@ -272,7 +275,11 @@ export default function CTASection() {
               <Button
                 size="lg"
                 className="relative bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-6 text-base font-semibold rounded-xl shadow-lg shadow-emerald-500/25 transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/40 hover:-translate-y-0.5 dark:shadow-emerald-500/30 dark:hover:shadow-emerald-500/50"
-                onClick={() => navigate('onboarding')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // Use setTimeout to avoid competing with framer-motion exit animations
+                  setTimeout(() => navigate('onboarding'), 50);
+                }}
               >
                 <Zap className="mr-2 w-4 h-4" />
                 Start Learning

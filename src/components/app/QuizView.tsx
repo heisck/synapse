@@ -31,6 +31,7 @@ import {
   ChevronUp,
   Loader2,
   X,
+  LayoutGrid,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -44,22 +45,24 @@ import type { Question, AdaptiveResult, LearnerProfile } from '@/types';
 
 type StudyMode = 'quiz' | 'flashcard' | 'daily' | 'review';
 
-// ---------- Typo-tolerance helper ----------
-function levenshteinDistance(a: string, b: string): number {
-  const matrix: number[][] = [];
-  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
+// ---------- Levenshtein distance (standard DP) ----------
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0) as number[]);
+  for (let i = 0; i <= n; i++) dp[i][0] = i;
+  for (let j = 0; j <= m; j++) dp[0][j] = j;
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
       const cost = b[i - 1] === a[j - 1] ? 0 : 1;
-      matrix[i][j] = Math.min(
-        matrix[i - 1][j] + 1,
-        matrix[i][j - 1] + 1,
-        matrix[i - 1][j - 1] + cost,
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost,
       );
     }
   }
-  return matrix[b.length][a.length];
+  return dp[n][m];
 }
 
 function isFuzzyMatch(userAnswer: string, correctAnswer: string, maxDistance: number = 2): boolean {
@@ -68,7 +71,7 @@ function isFuzzyMatch(userAnswer: string, correctAnswer: string, maxDistance: nu
   if (ua === ca) return true;
   if (ua.includes(ca) || ca.includes(ua)) return true;
   // Levenshtein distance for typo tolerance
-  const dist = levenshteinDistance(ua, ca);
+  const dist = levenshtein(ua, ca);
   // Allow 1 typo for short answers, 2 for longer ones
   const threshold = maxDistance || (ca.length <= 4 ? 1 : 2);
   if (dist <= threshold) return true;
@@ -77,6 +80,30 @@ function isFuzzyMatch(userAnswer: string, correctAnswer: string, maxDistance: nu
   const userWords = ua.split(/\s+/);
   if (correctWords.every((w) => userWords.some((uw) => uw.includes(w) || w.includes(uw)))) return true;
   return false;
+}
+
+// ---------- Fill-in-blank grading with Levenshtein tolerance ----------
+// Case-insensitive, trimmed comparison with partial credit for typos:
+//   Exact match → 100% (or 75% if hint used)
+//   Levenshtein ≤ 2 → 80% (× 0.75 if hint)
+//   Levenshtein ≤ 3 → 50% (× 0.75 if hint)
+//   Otherwise → 0
+type FillBlankGrade = { status: 'correct' | 'close' | 'wrong'; points: number; message: string };
+
+function gradeFillBlank(userAnswer: string, correctAnswer: string, hintUsed: boolean = false): FillBlankGrade {
+  const ua = userAnswer.trim().toLowerCase();
+  const ca = correctAnswer.trim().toLowerCase();
+  if (ua === ca) {
+    return { status: 'correct', points: hintUsed ? 0.75 : 1, message: '' };
+  }
+  const dist = levenshtein(ua, ca);
+  let basePoints = 0;
+  if (dist <= 2) basePoints = 0.8;
+  else if (dist <= 3) basePoints = 0.5;
+  if (basePoints > 0) {
+    return { status: 'close', points: basePoints * (hintUsed ? 0.75 : 1), message: `Close! Did you mean: "${correctAnswer}"?` };
+  }
+  return { status: 'wrong', points: 0, message: '' };
 }
 
 // ---------- Timer helper ----------
@@ -1169,6 +1196,11 @@ export function QuizView() {
   const [streak, setStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
   const [showStreakPopup, setShowStreakPopup] = useState(false);
+  const [showQuestionMap, setShowQuestionMap] = useState(false);
+  const [showBonusPopup, setShowBonusPopup] = useState(false);
+  const [hintsUsed, setHintsUsed] = useState<Record<string, boolean>>({});
+  const [fillBlankValues, setFillBlankValues] = useState<Record<string, string>>({});
+  const [fillBlankGrades, setFillBlankGrades] = useState<Record<string, FillBlankGrade>>({});
   const [weaknessReportOpen, setWeaknessReportOpen] = useState(false);
   const [weaknessReportLoading, setWeaknessReportLoading] = useState(false);
   const [weaknessReport, setWeaknessReport] = useState<ErrorAnalysisResponse | null>(null);
@@ -1509,6 +1541,7 @@ export function QuizView() {
   const [flipped, setFlipped] = useState(false);
   const [knownCards, setKnownCards] = useState<Set<string>>(new Set());
   const [stillLearningCards, setStillLearningCards] = useState<Set<string>>(new Set());
+  const [difficultCards, setDifficultCards] = useState<Set<string>>(new Set());
   const [flashcardReviewed, setFlashcardReviewed] = useState<Set<string>>(new Set());
   const [showFlashcardSummary, setShowFlashcardSummary] = useState(false);
   const [hasEverFlipped, setHasEverFlipped] = useState(false);
@@ -1558,6 +1591,34 @@ export function QuizView() {
     return () => clearInterval(interval);
   }, [timerStarted, showResults]);
 
+  // Keyboard shortcuts for flashcard mode
+  useEffect(() => {
+    if (studyMode !== 'flashcard' || showFlashcardSummary) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input/textarea
+      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          setFlipped((prev) => {
+            if (!prev) setHasEverFlipped(true);
+            return !prev;
+          });
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          handleFlashcardPrev();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          handleFlashcardNext();
+          break;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [studyMode, showFlashcardSummary, handleFlashcardPrev, handleFlashcardNext]);
+
   const flashcardQuestions = useMemo(() => {
     if (selectedCourse === 'all') return allQuestions;
     return allQuestions.filter((q) => q.courseId === selectedCourse);
@@ -1606,6 +1667,11 @@ export function QuizView() {
       });
     }
 
+    // Mark as difficult adds to review queue
+    if (type === 'learning' && !difficultCards.has(id)) {
+      setDifficultCards((prev) => new Set(prev).add(id));
+    }
+
     setFlipped(false);
     if (currentIndex < flashcardQuestions.length - 1) {
       setCurrentIndex((prev) => prev + 1);
@@ -1631,10 +1697,29 @@ export function QuizView() {
     setFlipped(false);
     setKnownCards(new Set());
     setStillLearningCards(new Set());
+    setDifficultCards(new Set());
     setFlashcardReviewed(new Set());
     setShowFlashcardSummary(false);
     setHasEverFlipped(false);
   }, []);
+
+  const handleMarkDifficult = useCallback(() => {
+    if (!flashcardQuestions[currentIndex]) return;
+    const id = flashcardQuestions[currentIndex].id;
+    setDifficultCards((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+        toast('Removed from review queue');
+      } else {
+        next.add(id);
+        toast('Marked as difficult — added to review queue', {
+          icon: <AlertTriangle className="h-4 w-4 text-amber-500" />,
+        });
+      }
+      return next;
+    });
+  }, [currentIndex, flashcardQuestions]);
 
   const handleCourseChange = (courseId: string) => {
     setSelectedCourse(courseId);
@@ -1648,11 +1733,15 @@ export function QuizView() {
     setFlipped(false);
     setKnownCards(new Set());
     setStillLearningCards(new Set());
+    setDifficultCards(new Set());
     setFlashcardReviewed(new Set());
     setShowFlashcardSummary(false);
     setHasEverFlipped(false);
     setTimerStarted(false);
     setTimerSeconds(0);
+    setHintsUsed({});
+    setFillBlankValues({});
+    setFillBlankGrades({});
   };
 
   const handleModeChange = (mode: StudyMode) => {
@@ -1667,6 +1756,7 @@ export function QuizView() {
     setFlipped(false);
     setKnownCards(new Set());
     setStillLearningCards(new Set());
+    setDifficultCards(new Set());
     setFlashcardReviewed(new Set());
     setShowFlashcardSummary(false);
     setHasEverFlipped(false);
@@ -1678,6 +1768,9 @@ export function QuizView() {
     setReviewedCount(0);
     setDailyTimerLeft(DAILY_TIMER_SECONDS);
     setDailyTimerActive(false);
+    setHintsUsed({});
+    setFillBlankValues({});
+    setFillBlankGrades({});
   };
 
   // Filter questions by selected course and bookmarked
@@ -1703,7 +1796,7 @@ export function QuizView() {
         return isFuzzyMatch(userAnswer, q.answer, 3);
       }
       if (q.type === 'fill_blank') {
-        return isFuzzyMatch(userAnswer, q.answer, 2);
+        return userAnswer.trim().toLowerCase() === q.answer.trim().toLowerCase();
       }
       return ua === ca;
     },
@@ -1723,6 +1816,12 @@ export function QuizView() {
       setAnswered(newAnswered);
       setShowExplanation(true);
 
+      // Grade fill_blank with Levenshtein tolerance
+      if (currentQ.type === 'fill_blank') {
+        const grade = gradeFillBlank(answer, currentQ.answer, hintsUsed[currentQ.id] || false);
+        setFillBlankGrades((prev) => ({ ...prev, [currentQ.id]: grade }));
+      }
+
       if (isCorrect(currentQ, answer)) {
         setShowConfetti(true);
         setTimeout(() => setShowConfetti(false), 1500);
@@ -1732,6 +1831,18 @@ export function QuizView() {
         if (newStreak >= 3) {
           setShowStreakPopup(true);
           setTimeout(() => setShowStreakPopup(false), 1200);
+        }
+        // Streak milestone toasts
+        if (newStreak > 0 && newStreak % 3 === 0 && newStreak % 5 !== 0) {
+          toast.success(`🔥 Hot streak! ${newStreak} in a row!`);
+        }
+        if (newStreak > 0 && newStreak % 5 === 0) {
+          toast.success(`🔥🔥 AMAZING! ${newStreak} in a row! Bonus points earned!`, {
+            description: `Score multiplier: ${getScoreMultiplier(newStreak)}x`,
+            duration: 4000,
+          });
+          setShowBonusPopup(true);
+          setTimeout(() => setShowBonusPopup(false), 2500);
         }
       } else {
         setStreak(0);
@@ -1749,7 +1860,7 @@ export function QuizView() {
         saveAdaptiveResults([...adaptiveResults, result].slice(-200));
       }
     },
-    [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted, adaptiveOn, studyMode, adaptiveResults, addAdaptiveResult],
+    [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted, adaptiveOn, studyMode, adaptiveResults, addAdaptiveResult, hintsUsed],
   );
 
   // Review mode answer handler
@@ -1820,11 +1931,23 @@ export function QuizView() {
     setTimerStarted(false);
     setTimerSeconds(0);
     setShowBookmarked(false);
+    setHintsUsed({});
+    setFillBlankValues({});
+    setFillBlankGrades({});
   };
 
   const score = useMemo(() => {
-    return questions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
-  }, [questions, answered, answers, isCorrect]);
+    return questions.reduce((total, q) => {
+      if (!answered[q.id]) return total;
+      const userAnswer = answers[q.id] || '';
+      if (q.type === 'fill_blank') {
+        const grade = fillBlankGrades[q.id];
+        if (grade) return total + grade.points;
+        return total + (isCorrect(q, userAnswer) ? 1 : 0);
+      }
+      return total + (isCorrect(q, userAnswer) ? 1 : 0);
+    }, 0);
+  }, [questions, answered, answers, isCorrect, fillBlankGrades]);
 
   const circumference = 2 * Math.PI * 62;
   const scorePercent = questions.length > 0 ? score / questions.length : 0;
@@ -1944,9 +2067,9 @@ export function QuizView() {
                 className="text-4xl font-bold gradient-text"
                 key={animatedScore}
               >
-                {animatedScore}<span className="text-lg font-normal text-muted-foreground">/{questions.length}</span>
+                {score % 1 === 0 ? animatedScore : score.toFixed(1)}<span className="text-lg font-normal text-muted-foreground">/{questions.length}</span>
               </motion.span>
-              <span className="text-xs text-muted-foreground mt-1">
+              <span className="text-xs text-muted-foreground mt-1 text-gradient-emerald font-medium">
                 {Math.round(scorePercent * 100)}% correct
               </span>
             </div>
@@ -1982,22 +2105,28 @@ export function QuizView() {
             <h3 className="text-sm font-semibold">Question Breakdown</h3>
             <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
               {questions.map((q, i) => {
-                const wasCorrect = answered[q.id] && isCorrect(q, answers[q.id] || '');
+                let wasCorrect = answered[q.id] && isCorrect(q, answers[q.id] || '');
+                let wasClose = false;
+                if (q.type === 'fill_blank' && answered[q.id] && fillBlankGrades[q.id]) {
+                  const grade = fillBlankGrades[q.id];
+                  wasCorrect = grade.status === 'correct';
+                  wasClose = grade.status === 'close';
+                }
                 return (
                   <motion.div
                     key={q.id}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.05 }}
-                    className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md ${wasCorrect ? 'bg-emerald-500/5' : 'bg-destructive/5'}`}
+                    className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md ${wasCorrect ? 'bg-emerald-500/5' : wasClose ? 'bg-amber-500/5' : 'bg-destructive/5'}`}
                   >
                     <motion.span
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
                       transition={{ type: 'spring', stiffness: 300, delay: i * 0.05 }}
-                      className={`flex h-5 w-5 items-center justify-center rounded-full ${wasCorrect ? 'bg-emerald-500 text-white' : 'bg-destructive/20 text-destructive'}`}
+                      className={`flex h-5 w-5 items-center justify-center rounded-full ${wasCorrect ? 'bg-emerald-500 text-white' : wasClose ? 'bg-amber-500 text-white' : 'bg-destructive/20 text-destructive'}`}
                     >
-                      {wasCorrect ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                      {wasCorrect ? <CheckCircle2 className="h-3 w-3" /> : wasClose ? <span className="text-[10px] font-bold">~</span> : <XCircle className="h-3 w-3" />}
                     </motion.span>
                     <span className="flex-1 truncate">{q.question.slice(0, 60)}{q.question.length > 60 ? '...' : ''}</span>
                     <span className={`text-[9px] px-1.5 py-0 rounded-full font-medium border ${TYPE_BADGE_GRADIENT[q.type] || 'bg-muted text-muted-foreground border-border'}`}>
@@ -2178,6 +2307,13 @@ export function QuizView() {
   return (
     <div className="pl-14 lg:pl-0">
       <div className="relative">
+        {/* Progress bar at the very top of quiz view */}
+        {studyMode === 'quiz' && questions.length > 0 && (
+          <div
+            className="quiz-top-progress"
+            style={{ '--quiz-progress': `${(Object.keys(answered).length / questions.length) * 100}%` } as React.CSSProperties}
+          />
+        )}
         {/* Streak popup */}
         <AnimatePresence>
           {showStreakPopup && (
@@ -2196,6 +2332,51 @@ export function QuizView() {
                   <Flame className="h-5 w-5" />
                 </motion.span>
                 {streak} in a row!
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Bonus streak popup (every 5) */}
+        <AnimatePresence>
+          {showBonusPopup && (
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.5, rotate: -5 }}
+              animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
+              exit={{ opacity: 0, y: -30, scale: 0.6, rotate: 5 }}
+              transition={{ type: 'spring', stiffness: 200, damping: 12 }}
+              className="fixed top-1/3 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+            >
+              <div className="relative flex flex-col items-center gap-2 px-8 py-4 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 text-white shadow-2xl shadow-orange-500/40">
+                <motion.div
+                  animate={{ scale: [1, 1.4, 1], rotate: [0, 10, -10, 0] }}
+                  transition={{ duration: 0.8, repeat: 2 }}
+                  className="text-3xl"
+                >
+                  🔥
+                </motion.div>
+                <div className="text-center">
+                  <div className="text-lg font-black leading-tight">{streak} STREAK!</div>
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                    className="text-sm font-bold mt-0.5"
+                  >
+                    +{getScoreMultiplier(streak)}x Bonus!
+                  </motion.div>
+                </div>
+                {/* Sparkle particles */}
+                <motion.div
+                  className="absolute -top-2 -right-2 h-3 w-3 rounded-full bg-yellow-300"
+                  animate={{ scale: [0, 1.5, 0], opacity: [0, 1, 0] }}
+                  transition={{ duration: 0.8, repeat: 2, delay: 0.1 }}
+                />
+                <motion.div
+                  className="absolute -bottom-1 -left-3 h-2 w-2 rounded-full bg-white"
+                  animate={{ scale: [0, 2, 0], opacity: [0, 1, 0] }}
+                  transition={{ duration: 0.7, repeat: 2, delay: 0.3 }}
+                />
               </div>
             </motion.div>
           )}
@@ -2321,23 +2502,36 @@ export function QuizView() {
                   <motion.div
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-mono ${
-                      timerSeconds < 30 && !showResults
-                        ? 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400'
-                        : 'bg-background/60 border-border text-muted-foreground'
-                    }`}
+                    className="quiz-timer-ring"
                   >
-                    <motion.div
-                      animate={showResults ? {} : timerSeconds < 30 && !showResults
-                        ? { scale: [1, 1.3, 1], opacity: [1, 0.5, 1] }
-                        : { opacity: [1, 0.5, 1] }}
-                      transition={showResults ? {} : timerSeconds < 30
-                        ? { duration: 0.8, repeat: Infinity, ease: 'easeInOut' }
-                        : { duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                    >
-                      <Clock className={`h-3.5 w-3.5 ${timerSeconds < 30 && !showResults ? 'text-red-500' : 'text-primary/60'}`} />
-                    </motion.div>
-                    <span>{formatTimer(timerSeconds)}</span>
+                    <svg width="36" height="36" viewBox="0 0 36 36">
+                      <circle
+                        cx="18" cy="18" r="15"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        className={`text-muted/20`}
+                      />
+                      <motion.circle
+                        cx="18" cy="18" r="15"
+                        fill="none"
+                        stroke={timerSeconds < 30 && !showResults ? '#ef4444' : '#10b981'}
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeDasharray={2 * Math.PI * 15}
+                        initial={false}
+                        animate={{
+                          strokeDashoffset: showResults
+                            ? 2 * Math.PI * 15
+                            : 2 * Math.PI * 15 * (1 - (timerSeconds % 60) / 60),
+                        }}
+                        transition={{ duration: 1, ease: 'linear' }}
+                        style={{ opacity: timerStarted && !showResults ? 0.7 : 0.3 }}
+                      />
+                    </svg>
+                    <span className={`absolute text-[10px] font-mono font-medium ${
+                      timerSeconds < 30 && !showResults ? 'text-red-500' : 'text-muted-foreground'
+                    }`}>{formatTimer(timerSeconds)}</span>
                   </motion.div>
                 )}
                 {studyMode === 'quiz' && streak >= 2 && (
@@ -2349,6 +2543,23 @@ export function QuizView() {
                   >
                     <Flame className="h-4 w-4 text-orange-500" />
                     <span className="text-xs font-bold text-orange-600 dark:text-orange-400">{streak} streak</span>
+                  </motion.div>
+                )}
+                {/* Question Map button (quiz mode) */}
+                {studyMode === 'quiz' && questions.length > 1 && (
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                  >
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowQuestionMap(true)}
+                      className="h-8 gap-1.5 text-xs border-border text-muted-foreground hover:text-foreground hover:border-primary/30"
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" />
+                      Map
+                    </Button>
                   </motion.div>
                 )}
               </div>
@@ -3545,14 +3756,16 @@ export function QuizView() {
                         whileTap={!isAnswered ? { scale: 0.99 } : {}}
                         onClick={() => !isAnswered && handleAnswer(opt)}
                         disabled={isAnswered}
-                        className={`relative flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition-all ${
+                        className={`relative flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition-all hover-lift ${
                           isAnswered
                             ? isCorrectOpt
                               ? 'border-emerald-500/60 bg-emerald-500/8 shadow-sm shadow-emerald-500/10'
                               : isSelected
                                 ? 'border-destructive/60 bg-destructive/8'
                                 : 'border-border opacity-60'
-                            : 'border-border hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm hover:shadow-primary/5 cursor-pointer'
+                            : isSelected
+                              ? 'border-primary/60 bg-primary/5 quiz-answer-pulse'
+                              : 'border-border hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm hover:shadow-primary/5 cursor-pointer'
                         }`}
                       >
                         <motion.span
@@ -3684,32 +3897,107 @@ export function QuizView() {
               )}
 
               {currentQ.type === 'fill_blank' && !answered[currentQ.id] && (
-                <div className="flex gap-2 items-center">
-                  <Input
-                    placeholder="Fill in the blank..."
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
-                        handleAnswer((e.target as HTMLInputElement).value);
-                      }
-                    }}
-                    id="fill-blank-input"
-                  />
-                  <Button
-                    onClick={() => {
-                      const input = document.getElementById('fill-blank-input') as HTMLInputElement;
-                      if (input?.value.trim()) handleAnswer(input.value);
-                    }}
-                  >
-                    Submit
-                  </Button>
+                <div className="space-y-2">
+                  <div className="flex gap-2 items-center">
+                    <Input
+                      placeholder="Fill in the blank..."
+                      value={fillBlankValues[currentQ.id] || ''}
+                      onChange={(e) => setFillBlankValues((prev) => ({ ...prev, [currentQ.id]: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                          handleAnswer((e.target as HTMLInputElement).value);
+                        }
+                      }}
+                      className={hintsUsed[currentQ.id] ? 'border-blue-500 focus-visible:ring-blue-500' : ''}
+                    />
+                    <Button
+                      onClick={() => {
+                        const val = fillBlankValues[currentQ.id] || '';
+                        if (val.trim()) handleAnswer(val);
+                      }}
+                      disabled={!fillBlankValues[currentQ.id]?.trim()}
+                    >
+                      Submit
+                    </Button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">
+                      {(fillBlankValues[currentQ.id] || '').length} characters
+                    </span>
+                    {!hintsUsed[currentQ.id] && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400"
+                        onClick={() => {
+                          const firstLetter = currentQ.answer[0] || '';
+                          setHintsUsed((prev) => ({ ...prev, [currentQ.id]: true }));
+                          setFillBlankValues((prev) => ({
+                            ...prev,
+                            [currentQ.id]: (prev[currentQ.id] || '') + firstLetter,
+                          }));
+                          toast.info(`Hint: First letter "${firstLetter}" revealed! (−25% points)`, { duration: 3000 });
+                        }}
+                      >
+                        <Lightbulb className="h-3.5 w-3.5 mr-1" />
+                        Hint
+                      </Button>
+                    )}
+                    {hintsUsed[currentQ.id] && (
+                      <span className="text-xs text-blue-500 flex items-center gap-1">
+                        <Lightbulb className="h-3 w-3" />
+                        Hint used (−25%)
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
 
               {currentQ.type === 'fill_blank' && answered[currentQ.id] && (
-                <div className="rounded-lg border p-4 text-sm space-y-1">
-                  <p className="text-muted-foreground">Your answer:</p>
-                  <p className="font-medium">{answers[currentQ.id]}</p>
-                </div>
+                <AnimatePresence>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className={`rounded-lg border p-4 text-sm space-y-2 ${
+                      fillBlankGrades[currentQ.id]?.status === 'correct'
+                        ? 'border-emerald-500/50 bg-emerald-500/5 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+                        : fillBlankGrades[currentQ.id]?.status === 'close'
+                          ? 'border-amber-500/50 bg-amber-500/5 shadow-[0_0_20px_rgba(245,158,11,0.15)]'
+                          : 'border-red-500/50 bg-red-500/5 shadow-[0_0_20px_rgba(239,68,68,0.15)]'
+                    }`}
+                  >
+                    <p className="text-muted-foreground">Your answer:</p>
+                    <p className="font-medium">{answers[currentQ.id]}</p>
+                    {fillBlankGrades[currentQ.id]?.status === 'correct' && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 text-xs font-medium"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        Correct! Full points
+                      </motion.div>
+                    )}
+                    {fillBlankGrades[currentQ.id]?.status === 'close' && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="text-amber-600 dark:text-amber-400 text-xs font-medium"
+                      >
+                        {fillBlankGrades[currentQ.id].message} ({Math.round(fillBlankGrades[currentQ.id].points * 100)}% points)
+                      </motion.div>
+                    )}
+                    {fillBlankGrades[currentQ.id]?.status === 'wrong' && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="text-red-600 dark:text-red-400 text-xs font-medium"
+                      >
+                        Correct answer: <span className="font-bold">{currentQ.answer}</span>
+                      </motion.div>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
               )}
 
               {currentQ.type === 'matching' && currentQ.matchingPairs && !answered[currentQ.id] && (
@@ -3849,6 +4137,9 @@ export function QuizView() {
                   }}
                   whileTap={!flipped ? { scale: 0.98 } : undefined}
                   className="relative cursor-pointer select-none"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Flashcard ${currentIndex + 1} of ${flashcardQuestions.length}. ${flipped ? 'Showing answer.' : 'Tap or press Space to flip.'}`}
                 >
                   {/* Swipe direction hint icons */}
                   {flipped && (
@@ -3920,8 +4211,24 @@ export function QuizView() {
                           className="text-xs text-muted-foreground mt-6 flex items-center gap-1.5"
                         >
                           <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse" />
-                          Tap to reveal
+                          Tap or press Space to reveal
                         </motion.p>
+                      )}
+                      {/* Progress indicator */}
+                      <div className="mt-auto pt-4 flex items-center justify-center gap-3 text-xs text-muted-foreground">
+                        <span className="font-semibold tabular-nums text-foreground/70">{currentIndex + 1}/{flashcardQuestions.length}</span>
+                        {difficultCards.has(flashcardQuestions[currentIndex].id) && (
+                          <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                            <AlertTriangle className="h-3 w-3" /> Difficult
+                          </span>
+                        )}
+                      </div>
+                      {/* Swipe hint for users who have flipped before */}
+                      {hasEverFlipped && !flipped && (
+                        <p className="text-[11px] text-muted-foreground/50 flex items-center gap-1.5 mt-3">
+                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary/40 animate-pulse" />
+                          Tap, swipe, or press Space to flip
+                        </p>
                       )}
                     </div>
 
@@ -3949,14 +4256,20 @@ export function QuizView() {
                           {flashcardQuestions[currentIndex].explanation}
                         </p>
                       )}
-                      <p className="text-xs text-muted-foreground mt-6 opacity-60">Swipe or use buttons below</p>
+                      <p className="text-xs text-muted-foreground mt-6 opacity-60">Swipe right → Known · Swipe left → Learning</p>
+                      {/* Keyboard shortcut hints */}
+                      <div className="mt-2 flex items-center justify-center gap-3 text-[10px] text-muted-foreground/50">
+                        <span><kbd className="font-mono bg-muted/60 px-1 py-0.5 rounded border border-border/40 text-[10px]">Space</kbd> flip</span>
+                        <span><kbd className="font-mono bg-muted/60 px-1 py-0.5 rounded border border-border/40 text-[10px]">←</kbd> prev</span>
+                        <span><kbd className="font-mono bg-muted/60 px-1 py-0.5 rounded border border-border/40 text-[10px]">→</kbd> next</span>
+                      </div>
                     </div>
                   </motion.div>
                 </motion.div>
               </motion.div>
             </div>
 
-            {/* Known / Still Learning buttons */}
+            {/* Known / Still Learning / Mark Difficult buttons */}
             {flipped && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
@@ -3965,18 +4278,27 @@ export function QuizView() {
               >
                 <Button
                   variant="outline"
-                  className="flex-1 max-w-[200px] border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/50"
+                  className="flex-1 max-w-[160px] border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/50"
                   onClick={(e) => { e.stopPropagation(); handleFlashcardMark('learning'); }}
                 >
                   <RotateCcw className="h-4 w-4 mr-2" />
-                  Still Learning
+                  Learning
                 </Button>
                 <Button
-                  className="flex-1 max-w-[200px]"
+                  variant="outline"
+                  size="icon"
+                  className={`shrink-0 h-10 w-10 ${difficultCards.has(flashcardQuestions[currentIndex].id) ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'border-border text-muted-foreground hover:border-amber-500/50 hover:text-amber-600 dark:hover:text-amber-400'}`}
+                  onClick={(e) => { e.stopPropagation(); handleMarkDifficult(); }}
+                  title={difficultCards.has(flashcardQuestions[currentIndex].id) ? 'Remove from review queue' : 'Mark as difficult'}
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                </Button>
+                <Button
+                  className="flex-1 max-w-[160px]"
                   onClick={(e) => { e.stopPropagation(); handleFlashcardMark('known'); }}
                 >
                   <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Mark as Known
+                  Known
                 </Button>
               </motion.div>
             )}
@@ -4078,6 +4400,99 @@ export function QuizView() {
             ))}
           </div>
         )}
+
+        {/* Question Map Dialog */}
+        <Dialog open={showQuestionMap} onOpenChange={setShowQuestionMap}>
+          <DialogContent className="max-w-md p-0">
+            <DialogHeader className="px-6 pt-6 pb-3">
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <LayoutGrid className="h-4 w-4 text-primary" />
+                Question Map
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Click a question to navigate. Color indicates your answer status.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="px-6 pb-6">
+              {/* Legend */}
+              <div className="flex items-center gap-4 mb-4 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <span className="h-3 w-3 rounded bg-emerald-500" />
+                  Correct
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-3 w-3 rounded bg-amber-500" />
+                  Close
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-3 w-3 rounded bg-red-500" />
+                  Wrong
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-3 w-3 rounded bg-muted-foreground/30" />
+                  Unanswered
+                </div>
+              </div>
+              {/* Grid */}
+              <div className="grid grid-cols-5 gap-2 max-h-64 overflow-y-auto">
+                {questions.map((q, i) => {
+                  const isCurrent = i === currentIndex;
+                  const isAnswered = answered[q.id];
+                  let statusColor = 'bg-muted/50 text-muted-foreground border-border';
+                  let statusIcon = null;
+                  if (isAnswered) {
+                    if (q.type === 'fill_blank' && fillBlankGrades[q.id]) {
+                      const grade = fillBlankGrades[q.id];
+                      if (grade.status === 'correct') {
+                        statusColor = 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30';
+                        statusIcon = <CheckCircle2 className="h-3 w-3 text-emerald-500" />;
+                      } else if (grade.status === 'close') {
+                        statusColor = 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30';
+                        statusIcon = <span className="text-[10px] font-bold text-amber-500">~</span>;
+                      } else {
+                        statusColor = 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30';
+                        statusIcon = <XCircle className="h-3 w-3 text-red-500" />;
+                      }
+                    } else if (isCorrect(q, answers[q.id] || '')) {
+                      statusColor = 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30';
+                      statusIcon = <CheckCircle2 className="h-3 w-3 text-emerald-500" />;
+                    } else {
+                      statusColor = 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30';
+                      statusIcon = <XCircle className="h-3 w-3 text-red-500" />;
+                    }
+                  }
+                  return (
+                    <motion.button
+                      key={q.id}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => {
+                        setCurrentIndex(i);
+                        setShowQuestionMap(false);
+                      }}
+                      className={`relative flex flex-col items-center justify-center gap-0.5 rounded-lg border p-2 text-xs font-medium transition-all ${statusColor} ${
+                        isCurrent ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''
+                      }`}
+                    >
+                      <span className="font-bold text-sm leading-none">{i + 1}</span>
+                      {statusIcon}
+                    </motion.button>
+                  );
+                })}
+              </div>
+              {/* Summary stats */}
+              <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground border-t border-border/50 pt-3">
+                <span>{Object.keys(answered).length}/{questions.length} answered</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                  {questions.filter((q) => {
+                    if (q.type === 'fill_blank' && fillBlankGrades[q.id]) return fillBlankGrades[q.id].status === 'correct';
+                    return answered[q.id] && isCorrect(q, answers[q.id] || '');
+                  }).length} correct
+                </span>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

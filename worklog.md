@@ -2001,6 +2001,46 @@ src/
 5. **Ambient sound autoplay** - Web Audio API requires user gesture (browser policy, expected)
 6. **Voice input browser support** - SpeechRecognition API not available in all browsers (graceful fallback)
 
+---
+Task ID: 9
+Agent: Main Orchestrator + 3 parallel subagents
+Task: Fix critical client-side rendering error, improve styling, add features
+
+Work Log:
+- Diagnosed root cause of "Application error: a client-side exception has occurred"
+  - The framer-motion `initial="initial"` with `opacity: 0, x: -20` on the outer wrapper div was NEVER animating to `opacity: 1`
+  - The spring transition `{ type: 'spring', stiffness: 300, damping: 30 }` was getting stuck, keeping the entire page invisible
+  - This caused the page to appear as a blank white screen, triggering Next.js error overlay
+- Fixed AppShell.tsx: Changed `initial={currentView === 'landing' ? false : 'initial'}` for full viewport views and `initial={false}` for app views
+- Fixed AppShell.tsx: Changed spring transition to tween `{ type: 'tween', duration: 0.3, ease: 'easeInOut' }` for reliable exit animations
+- Fixed LenisProvider.tsx: Added `typeof window !== 'undefined'` guard around `gsap.registerPlugin(ScrollTrigger)`
+- Fixed CTASection.tsx: Same GSAP SSR guard + navigation fix with `e.stopPropagation()` + `setTimeout(50ms)`
+- Fixed HeroSection.tsx: Navigation fix with `e.stopPropagation()` + `setTimeout(50ms)`
+- Fixed FeaturesSection.tsx, HowItWorksSection.tsx, PromptSystemSection.tsx: GSAP SSR guards
+- Created `/src/app/global-error.tsx`: Global error boundary with styled error page and recovery button
+- Production build verified: 0 errors, 0 warnings (26s compile, 414ms static generation)
+- Agent-browser verified: Page loads with `opacity: 1`, no errors, full content visible
+
+### Styling Improvements (by subagent):
+- **globals.css**: Added 15+ new utility classes (hover-lift, glass-card-hover, animated-border-gradient, text-gradient-emerald, shimmer-slow, sidebar-top-gradient-line, sidebar-active-glow-bar, dashboard-mesh-bg, upload-drag-animated, dropzone-particles, upload-glass-focus, quiz-top-progress, quiz-answer-pulse, quiz-timer-ring, tutor-chat-glass, tutor-ai-bubble, tutor-floating-input)
+- **AppSidebar.tsx**: Animated top gradient line, hover shimmer on nav items, active item glow bar, staggered entrance animation
+- **Dashboard.tsx**: Decorative mesh gradient background, glass-morphism header card, animated border on Quick Start hero, hover-lift on stat cards
+- **UploadView.tsx**: Animated dashed border on drag, CSS-only particles in drop zone, glass inner glow on focus, staggered history items
+- **QuizView.tsx**: Progress bar at top, gradient text for score, card hover lift on options, pulsing glow on selected answer, circular SVG timer ring
+- **TutorView.tsx + ChatBubble.tsx + TypingIndicator.tsx**: Glass backdrop blur on chat, glass-morphism AI bubbles, improved typing indicator, floating glass input container
+
+### New Features (by subagent):
+- **Flashcard Enhancement**: Keyboard shortcuts (Space flip, ← → navigate), swipe hint, progress indicator (3/10), Mark as Difficult button with toast feedback
+- **Course Search & Filter**: Real-time search by title, status filter chips (All/In Progress/Completed) with counts, sort dropdown (by date/name/progress), combined filtering
+- **Notes Auto-save Indicator**: "Saving..." → "Saved ✓" with 500ms debounce, AnimatePresence transition, positioned in edit area header
+- **Export Study Stats as Image**: Canvas API renders stats card (1200×680 retina), gradient background, 4 stat cards, auto-download as PNG
+- **Quick Study Timer Widget**: Circular SVG countdown (25min Pomodoro), Start/Pause/Reset, session tracking (1/4), session dots indicator, glass card styling, localStorage persistence
+
+### Verification:
+- `npx eslint`: 0 errors on all modified files
+- `NODE_ENV=production npx next build`: 0 errors, 0 warnings
+- Agent-browser: Page loads with opacity: 1, full content rendered, no console errors
+
 ### Recommendations for Next Phase:
 1. **Priority 1**: End-to-end test with real .docx upload to question generation to quiz flow
 2. **Priority 1**: Verify TTS and voice input end-to-end in browser
