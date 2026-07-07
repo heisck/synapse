@@ -1,0 +1,103 @@
+export type AppView =
+  | 'landing'
+  | 'dashboard'
+  | 'tutor'
+  | 'upload'
+  | 'quiz'
+  | 'onboarding'
+  | 'profile'
+  | 'course-detail';
+
+export interface LearnerProfile {
+  learningStyle: 'visual' | 'auditory' | 'reading' | 'kinesthetic';
+  pace: 'slow' | 'steady' | 'fast';
+  vocabularySensitive: boolean;
+  prefersStory: boolean;
+  prefersBigPicture: boolean;
+  simpleGrammar: boolean;
+  jargonTolerance: 'low' | 'medium' | 'high';
+  masteryApproach: 'evidence' | 'self-reported';
+}
+
+export interface MasteryMap {
+  [concept: string]: {
+    level: number;
+    evidence: string[];
+    lastAssessed: number;
+    attempts: number;
+  };
+}
+
+export interface DecisionLoopState {
+  confusionScore: number;
+  masteryState: 'unknown' | 'emerging' | 'developing' | 'proficient' | 'mastered';
+  responseQuality: number;
+  cognitiveLoad: 'low' | 'medium' | 'high';
+  motivation: 'low' | 'medium' | 'high';
+}
+
+export interface ErrorClassification {
+  type: 'misconception' | 'partial' | 'vocabulary' | 'careless' | 'gap';
+  severity: 'low' | 'medium' | 'high';
+  pattern: string;
+  remediation: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  sessionId: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  createdAt: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface Course {
+  id: string;
+  title: string;
+  description: string;
+  subject: string;
+  thumbnail?: string;
+  slides?: Slide[];
+  _count?: { slides: number; enrollments: number; sessions: number };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Slide {
+  id: string;
+  courseId: string;
+  title: string;
+  content: string;
+  order: number;
+  createdAt: string;
+}
+
+export interface Question {
+  id: string;
+  courseId?: string;
+  slideId?: string;
+  type: 'multiple_choice' | 'true_false' | 'short_answer' | 'fill_blank' | 'matching' | 'error_correction';
+  question: string;
+  options?: string[];
+  answer: string;
+  explanation?: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  concept?: string;
+  matchingPairs?: Array<{ left: string; right: string }>;
+  errorText?: string;
+}
+
+export interface UserTip {
+  id: string;
+  content: string;
+  category: string;
+  createdAt: string;
+}
+
+export interface UserFeedback {
+  id: string;
+  type: 'like' | 'dislike' | 'confused' | 'too_fast' | 'too_slow';
+  message?: string;
+  createdAt: string;
+}
