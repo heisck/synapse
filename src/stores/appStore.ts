@@ -83,6 +83,10 @@ interface AppState {
   activePersona: string;
   setActivePersona: (persona: string) => void;
 
+  // Tutoring Mode
+  tutorMode: 'text' | 'slide' | 'hybrid';
+  setTutorMode: (mode: 'text' | 'slide' | 'hybrid') => void;
+
   // UI
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
@@ -149,6 +153,8 @@ export const useAppStore = create<AppState>((set) => ({
   setAlwaysConfuses: (text) => set({ alwaysConfuses: text }),
   activePersona: 'storyteller',
   setActivePersona: (persona) => set({ activePersona: persona }),
+  tutorMode: 'hybrid',
+  setTutorMode: (mode) => set({ tutorMode: mode }),
   sidebarOpen: false,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   isLoading: false,

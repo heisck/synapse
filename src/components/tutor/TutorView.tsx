@@ -21,8 +21,12 @@ import {
   MessageSquareText,
   ListChecks,
   MoreHorizontal,
+  BookOpen,
+  MessageCircle,
+  Columns,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { motion } from 'framer-motion'
 
 import { ChatBubble, stopAllTTS } from './ChatBubble'
 import { TypingIndicator } from './TypingIndicator'
@@ -40,6 +44,12 @@ const QUICK_ACTIONS = [
   { label: 'Explain differently', icon: MessageSquareText, prompt: 'Can you explain that differently?' },
   { label: 'Show example', icon: ListChecks, prompt: 'Can you show me an example?' },
   { label: 'Quiz me', icon: ListChecks, prompt: 'Quiz me on what we just covered.' },
+]
+
+const TUTOR_MODES = [
+  { id: 'text' as const, label: 'Chat', icon: MessageCircle, desc: 'Text-only conversation' },
+  { id: 'slide' as const, label: 'Slides', icon: BookOpen, desc: 'Slide-focused learning' },
+  { id: 'hybrid' as const, label: 'Hybrid', icon: Columns, desc: 'Chat + slides together' },
 ]
 
 function formatTimer(seconds: number): string {
@@ -74,6 +84,11 @@ export function TutorView() {
     setLoading,
     isLoading,
     activePersona,
+    tutorMode,
+    setTutorMode,
+    activeSlides,
+    currentSlideIndex,
+    setCurrentSlideIndex,
   } = useAppStore()
 
   const [input, setInput] = useState('')
@@ -84,17 +99,18 @@ export function TutorView() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  const showSlidePanel = (tutorMode === 'slide' || tutorMode === 'hybrid') && activeSlides.length > 0
+
   // Initialize session on mount
   useEffect(() => {
     if (!activeSessionId) {
       const sessionId = crypto.randomUUID()
       setActiveSession(sessionId)
-      // Add greeting message
       addMessage({
         id: crypto.randomUUID(),
         sessionId,
         role: 'assistant',
-        content: `Welcome${userName ? ', ' + userName : ''}! 👋 I'm your AI tutor. What would you like to learn about today? Pick a topic below or type your own!`,
+        content: `Welcome${userName ? ', ' + userName : ''}! I'm your AI tutor. What would you like to learn about today? Pick a topic below or type your own!`,
         createdAt: new Date().toISOString(),
       })
     }
@@ -119,7 +135,6 @@ export function TutorView() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-    // Auto-stop TTS when a new message appears
     if (messages.length > prevMessagesLen.current) {
       stopAllTTS()
     }
@@ -188,7 +203,6 @@ export function TutorView() {
         createdAt: new Date().toISOString(),
       })
 
-      // Update phase if needed
       if (sessionPhase === 'discovery' || sessionPhase === 'starter') {
         setSessionPhase('teaching')
       }
@@ -233,10 +247,34 @@ export function TutorView() {
           <Badge variant="secondary" className={getPhaseColor(sessionPhase)}>
             {sessionPhase}
           </Badge>
+          {/* Mode Selector */}
+          <div className="hidden sm:flex items-center rounded-lg border border-border bg-background/50 p-0.5">
+            {TUTOR_MODES.map((mode) => {
+              const Icon = mode.icon
+              const isActive = tutorMode === mode.id
+              return (
+                <button
+                  key={mode.id}
+                  onClick={() => setTutorMode(mode.id)}
+                  className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                    isActive
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                  }`}
+                  title={mode.desc}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {mode.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <Badge variant="outline" className="font-mono text-xs">
-            {formatTimer(timerSeconds)}
+            <span className={timerSeconds > 0 ? 'text-emerald-600 dark:text-emerald-400' : ''}>
+              {formatTimer(timerSeconds)}
+            </span>
           </Badge>
           <Badge variant="outline" className="text-xs">
             {messages.length} messages
@@ -254,10 +292,80 @@ export function TutorView() {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
+        {/* Slide Panel - visible in slide or hybrid mode when slides exist */}
+        {showSlidePanel && (
+          <motion.div
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: tutorMode === 'slide' ? '50%' : '40%', opacity: 1 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            className="border-r bg-card/30 overflow-hidden flex flex-col"
+          >
+            <div className="p-3 border-b">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-semibold">Course Slides</span>
+                </div>
+                <Badge variant="secondary" className="text-[10px]">
+                  {currentSlideIndex + 1} / {activeSlides.length}
+                </Badge>
+              </div>
+            </div>
+            <ScrollArea className="flex-1">
+              <div className="p-4">
+                {/* Slide navigation dots */}
+                <div className="flex gap-1 mb-3 flex-wrap">
+                  {activeSlides.map((_, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentSlideIndex(idx)}
+                      className={`h-2 rounded-full transition-all ${
+                        idx === currentSlideIndex
+                          ? 'bg-primary w-6'
+                          : 'bg-muted w-2 hover:bg-primary/50'
+                      }`}
+                    />
+                  ))}
+                </div>
+                {activeSlides[currentSlideIndex] && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-foreground">
+                      {activeSlides[currentSlideIndex].title}
+                    </h3>
+                    <div className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                      {activeSlides[currentSlideIndex].content}
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={currentSlideIndex === 0}
+                        onClick={() => setCurrentSlideIndex(currentSlideIndex - 1)}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={currentSlideIndex === activeSlides.length - 1}
+                        onClick={() => setCurrentSlideIndex(currentSlideIndex + 1)}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </motion.div>
+        )}
+
         {/* Chat Panel */}
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Course Context Panel (visible when slides are loaded) */}
-          <CourseContextPanel />
+          {/* Course Context Panel - fallback when no dedicated slide panel */}
+          {!showSlidePanel && <CourseContextPanel />}
           <ScrollArea className="flex-1 p-4" ref={scrollRef}>
             {/* Quick topic chips when no topic is set */}
             {!activeTopic && messages.length <= 1 && (

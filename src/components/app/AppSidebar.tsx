@@ -100,7 +100,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             <p className="text-sm font-medium truncate">{userName || 'Student'}</p>
             <p className="text-xs text-muted-foreground">Free Plan</p>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-1">
+            <kbd className="pointer-events-none hidden h-5 select-none items-center gap-0.5 rounded border bg-muted/50 px-1 font-mono text-[9px] font-medium text-muted-foreground lg:flex">
+              K
+            </kbd>
+            <ThemeToggle />
+          </div>
         </div>
       </div>
     </div>
