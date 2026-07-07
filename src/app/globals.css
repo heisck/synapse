@@ -613,3 +613,91 @@ html.lenis, html.lenis body {
   0% { background-position: 200% 200%; }
   100% { background-position: -100% -100%; }
 }
+
+/* ============================================
+   TASK 17-c: GLASS MORPHISM & MICRO-INTERACTION UTILITIES
+   ============================================ */
+
+/* Glass sidebar */
+@utility glass-sidebar {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  background: oklch(0.995 0.002 155 / 0.7);
+  border-right: 1px solid oklch(0.918 0.018 155 / 0.5);
+}
+.dark .glass-sidebar,
+:is(.dark *) .glass-sidebar {
+  background: oklch(0.145 0.015 155 / 0.7);
+  border-right: 1px solid oklch(0.32 0.035 155 / 0.5);
+}
+
+/* Glass header */
+@utility glass-header {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  background: oklch(0.995 0.002 155 / 0.6);
+  border-bottom: 1px solid oklch(0.918 0.018 155 / 0.3);
+}
+.dark .glass-header,
+:is(.dark *) .glass-header {
+  background: oklch(0.145 0.015 155 / 0.6);
+  border-bottom: 1px solid oklch(0.32 0.035 155 / 0.3);
+}
+
+/* Vertical gradient line (2px, emerald-to-teal) with animated position */
+@utility gradient-line-vertical {
+  position: relative;
+  width: 2px;
+  overflow: hidden;
+}
+.gradient-line-vertical::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  background: linear-gradient(
+    to bottom,
+    oklch(0.627 0.194 149.214),
+    oklch(0.687 0.159 177.89),
+    oklch(0.627 0.194 149.214),
+    oklch(0.687 0.159 177.89),
+    oklch(0.627 0.194 149.214)
+  );
+  background-size: 100% 300%;
+  animation: gradientLineShift 4s ease-in-out infinite;
+}
+
+/* Subtle float animation (2px) */
+@utility float-animation {
+  animation: floatSubtle 3s ease-in-out infinite;
+}
+
+/* Timeline vertical connecting line */
+@utility timeline-line {
+  position: relative;
+}
+.timeline-line::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(
+    to bottom,
+    oklch(0.627 0.194 149.214 / 0.4),
+    oklch(0.687 0.159 177.89 / 0.15),
+    oklch(0.627 0.194 149.214 / 0.05)
+  );
+  pointer-events: none;
+}
+
+@keyframes floatSubtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@keyframes gradientLineShift {
+  0%, 100% { background-position: 0% 0%; }
+  50% { background-position: 0% 100%; }
+}

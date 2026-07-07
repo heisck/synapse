@@ -48,6 +48,7 @@ import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { StatsCard } from './StatsCard';
 import { CourseCard } from './CourseCard';
 import { EmptyState } from './EmptyState';
+import { useStudyStreak, useTotalStudyTime } from '@/hooks/useStudyTracker';
 
 const topicChips = ['Cell Biology', 'Organic Chemistry', 'Data Structures', 'Physics'];
 
@@ -89,7 +90,7 @@ const studyTips = [
   'Teaching someone else is the fastest way to identify gaps in your own understanding. Find a study partner today.',
 ];
 
-const weeklyActivityData = [
+const mockWeeklyActivityData = [
   { day: 'Mon', sessions: 3 },
   { day: 'Tue', sessions: 5 },
   { day: 'Wed', sessions: 2 },
@@ -99,7 +100,7 @@ const weeklyActivityData = [
   { day: 'Sun', sessions: 1 },
 ];
 
-const masteryTrendData = [
+const mockMasteryTrendData = [
   { week: 'Week 1', mastery: 45 },
   { week: 'Week 2', mastery: 52 },
   { week: 'Week 3', mastery: 61 },
@@ -137,7 +138,7 @@ function GradientDivider() {
   );
 }
 
-// Slide-in activity item
+// Slide-in activity item with timeline dot
 function ActivityItem({ activity, index }: { activity: typeof recentActivity[number]; index: number }) {
   const Icon = activityIcons[activity.type] ?? Clock;
   const timeLabel = formatRelativeTime(activity.time);
@@ -148,9 +149,11 @@ function ActivityItem({ activity, index }: { activity: typeof recentActivity[num
       initial={{ opacity: 0, x: 30 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.4, delay: index * 0.08, ease: 'easeOut' }}
-      className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors"
+      className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors relative"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+      {/* Timeline connector dot */}
+      <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-primary/30 via-primary/10 to-transparent last:hidden pointer-events-none" style={{ display: index < recentActivity.length - 1 ? 'block' : 'none' }} />
+      <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 z-10">
         <Icon className="h-4 w-4 text-primary" />
       </div>
       <div className="flex-1 min-w-0">
@@ -172,26 +175,7 @@ function ActivityItem({ activity, index }: { activity: typeof recentActivity[num
   );
 }
 
-// Study streak helper
-function getStudyStreak(): number {
-  if (typeof window === 'undefined') return 0;
-  try {
-    const streakData = localStorage.getItem('synapse-study-streak');
-    if (!streakData) return 0;
-    const parsed = JSON.parse(streakData) as { lastStudyDate: string; streak: number };
-    const lastDate = new Date(parsed.lastStudyDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    lastDate.setHours(0, 0, 0, 0);
-    const diffDays = Math.floor((today.getTime() - lastDate.getTime()) / 86400000);
-    // Allow same-day or yesterday to count
-    if (diffDays <= 1) return parsed.streak;
-    return 0;
-  } catch {
-    return 0;
-  }
-}
-
+// Study streak helper - kept for backward compat but Dashboard uses hook
 function getLastSessionTime(): number | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -217,12 +201,16 @@ export function Dashboard() {
     toggleGoalStatus,
     deleteGoal,
     reorderGoals,
+    studySessions,
+    masteryMap,
   } = useAppStore();
+
+  const { current: currentStreak, best: bestStreak } = useStudyStreak();
+  const totalStudyTimeMinutes = useTotalStudyTime();
 
   const [progressValue, setProgressValue] = useState(0);
   const [activeTipIndex, setActiveTipIndex] = useState(() => Math.floor(Math.random() * studyTips.length));
   const [tipDirection, setTipDirection] = useState<'left' | 'right'>('left');
-  const [studyStreak] = useState(() => getStudyStreak());
   const [toastShown, setToastShown] = useState(false);
   const [newGoalText, setNewGoalText] = useState('');
 
@@ -335,6 +323,80 @@ export function Dashboard() {
     reorderGoals(index, targetIndex);
   };
 
+  // Compute real chart data from studySessions
+  const { weeklyActivityData, isWeeklyDemo, masteryTrendData, isMasteryDemo } = useMemo(() => {
+    // Weekly activity: group by day of current week
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
+    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - mondayOffset);
+    monday.setHours(0, 0, 0, 0);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 7);
+
+    const weekSessions = studySessions.filter((s) => {
+      const d = new Date(s.date);
+      return d >= monday && d < sunday;
+    });
+
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const realWeekly = dayNames.map((day, idx) => {
+      const dayDate = new Date(monday);
+      dayDate.setDate(monday.getDate() + idx);
+      const dayStr = dayDate.toISOString().split('T')[0];
+      const count = weekSessions.filter((s) => new Date(s.date).toISOString().split('T')[0] === dayStr).length;
+      return { day, sessions: count };
+    });
+    const hasWeeklyData = realWeekly.some((d) => d.sessions > 0);
+
+    // Mastery trend: group mastery entries by week (using lastAssessed timestamp)
+    const masteryEntries = Object.values(masteryMap);
+    let realMastery: { week: string; mastery: number }[] = [];
+    if (masteryEntries.length > 0) {
+      const weekMap = new Map<string, number[]>();
+      masteryEntries.forEach((entry) => {
+        if (entry.lastAssessed > 0) {
+          const d = new Date(entry.lastAssessed);
+          // Get week start (Monday)
+          const day = d.getDay();
+          const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+          const weekStart = new Date(d);
+          weekStart.setDate(diff);
+          weekStart.setHours(0, 0, 0, 0);
+          const key = weekStart.toISOString().split('T')[0];
+          if (!weekMap.has(key)) weekMap.set(key, []);
+          weekMap.get(key)!.push(entry.level);
+        }
+      });
+      const sortedWeeks = [...weekMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+      realMastery = sortedWeeks.map(([_, levels], idx) => ({
+        week: `Wk ${idx + 1}`,
+        mastery: Math.round(levels.reduce((s, l) => s + l, 0) / levels.length),
+      }));
+      // Take last 8 weeks
+      if (realMastery.length > 8) {
+        realMastery = realMastery.slice(-8);
+      }
+    }
+    const hasMasteryData = realMastery.length >= 2;
+
+    return {
+      weeklyActivityData: hasWeeklyData ? realWeekly : mockWeeklyActivityData,
+      isWeeklyDemo: !hasWeeklyData,
+      masteryTrendData: hasMasteryData ? realMastery : mockMasteryTrendData,
+      isMasteryDemo: !hasMasteryData,
+    };
+  }, [studySessions, masteryMap]);
+
+  // Format total study time
+  const formattedStudyTime = useMemo(() => {
+    const hours = Math.floor(totalStudyTimeMinutes / 60);
+    const mins = totalStudyTimeMinutes % 60;
+    if (hours === 0) return `${mins}m`;
+    return `${hours}h ${mins}m`;
+  }, [totalStudyTimeMinutes]);
+
   const greeting = getGreeting();
   const displayName = userName || 'Student';
   const showViewAll = courses.length > 3;
@@ -393,15 +455,20 @@ export function Dashboard() {
                 {displayName}
               </motion.span>
             </motion.h1>
-            {studyStreak > 0 && (
+            {currentStreak > 0 && (
               <motion.div
                 initial={{ scale: 0, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ delay: 0.8, type: 'spring', stiffness: 400, damping: 20 }}
                 className="flex items-center gap-1 text-orange-500 bg-orange-500/10 px-2.5 py-0.5 rounded-full"
               >
-                <Flame className="h-4 w-4" />
-                <span className="text-xs font-bold">{studyStreak} day streak</span>
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                >
+                  <Flame className="h-4 w-4" />
+                </motion.div>
+                <span className="text-xs font-bold">{currentStreak} day streak</span>
               </motion.div>
             )}
           </div>
@@ -437,10 +504,17 @@ export function Dashboard() {
       {/* Quick Start Card */}
       <motion.div variants={fadeUp}>
         <div className="relative group">
-          {/* Animated glow border sweep on mount */}
+          {/* More dramatic animated gradient border */}
           <motion.div
             {...glowSweep}
-            className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 blur-sm"
+            className="absolute -inset-[2px] rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 blur-md"
+          />
+          <motion.div
+            animate={{
+              opacity: [0.15, 0.3, 0.15],
+            }}
+            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500"
           />
           <div
             className="relative overflow-hidden rounded-xl p-6 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white cursor-pointer"
@@ -511,56 +585,47 @@ export function Dashboard() {
       <motion.div variants={fadeUp} className="space-y-3">
         <h3 className="text-sm font-medium text-muted-foreground">Popular Topics</h3>
         <div className="flex flex-wrap gap-2">
-          {topicChips.map((topic) => (
-            <button
+          {topicChips.map((topic, i) => (
+            <motion.button
               key={topic}
               onClick={() => handleStartSession(topic)}
+              whileHover={{ rotate: [0, -2, 2, -1, 0] }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
               className="rounded-full border border-border bg-background/80 px-4 py-2 text-sm font-medium hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
             >
               {topic}
-            </button>
+            </motion.button>
           ))}
         </div>
       </motion.div>
 
       <GradientDivider />
 
-      {/* Stats Row */}
+      {/* Stats Row - with floating animation */}
       <motion.div variants={fadeUp}>
         <div className="glass rounded-xl p-4">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatsCard
-              icon={BookOpen}
-              label="Active Courses"
-              value={courses.length}
-              trend="up"
-              change="+2 this week"
-              index={0}
-            />
-            <StatsCard
-              icon={Target}
-              label="Mastery Rate"
-              value="78%"
-              trend="up"
-              change="+5%"
-              index={1}
-            />
-            <StatsCard
-              icon={Zap}
-              label="Sessions"
-              value="24"
-              trend="up"
-              change="+3 this week"
-              index={2}
-            />
-            <StatsCard
-              icon={MessageSquare}
-              label="Questions"
-              value="156"
-              trend="down"
-              change="-2 today"
-              index={3}
-            />
+            {[
+              { icon: BookOpen, label: 'Active Courses', value: courses.length, trend: 'up' as const, change: studySessions.length > 0 ? `${studySessions.length} sessions` : 'No sessions yet', idx: 0 },
+              { icon: Flame, label: 'Study Streak', value: `${currentStreak}d`, trend: currentStreak > 0 ? 'up' as const : 'down' as const, change: bestStreak > 0 ? `Best: ${bestStreak} days` : 'Start studying!', idx: 1 },
+              { icon: Clock, label: 'Study Time', value: totalStudyTimeMinutes > 0 ? formattedStudyTime : '0m', trend: 'up' as const, change: totalStudyTimeMinutes > 0 ? 'Keep going!' : 'Start a session', idx: 2 },
+              { icon: MessageSquare, label: 'Total Sessions', value: studySessions.length, trend: studySessions.length > 0 ? 'up' as const : 'down' as const, change: studySessions.length > 0 ? `${studySessions.reduce((s, ses) => s + ses.messagesCount, 0)} messages` : 'No messages', idx: 3 },
+            ].map((stat, i) => (
+              <motion.div
+                key={stat.label}
+                animate={{ y: [0, -2, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.4 }}
+              >
+                <StatsCard
+                  icon={stat.icon}
+                  label={stat.label}
+                  value={stat.value}
+                  trend={stat.trend}
+                  change={stat.change}
+                  index={stat.idx}
+                />
+              </motion.div>
+            ))}
           </div>
         </div>
       </motion.div>
@@ -743,6 +808,9 @@ export function Dashboard() {
                 <div className="flex items-center gap-2 text-white">
                   <BarChart3 className="h-4 w-4" />
                   <span className="text-sm font-semibold">Weekly Activity</span>
+                  {isWeeklyDemo && (
+                    <span className="text-[10px] text-emerald-100/60 bg-white/10 px-1.5 py-0.5 rounded">demo data</span>
+                  )}
                 </div>
                 <p className="text-emerald-100/80 text-xs mt-0.5">Study sessions per day this week</p>
               </div>
@@ -801,6 +869,9 @@ export function Dashboard() {
                 <div className="flex items-center gap-2 text-white">
                   <TrendingUp className="h-4 w-4" />
                   <span className="text-sm font-semibold">Mastery Trend</span>
+                  {isMasteryDemo && (
+                    <span className="text-[10px] text-emerald-100/60 bg-white/10 px-1.5 py-0.5 rounded">demo data</span>
+                  )}
                 </div>
                 <p className="text-emerald-100/80 text-xs mt-0.5">Overall mastery score over time</p>
               </div>
@@ -923,7 +994,12 @@ export function Dashboard() {
       <motion.div variants={fadeUp}>
         <div className="glass rounded-xl p-5 flex gap-4 items-start">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/10">
-            <Lightbulb className="h-5 w-5 text-amber-500" />
+            <motion.div
+              animate={{ rotate: [0, 360] }}
+              transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+            >
+              <Lightbulb className="h-5 w-5 text-amber-500" />
+            </motion.div>
           </div>
           <div className="space-y-2 flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
@@ -981,7 +1057,7 @@ export function Dashboard() {
   );
 }
 
-// Enhanced Course Card with gradient overlay and animated Open button
+// Enhanced Course Card with gradient overlay sliding up from bottom on hover
 function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof CourseCard>[0]['course']; onClick: () => void }) {
   const slideCount = course._count?.slides ?? course.slides?.length ?? 0;
 
@@ -999,23 +1075,18 @@ function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof Cou
           <Badge className="absolute top-3 right-3 text-[10px] z-20" variant="secondary">
             {course.subject}
           </Badge>
-          {/* Gradient overlay on hover */}
+          {/* Gradient overlay that slides up from bottom on hover */}
           <motion.div
-            className="absolute inset-0 bg-gradient-to-t from-emerald-900/30 to-transparent"
-            initial={{ opacity: 0 }}
-            whileHover={{ opacity: 1 }}
-            transition={{ duration: 0.3 }}
-          />
-          {/* Animated Open button reveal */}
-          <motion.div
-            className="absolute bottom-3 right-3 z-20"
-            initial={{ opacity: 0, y: 8, scale: 0.9 }}
-            whileHover={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.2 }}
+            className="absolute inset-0 bg-gradient-to-t from-primary/60 via-primary/20 to-transparent z-10"
+            initial={{ opacity: 0, y: '100%' }}
+            whileHover={{ opacity: 1, y: '0%' }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
           >
-            <span className="inline-flex items-center gap-1 text-xs font-medium bg-white/90 dark:bg-black/60 text-foreground px-3 py-1.5 rounded-full backdrop-blur-sm shadow-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300 translate-y-2 group-hover:translate-y-0">
-              Open <ArrowRight className="h-3 w-3" />
-            </span>
+            <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center z-20">
+              <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-white">
+                Continue <ArrowRight className="h-4 w-4" />
+              </span>
+            </div>
           </motion.div>
         </div>
 

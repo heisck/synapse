@@ -132,3 +132,25 @@ export interface AppSettings {
   sessionReminders: boolean;
   streakAlerts: boolean;
 }
+
+export interface Achievement {
+  id: string;
+  title: string;
+  description: string;
+  icon: string; // lucide icon name
+  category: 'study' | 'quiz' | 'streak' | 'social' | 'mastery';
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  unlockedAt: string | null; // null = locked
+  condition: string; // e.g., "complete_5_sessions", "score_100_quiz", "streak_7"
+  progress: number; // 0-100
+  targetValue: number;
+}
+
+export interface StudySession {
+  id: string;
+  date: string; // ISO date
+  duration: number; // minutes
+  topic: string;
+  messagesCount: number;
+  masteryGained: number;
+}

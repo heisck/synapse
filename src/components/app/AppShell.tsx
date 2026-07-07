@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, lazy, useState, useEffect } from 'react';
+import { Suspense, lazy, useState, useRef, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
@@ -28,9 +28,9 @@ const SettingsView = lazy(() => import('./SettingsView'));
 function ViewLoader() {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.92 }}
+      initial={{ opacity: 0, scale: 0.8 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ type: 'spring', stiffness: 180, damping: 22, mass: 0.8 }}
+      transition={{ type: 'spring', stiffness: 200, damping: 22, mass: 0.8 }}
       className="flex h-full min-h-[60vh] items-center justify-center"
     >
       <div className="glass rounded-2xl p-8 flex flex-col items-center gap-5 max-w-xs w-full">
@@ -77,6 +77,79 @@ function ViewLoader() {
     </motion.div>
   );
 }
+
+// Page transition indicator - thin gradient line at top during transitions
+function TransitionIndicator({ show }: { show: boolean }) {
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          initial={{ scaleX: 0, opacity: 0 }}
+          animate={{ scaleX: 1, opacity: 1 }}
+          exit={{ scaleX: 0, opacity: 0 }}
+          transition={{ duration: 0.15, ease: 'easeOut' }}
+          className="absolute top-0 left-0 right-0 h-[2px] z-50 origin-left"
+        >
+          <motion.div
+            animate={{ x: ['-100%', '100%'] }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            className="h-full w-1/2 bg-gradient-to-r from-transparent via-primary to-transparent"
+          />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// Unique entrance animations per view
+const viewTransitions: Record<string, { initial: object; animate: object; exit: object }> = {
+  dashboard: {
+    initial: { opacity: 0, x: -40 },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: 40 },
+  },
+  tutor: {
+    initial: { opacity: 0, x: 40 },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: -40 },
+  },
+  upload: {
+    initial: { opacity: 0, scale: 0.92 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.92 },
+  },
+  quiz: {
+    initial: { opacity: 0, y: 40 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -40 },
+  },
+  notes: {
+    initial: { opacity: 0, x: -40 },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: 40 },
+  },
+  profile: {
+    initial: { opacity: 0, scale: 0.92 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.92 },
+  },
+  'course-detail': {
+    initial: { opacity: 0, y: 20, scale: 0.97 },
+    animate: { opacity: 1, y: 0, scale: 1 },
+    exit: { opacity: 0, y: -20, scale: 0.97 },
+  },
+  settings: {
+    initial: { opacity: 0, scale: 0.95 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.95 },
+  },
+};
+
+const defaultTransition = {
+  initial: { opacity: 0, x: -20 },
+  animate: { opacity: 1, x: 0 },
+  exit: { opacity: 0, x: 20 },
+};
 
 function SearchModal() {
   const { navigate, recentViews, courses, addRecentView, setActiveTopic, setActiveSession } = useAppStore();
@@ -401,15 +474,28 @@ function KeyboardShortcuts() {
 
 const fullViewportViews: Array<string> = ['landing', 'onboarding'];
 
-const pageVariants = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -12 },
-};
+// Spring transition config for view changes
+const springTransition = { type: 'spring' as const, stiffness: 300, damping: 30 };
 
 export function AppShell() {
   const { currentView, navigate } = useAppStore();
   const isFullViewport = fullViewportViews.includes(currentView);
+  const [transitioning, setTransitioning] = useState(false);
+  const prevViewRef = useRef(currentView);
+
+  // Detect view changes to trigger transition indicator
+  useEffect(() => {
+    if (prevViewRef.current !== currentView) {
+      prevViewRef.current = currentView;
+      const timer = setTimeout(() => setTransitioning(false), 400);
+      // Use a microtask to avoid synchronous setState in effect
+      const raf = requestAnimationFrame(() => setTransitioning(true));
+      return () => {
+        clearTimeout(timer);
+        cancelAnimationFrame(raf);
+      };
+    }
+  }, [currentView]);
 
   const handleGoDashboard = () => navigate('dashboard');
 
@@ -440,6 +526,8 @@ export function AppShell() {
     }
   };
 
+  const viewVariant = viewTransitions[currentView] || defaultTransition;
+
   return (
     <>
       <StoreInitializer />
@@ -450,13 +538,14 @@ export function AppShell() {
         {isFullViewport ? (
           <motion.div
             key={currentView}
-            variants={pageVariants}
+            variants={viewVariant}
             initial="initial"
             animate="animate"
             exit="exit"
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            transition={springTransition}
             className="min-h-screen mesh-gradient"
           >
+            <TransitionIndicator show={transitioning} />
             <Suspense fallback={<ViewLoader />}>
               <ErrorBoundary onGoDashboard={handleGoDashboard}>
                 {renderView()}
@@ -466,15 +555,16 @@ export function AppShell() {
         ) : (
           <motion.div
             key={`app-${currentView}`}
-            variants={pageVariants}
+            variants={viewVariant}
             initial="initial"
             animate="animate"
             exit="exit"
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            transition={springTransition}
             className="flex min-h-screen"
           >
             <AppSidebar />
-            <main className={`flex-1 min-h-screen overflow-y-auto ${currentView === 'tutor' ? '!p-0 !max-w-none' : ''}`}>
+            <main className={`relative flex-1 min-h-screen overflow-y-auto ${currentView === 'tutor' ? '!p-0 !max-w-none' : ''}`}>
+              <TransitionIndicator show={transitioning} />
               <div className={`mx-auto max-w-6xl p-4 lg:p-8 ${currentView === 'tutor' ? '!max-w-none !p-0' : ''}`}>
                 <Suspense fallback={<ViewLoader />}>
                   <ErrorBoundary onGoDashboard={handleGoDashboard}>

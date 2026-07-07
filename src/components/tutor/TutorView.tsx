@@ -31,6 +31,10 @@ import {
   Timer,
   Coffee,
   Brain,
+  Mic,
+  Maximize2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -91,6 +95,23 @@ const QUICK_ACTIONS = [
   { label: 'Quiz me', icon: ListChecks, prompt: 'Quiz me on what we just covered.' },
 ]
 
+const SUGGESTED_PROMPTS = [
+  'Explain this concept',
+  'Give me a quiz',
+  'Show examples',
+  'Summarize key points',
+]
+
+type InputSize = 'small' | 'medium' | 'large'
+
+const INPUT_SIZES: Record<InputSize, { minH: number; maxH: number; rows: number; label: string }> = {
+  small: { minH: 40, maxH: 80, rows: 1, label: 'Small' },
+  medium: { minH: 40, maxH: 150, rows: 1, label: 'Medium' },
+  large: { minH: 80, maxH: 300, rows: 3, label: 'Large' },
+}
+
+const INPUT_SIZE_CYCLE: InputSize[] = ['small', 'medium', 'large']
+
 const TUTOR_MODES = [
   { id: 'text' as const, label: 'Chat', icon: MessageCircle, desc: 'Text-only conversation' },
   { id: 'slide' as const, label: 'Slides', icon: BookOpen, desc: 'Slide-focused learning' },
@@ -137,6 +158,8 @@ export function TutorView() {
   } = useAppStore()
 
   const [input, setInput] = useState('')
+  const [inputFocused, setInputFocused] = useState(false)
+  const [inputSize, setInputSize] = useState<InputSize>('medium')
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
   const [timerSeconds, setTimerSeconds] = useState(0)
   const timerStarted = useRef(false)
@@ -260,9 +283,21 @@ export function TutorView() {
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value)
     const el = e.target
+    const size = INPUT_SIZES[inputSize]
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 150)}px`
+    el.style.height = `${Math.min(el.scrollHeight, size.maxH)}px`
+  }, [inputSize])
+
+  const cycleInputSize = useCallback(() => {
+    setInputSize((prev) => {
+      const idx = INPUT_SIZE_CYCLE.indexOf(prev)
+      const next = INPUT_SIZE_CYCLE[(idx + 1) % INPUT_SIZE_CYCLE.length]
+      return next
+    })
   }, [])
+
+  const charCount = input.length
+  const charColorClass = charCount < 200 ? 'text-emerald-600 dark:text-emerald-400' : charCount < 400 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'
 
   const handleSend = useCallback(async (text?: string) => {
     const content = (text || input).trim()
@@ -335,6 +370,17 @@ export function TutorView() {
     }
   }, [input, activeSessionId, messages, sessionPhase, learnerProfile, masteryMap, addMessage, setActiveSession, setLoading, setSessionPhase, activePersona])
 
+  const handleRegenerate = useCallback((messageId: string) => {
+    // Find the user message that preceded this assistant message
+    const msgIndex = messages.findIndex((m) => m.id === messageId)
+    if (msgIndex > 0) {
+      const prevMsg = messages[msgIndex - 1]
+      if (prevMsg.role === 'user') {
+        handleSend(prevMsg.content)
+      }
+    }
+  }, [messages, handleSend])
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -353,34 +399,68 @@ export function TutorView() {
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b bg-card/80 backdrop-blur-sm">
+      {/* Header - Frosted glass */}
+      <header className="glass-header flex items-center justify-between px-4 py-3 z-10">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold">
-            {activeTopic || 'AI Tutor'}
-          </h1>
+          {/* AI Active indicator + name */}
+          <div className="flex items-center gap-2">
+            <motion.span
+              className="relative flex h-2.5 w-2.5"
+              animate={{
+                boxShadow: [
+                  '0 0 0 0 rgba(16, 185, 129, 0.5)',
+                  '0 0 0 5px rgba(16, 185, 129, 0)',
+                ],
+              }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+            >
+              <span className="absolute inset-0 rounded-full bg-emerald-500" />
+            </motion.span>
+            <h1 className="text-lg font-semibold">
+              {activeTopic || 'AI Tutor'}
+            </h1>
+          </div>
           <Badge variant="secondary" className={getPhaseColor(sessionPhase)}>
             {sessionPhase}
           </Badge>
-          {/* Mode Selector */}
-          <div className="hidden sm:flex items-center rounded-lg border border-border bg-background/50 p-0.5">
+          {/* Mode Selector - Pill toggle with sliding indicator */}
+          <div className="hidden sm:flex items-center rounded-lg border border-border bg-background/50 p-0.5 relative">
+            <AnimatePresence>
+              {tutorMode && (
+                <motion.div
+                  layoutId="tutor-mode-indicator"
+                  className="absolute inset-y-0.5 rounded-md bg-primary shadow-sm"
+                  style={{
+                    left: TUTOR_MODES.findIndex((m) => m.id === tutorMode) === 0
+                      ? '2px'
+                      : TUTOR_MODES.findIndex((m) => m.id === tutorMode) === 1
+                        ? `${100 / 3}%`
+                        : `${(200 / 3)}%`,
+                    width: `${100 / 3}%`,
+                  }}
+                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                />
+              )}
+            </AnimatePresence>
             {TUTOR_MODES.map((mode) => {
               const Icon = mode.icon
               const isActive = tutorMode === mode.id
               return (
-                <button
+                <motion.button
                   key={mode.id}
                   onClick={() => setTutorMode(mode.id)}
-                  className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.96 }}
+                  className={`relative z-10 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                     isActive
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                      ? 'text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                   title={mode.desc}
                 >
                   <Icon className="w-3.5 h-3.5" />
                   {mode.label}
-                </button>
+                </motion.button>
               )
             })}
           </div>
@@ -544,22 +624,37 @@ export function TutorView() {
             </AnimatePresence>
           </div>
 
-          <Badge variant="outline" className="font-mono text-xs">
-            <span className={timerSeconds > 0 ? 'text-emerald-600 dark:text-emerald-400' : ''}>
-              {formatTimer(timerSeconds)}
-            </span>
-          </Badge>
+          {/* Session timer with pulsing emerald ring when running */}
+          <motion.div
+            className="relative"
+            animate={timerSeconds > 0 ? {
+              boxShadow: [
+                '0 0 0 0 rgba(16, 185, 129, 0.2)',
+                '0 0 0 4px rgba(16, 185, 129, 0)',
+              ],
+            } : {}}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+          >
+            <Badge variant="outline" className="font-mono text-xs rounded-full">
+              <span className={timerSeconds > 0 ? 'text-emerald-600 dark:text-emerald-400' : ''}>
+                {formatTimer(timerSeconds)}
+              </span>
+            </Badge>
+          </motion.div>
           <Badge variant="outline" className="text-xs">
             {messages.length} messages
           </Badge>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setRightPanelOpen(!rightPanelOpen)}
-            aria-label={rightPanelOpen ? 'Close side panel' : 'Open side panel'}
-          >
-            {rightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-          </Button>
+          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setRightPanelOpen(!rightPanelOpen)}
+              className="gradient-border rounded-lg"
+              aria-label={rightPanelOpen ? 'Close side panel' : 'Open side panel'}
+            >
+              {rightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+            </Button>
+          </motion.div>
         </div>
       </header>
 
@@ -658,52 +753,158 @@ export function TutorView() {
             )}
 
             {messages.map((msg) => (
-              <ChatBubble key={msg.id} message={msg} />
+              <ChatBubble
+                key={msg.id}
+                message={msg}
+                isStreaming={false}
+                onRegenerate={msg.role === 'assistant' ? handleRegenerate : undefined}
+              />
             ))}
 
             {isLoading && <TypingIndicator />}
           </ScrollArea>
 
           {/* Input Area */}
-          <div className="border-t p-3 bg-card/50">
-            <div className="flex items-end gap-2 max-w-3xl mx-auto">
-              <Textarea
-                ref={textareaRef}
-                placeholder="Ask me anything..."
-                value={input}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                className="min-h-[40px] max-h-[150px] resize-none flex-1"
-                rows={1}
-              />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" className="shrink-0 h-[40px] w-[40px]" aria-label="Quick actions">
-                    <MoreHorizontal className="w-4 h-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  {QUICK_ACTIONS.map((action) => (
-                    <DropdownMenuItem
-                      key={action.label}
-                      onClick={() => handleQuickAction(action.prompt)}
-                      className="gap-2"
-                    >
-                      <action.icon className="w-4 h-4" />
-                      {action.label}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <Button
-                size="icon"
-                className="shrink-0 h-[40px] w-[40px]"
-                onClick={() => handleSend()}
-                disabled={!input.trim() || isLoading}
-                aria-label="Send message"
-              >
-                <Send className="w-4 h-4" />
-              </Button>
+          <div className="border-t bg-card/50">
+            {/* Suggested Prompts Bar */}
+            <AnimatePresence>
+              {!inputFocused && input.trim() === '' && !isLoading && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="overflow-hidden"
+                >
+                  <div className="px-3 pt-2.5 pb-1 max-w-3xl mx-auto">
+                    <div className="flex flex-wrap gap-1.5">
+                      {SUGGESTED_PROMPTS.map((prompt) => (
+                        <motion.button
+                          key={prompt}
+                          whileHover={{ scale: 1.03, y: -1 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => handleSend(prompt)}
+                          className="px-3 py-1.5 text-xs font-medium rounded-full border border-border/60 bg-background/60 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                        >
+                          {prompt}
+                        </motion.button>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="px-3 pb-3 pt-1">
+              <div className="max-w-3xl mx-auto">
+                {/* Gradient border glow wrapper */}
+                <div className="relative">
+                  {inputFocused && (
+                    <motion.div
+                      layoutId="input-glow"
+                      className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-emerald-500/30 via-teal-500/30 to-emerald-500/30 blur-sm -z-10"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  )}
+                  <div className="flex items-end gap-1.5 bg-background rounded-xl border border-border p-1.5 transition-shadow duration-300">
+                    <Textarea
+                      ref={textareaRef}
+                      placeholder="Ask me anything..."
+                      value={input}
+                      onChange={handleInputChange}
+                      onKeyDown={handleKeyDown}
+                      onFocus={() => setInputFocused(true)}
+                      onBlur={() => setInputFocused(false)}
+                      className="resize-none flex-1 border-0 shadow-none focus-visible:ring-0 p-2 text-sm bg-transparent placeholder:text-muted-foreground"
+                      style={{ minHeight: INPUT_SIZES[inputSize].minH, maxHeight: INPUT_SIZES[inputSize].maxH }}
+                      rows={INPUT_SIZES[inputSize].rows}
+                    />
+
+                    {/* Character count */}
+                    <div className="flex items-center gap-1 pb-1.5 pr-1">
+                      {charCount > 0 && (
+                        <motion.span
+                          initial={{ opacity: 0, x: 4 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 4 }}
+                          className={`text-[10px] font-mono tabular-nums ${charColorClass}`}
+                        >
+                          {charCount}
+                        </motion.span>
+                      )}
+
+                      {/* Microphone placeholder */}
+                      <motion.div
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground/50 hover:text-muted-foreground cursor-not-allowed"
+                        title="Voice input coming soon"
+                      >
+                        <motion.div
+                          animate={{ scale: [1, 1.05, 1] }}
+                          transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+                        >
+                          <Mic className="w-3.5 h-3.5" />
+                        </motion.div>
+                      </motion.div>
+
+                      {/* Expand/Collapse button */}
+                      <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+                          onClick={cycleInputSize}
+                          aria-label={`Input size: ${INPUT_SIZES[inputSize].label}. Click to change.`}
+                        >
+                          {inputSize === 'small' ? (
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          ) : inputSize === 'large' ? (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          ) : (
+                            <Maximize2 className="w-3.5 h-3.5" />
+                          )}
+                        </Button>
+                      </motion.div>
+
+                      {/* Quick actions menu */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" aria-label="Quick actions">
+                            <MoreHorizontal className="w-3.5 h-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          {QUICK_ACTIONS.map((action) => (
+                            <DropdownMenuItem
+                              key={action.label}
+                              onClick={() => handleQuickAction(action.prompt)}
+                              className="gap-2"
+                            >
+                              <action.icon className="w-4 h-4" />
+                              {action.label}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+
+                      {/* Send button */}
+                      <Button
+                        size="icon"
+                        className="shrink-0 h-7 w-7 rounded-lg"
+                        onClick={() => handleSend()}
+                        disabled={!input.trim() || isLoading}
+                        aria-label="Send message"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
