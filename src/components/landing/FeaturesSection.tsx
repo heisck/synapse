@@ -87,9 +87,9 @@ function FeatureCard({
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
     >
       {/* Glow border overlay */}
-      <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-br from-emerald-500/0 via-teal-400/0 to-emerald-500/0 group-hover:from-emerald-500/40 group-hover:via-teal-400/30 group-hover:to-emerald-500/40 transition-all duration-500 blur-[1px] opacity-0 group-hover:opacity-100" />
+      <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-br from-emerald-500/0 via-teal-400/0 to-emerald-500/0 group-hover:from-emerald-500/40 group-hover:via-teal-400/30 group-hover:to-emerald-500/40 dark:group-hover:from-emerald-400/50 dark:group-hover:via-cyan-400/40 dark:group-hover:to-emerald-400/50 transition-all duration-500 blur-[1px] opacity-0 group-hover:opacity-100 group-hover:shadow-[0_0_20px_rgba(16,185,129,0.15)] dark:group-hover:shadow-[0_0_30px_rgba(16,185,129,0.3),0_0_60px_rgba(16,185,129,0.1)]" />
 
-      <div className="relative rounded-2xl glass p-6 sm:p-8 h-full transition-all duration-500 overflow-hidden">
+      <div className="relative rounded-2xl glass p-6 sm:p-8 h-full transition-all duration-500 overflow-hidden dark:backdrop-blur-[24px] dark:bg-white/[0.04] dark:border-white/[0.12]">
         {/* Gradient accent line at top */}
         <motion.div
           className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent"
@@ -101,17 +101,17 @@ function FeatureCard({
         />
 
         {/* Subtle background glow on hover */}
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-500/0 to-teal-500/0 group-hover:from-emerald-500/[0.03] group-hover:to-teal-500/[0.03] transition-all duration-500" />
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-500/0 to-teal-500/0 group-hover:from-emerald-500/[0.03] group-hover:to-teal-500/[0.03] dark:group-hover:from-emerald-400/[0.08] dark:group-hover:to-cyan-400/[0.05] transition-all duration-500" />
 
         {/* Icon */}
         <motion.div
-          className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-950/50 flex items-center justify-center mb-5 group-hover:bg-emerald-200 dark:group-hover:bg-emerald-900/50 transition-all duration-300 relative"
+          className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-gradient-to-br dark:from-emerald-400/20 dark:to-cyan-400/20 flex items-center justify-center mb-5 group-hover:bg-emerald-200 dark:group-hover:from-emerald-400/30 dark:group-hover:to-cyan-400/30 transition-all duration-300 relative"
           whileHover={{ rotate: [0, -5, 5, 0] }}
           transition={{ duration: 0.4 }}
         >
-          <Icon className="w-6 h-6 text-emerald-600 dark:text-emerald-400 transition-transform duration-300 group-hover:scale-110" />
+          <Icon className="w-6 h-6 text-emerald-600 dark:text-emerald-300 transition-transform duration-300 group-hover:scale-110" />
           {/* Pulse ring on hover */}
-          <div className="absolute inset-0 rounded-xl border-2 border-emerald-400/0 group-hover:border-emerald-400/30 transition-all duration-500 scale-100 group-hover:scale-125 opacity-0 group-hover:opacity-100" />
+          <div className="absolute inset-0 rounded-xl border-2 border-emerald-400/0 group-hover:border-emerald-400/30 dark:group-hover:border-emerald-400/50 transition-all duration-500 scale-100 group-hover:scale-125 opacity-0 group-hover:opacity-100" />
         </motion.div>
 
         <h3 className="text-lg font-semibold mb-2 text-foreground relative z-10">

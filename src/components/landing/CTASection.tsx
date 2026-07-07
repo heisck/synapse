@@ -115,13 +115,37 @@ export default function CTASection() {
       ref={sectionRef}
       className="relative py-24 sm:py-32 px-4 sm:px-6 lg:px-8 overflow-hidden"
     >
+      {/* Animated gradient line at top of section */}
+      <div className="absolute top-0 left-0 right-0 h-px overflow-hidden">
+        <motion.div
+          className="absolute inset-0"
+          style={{
+            background: 'linear-gradient(90deg, transparent 0%, rgba(16,185,129,0.6) 30%, rgba(20,184,166,0.4) 50%, rgba(16,185,129,0.6) 70%, transparent 100%)',
+            backgroundSize: '200% 100%',
+          }}
+          animate={{ backgroundPosition: ['100% 0%', '-100% 0%'] }}
+          transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+        />
+      </div>
       {/* Animated gradient background */}
       <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br dark:from-emerald-950/50 dark:via-background dark:to-teal-950/50" />
         <motion.div
           className="absolute inset-0"
           style={{
             background:
               'radial-gradient(ellipse 80% 60% at 50% 50%, rgba(16,185,129,0.12) 0%, rgba(20,184,166,0.06) 40%, transparent 70%)',
+          }}
+          animate={{
+            backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+          }}
+          transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+        />
+        <motion.div
+          className="absolute inset-0 hidden dark:block"
+          style={{
+            background:
+              'radial-gradient(ellipse 80% 60% at 50% 50%, rgba(16,185,129,0.18) 0%, rgba(20,184,166,0.10) 40%, transparent 70%)',
           }}
           animate={{
             backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
@@ -137,12 +161,21 @@ export default function CTASection() {
           animate={{ rotate: 360 }}
           transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
         />
+        <motion.div
+          className="absolute -inset-20 hidden dark:block"
+          style={{
+            background:
+              'conic-gradient(from 180deg at 50% 50%, transparent 0%, rgba(16,185,129,0.08) 25%, transparent 50%, rgba(52,211,153,0.06) 75%, transparent 100%)',
+          }}
+          animate={{ rotate: -360 }}
+          transition={{ duration: 25, repeat: Infinity, ease: 'linear' }}
+        />
       </div>
 
       <div className="relative max-w-4xl mx-auto">
         <motion.div
           ref={headerRef}
-          className="rounded-3xl glass p-8 sm:p-12 md:p-16 text-center relative overflow-hidden"
+          className="rounded-3xl glass p-8 sm:p-12 md:p-16 text-center relative overflow-hidden dark:backdrop-blur-[28px] dark:bg-white/[0.03] dark:border-white/[0.1]"
           initial={{ opacity: 0, y: 40, scale: 0.96 }}
           whileInView={{ opacity: 1, y: 0, scale: 1 }}
           viewport={{ once: true }}
@@ -150,7 +183,7 @@ export default function CTASection() {
         >
           {/* Inner glow effect */}
           <motion.div
-            className="absolute top-0 left-1/2 -translate-x-1/2 w-[300px] h-[200px] bg-gradient-to-b from-emerald-400/10 to-transparent rounded-full blur-3xl pointer-events-none"
+            className="absolute top-0 left-1/2 -translate-x-1/2 w-[300px] h-[200px] bg-gradient-to-b from-emerald-400/10 dark:from-emerald-400/20 to-transparent rounded-full blur-3xl pointer-events-none"
             animate={{
               opacity: [0.5, 0.8, 0.5],
               scale: [1, 1.1, 1],
@@ -170,6 +203,20 @@ export default function CTASection() {
             }}
             transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
           />
+          {/* Dark mode enhanced neon border glow */}
+          <div className="absolute -inset-[1px] rounded-3xl pointer-events-none hidden dark:block">
+            <motion.div
+              className="absolute inset-0 rounded-3xl"
+              style={{
+                background:
+                  'linear-gradient(135deg, rgba(16,185,129,0.5), rgba(20,184,166,0.2), rgba(52,211,153,0.5))',
+              }}
+              animate={{
+                opacity: [0.4, 0.8, 0.4],
+              }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          </div>
 
           <div className="relative z-10">
             <motion.div
@@ -209,7 +256,7 @@ export default function CTASection() {
 
               {/* Pulsing glow ring */}
               <motion.div
-                className="absolute -inset-3 rounded-2xl bg-emerald-500/10 blur-xl"
+                className="absolute -inset-3 rounded-2xl bg-emerald-500/10 dark:bg-emerald-400/20 blur-xl"
                 animate={{
                   scale: [1, 1.08, 1],
                   opacity: [0.4, 0.7, 0.4],
@@ -220,10 +267,11 @@ export default function CTASection() {
                   ease: 'easeInOut',
                 }}
               />
-
+              {/* Dark mode neon glow */}
+              <div className="absolute -inset-4 rounded-2xl hidden dark:block animate-pulse" style={{ boxShadow: '0 0 30px rgba(16,185,129,0.3), 0 0 60px rgba(16,185,129,0.15), 0 0 90px rgba(16,185,129,0.08)' }} />
               <Button
                 size="lg"
-                className="relative bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-6 text-base font-semibold rounded-xl shadow-lg shadow-emerald-500/25 transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/40 hover:-translate-y-0.5"
+                className="relative bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-6 text-base font-semibold rounded-xl shadow-lg shadow-emerald-500/25 transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/40 hover:-translate-y-0.5 dark:shadow-emerald-500/30 dark:hover:shadow-emerald-500/50"
                 onClick={() => navigate('onboarding')}
               >
                 <Zap className="mr-2 w-4 h-4" />

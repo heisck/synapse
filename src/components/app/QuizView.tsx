@@ -21,6 +21,8 @@ import {
   HelpCircle,
   Lightbulb,
   Clock,
+  Copy,
+  Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -29,7 +31,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/appStore';
 import type { Question } from '@/types';
 
-type StudyMode = 'quiz' | 'flashcard';
+type StudyMode = 'quiz' | 'flashcard' | 'daily';
 
 // ---------- Typo-tolerance helper ----------
 function levenshteinDistance(a: string, b: string): number {
@@ -177,6 +179,100 @@ const MOCK_QUESTIONS: Question[] = [
 ];
 
 // ---------- Course filter ----------
+interface DailyChallengeData {
+  date: string;
+  completed: boolean;
+  score: number;
+  total: number;
+  questions: string[];
+}
+
+const DAILY_STORAGE_KEY = 'synapse-daily-challenge';
+const DAILY_STREAK_KEY = 'synapse-daily-streak';
+const DAILY_QUESTION_COUNT = 5;
+
+function getTodayStr(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+function loadDailyChallenge(): DailyChallengeData | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(DAILY_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDailyChallenge(data: DailyChallengeData): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(DAILY_STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // storage unavailable
+  }
+}
+
+function loadDailyStreak(): { current: number; best: number; lastDate: string } {
+  if (typeof window === 'undefined') return { current: 0, best: 0, lastDate: '' };
+  try {
+    const raw = localStorage.getItem(DAILY_STREAK_KEY);
+    return raw ? JSON.parse(raw) : { current: 0, best: 0, lastDate: '' };
+  } catch {
+    return { current: 0, best: 0, lastDate: '' };
+  }
+}
+
+function saveDailyStreak(data: { current: number; best: number; lastDate: string }): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(DAILY_STREAK_KEY, JSON.stringify(data));
+  } catch {
+    // storage unavailable
+  }
+}
+
+function updateDailyStreak(): { current: number; best: number; lastDate: string } {
+  const streak = loadDailyStreak();
+  const today = getTodayStr();
+
+  if (streak.lastDate === today) return streak;
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+  let newCurrent: number;
+  if (streak.lastDate === yesterdayStr) {
+    newCurrent = streak.current + 1;
+  } else {
+    newCurrent = 1;
+  }
+
+  const newBest = Math.max(streak.best, newCurrent);
+  const updated = { current: newCurrent, best: newBest, lastDate: today };
+  saveDailyStreak(updated);
+  return updated;
+}
+
+function getTimeUntilMidnight(): { hours: number; minutes: number; seconds: number } {
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  const diff = midnight.getTime() - now.getTime();
+  return {
+    hours: Math.floor(diff / (1000 * 60 * 60)),
+    minutes: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
+    seconds: Math.floor((diff % (1000 * 60)) / 1000),
+  };
+}
+
+function selectDailyQuestions(allQs: Question[]): Question[] {
+  const shuffled = [...allQs].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, DAILY_QUESTION_COUNT);
+}
+
 const COURSE_QUIZ_GROUPS = [
   { id: 'all', label: 'All Questions', icon: BookOpen },
   { id: 'demo-course', label: 'Cell Biology', icon: BookOpen },
@@ -596,6 +692,135 @@ export function QuizView() {
   const [showStreakPopup, setShowStreakPopup] = useState(false);
   const animatedScore = useAnimatedCounter(showResults ? score : 0, 1500);
 
+  // Daily Challenge state
+  const [dailyChallenge, setDailyChallenge] = useState<DailyChallengeData | null>(null);
+  const [dailyStreak, setDailyStreak] = useState({ current: 0, best: 0, lastDate: '' });
+  const [dailyTimeLeft, setDailyTimeLeft] = useState({ hours: 0, minutes: 0, seconds: 0 });
+  const [dailyShowResults, setDailyShowResults] = useState(false);
+  const [dailyShareCopied, setDailyShareCopied] = useState(false);
+  const dailyQuestions = useMemo<Question[]>(() => {
+    if (dailyChallenge?.questions) {
+      return dailyChallenge.questions
+        .map((id) => allQuestions.find((q) => q.id === id))
+        .filter((q): q is Question => !!q);
+    }
+    return [];
+  }, [dailyChallenge, allQuestions]);
+  const dailyCurrentQ = dailyQuestions[currentIndex];
+  const dailyProgress = dailyQuestions.length > 0
+    ? ((currentIndex + 1) / dailyQuestions.length) * 100
+    : 0;
+  const dailyScore = useMemo(() => {
+    return dailyQuestions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+  }, [dailyQuestions, answered, answers, isCorrect]);
+  const dailyCircumference = 2 * Math.PI * 62;
+  const dailyScorePercent = dailyQuestions.length > 0 ? dailyScore / dailyQuestions.length : 0;
+  const dailyStrokeDashoffset = dailyCircumference * (1 - dailyScorePercent);
+  const dailyAnimatedScore = useAnimatedCounter(dailyShowResults ? dailyScore : 0, 1500);
+
+  // Load daily challenge data on mount and when mode changes
+  useEffect(() => {
+    if (studyMode !== 'daily') return;
+    const today = getTodayStr();
+    const saved = loadDailyChallenge();
+    const streakData = loadDailyStreak();
+
+    if (saved && saved.date === today) {
+      setDailyChallenge(saved);
+      setDailyStreak(streakData);
+      if (saved.completed) {
+        setDailyShowResults(true);
+      }
+    } else {
+      // New day, new challenge
+      const selected = selectDailyQuestions(allQuestions);
+      const newChallenge: DailyChallengeData = {
+        date: today,
+        completed: false,
+        score: 0,
+        total: DAILY_QUESTION_COUNT,
+        questions: selected.map((q) => q.id),
+      };
+      saveDailyChallenge(newChallenge);
+      setDailyChallenge(newChallenge);
+      setDailyStreak(streakData);
+      setDailyShowResults(false);
+    }
+  }, [studyMode, allQuestions]);
+
+  // Update daily countdown timer
+  useEffect(() => {
+    if (studyMode !== 'daily') return;
+    setDailyTimeLeft(getTimeUntilMidnight());
+    const interval = setInterval(() => {
+      setDailyTimeLeft(getTimeUntilMidnight());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [studyMode]);
+
+  const handleDailyAnswer = useCallback(
+    (answer: string) => {
+      if (!dailyCurrentQ || answered[dailyCurrentQ.id]) return;
+
+      if (!timerStarted) setTimerStarted(true);
+
+      const newAnswers = { ...answers, [dailyCurrentQ.id]: answer };
+      const newAnswered = { ...answered, [dailyCurrentQ.id]: true };
+      setAnswers(newAnswers);
+      setAnswered(newAnswered);
+      setShowExplanation(true);
+
+      if (isCorrect(dailyCurrentQ, answer)) {
+        setShowConfetti(true);
+        setTimeout(() => setShowConfetti(false), 1500);
+        const newStreak = streak + 1;
+        setStreak(newStreak);
+        if (newStreak > bestStreak) setBestStreak(newStreak);
+        if (newStreak >= 3) {
+          setShowStreakPopup(true);
+          setTimeout(() => setShowStreakPopup(false), 1200);
+        }
+      } else {
+        setStreak(0);
+      }
+    },
+    [answered, answers, dailyCurrentQ, isCorrect, streak, bestStreak, timerStarted],
+  );
+
+  const handleDailyNext = useCallback(() => {
+    setShowExplanation(false);
+    if (currentIndex < dailyQuestions.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+    } else {
+      // Challenge complete — save results
+      const finalScore = dailyQuestions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+      const updatedStreak = updateDailyStreak();
+      setDailyStreak(updatedStreak);
+
+      const completedData: DailyChallengeData = {
+        date: getTodayStr(),
+        completed: true,
+        score: finalScore,
+        total: dailyQuestions.length,
+        questions: dailyQuestions.map((q) => q.id),
+      };
+      saveDailyChallenge(completedData);
+      setDailyChallenge(completedData);
+      setDailyShowResults(true);
+    }
+  }, [currentIndex, dailyQuestions, answered, answers, isCorrect]);
+
+  const handleDailyShare = useCallback(async () => {
+    const text = `SynapseLearn Daily Challenge - ${dailyScore}/${dailyQuestions.length} - ${dailyStreak.current} day streak`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setDailyShareCopied(true);
+      setTimeout(() => setDailyShareCopied(false), 2000);
+    } catch {
+      // fallback
+    }
+  }, [dailyScore, dailyQuestions.length, dailyStreak.current]);
+
   // Timer state
   const [timerStarted, setTimerStarted] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(0);
@@ -634,13 +859,14 @@ export function QuizView() {
 
   // Difficulty distribution
   const difficultyCounts = useMemo(() => {
+    if (studyMode === 'daily') return { easy: 0, medium: 0, hard: 0 };
     const targetQuestions = studyMode === 'quiz' ? questions : flashcardQuestions;
     return {
       easy: targetQuestions.filter((q) => q.difficulty === 'easy').length,
       medium: targetQuestions.filter((q) => q.difficulty === 'medium').length,
       hard: targetQuestions.filter((q) => q.difficulty === 'hard').length,
     };
-  }, [studyMode === 'quiz' ? questions : flashcardQuestions, studyMode]);
+  }, [studyMode, questions, flashcardQuestions]);
 
   const handleShuffle = useCallback(() => {
     setCurrentIndex(0);
@@ -736,6 +962,8 @@ export function QuizView() {
     setHasEverFlipped(false);
     setTimerStarted(false);
     setTimerSeconds(0);
+    setDailyShowResults(false);
+    setDailyShareCopied(false);
   };
 
   // Filter questions by selected course
@@ -825,7 +1053,7 @@ export function QuizView() {
   const difficultyTotal = difficultyCounts.easy + difficultyCounts.medium + difficultyCounts.hard;
 
   // ---------- Empty State ----------
-  if (questions.length === 0 && flashcardQuestions.length === 0) {
+  if (studyMode !== 'daily' && questions.length === 0 && flashcardQuestions.length === 0) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -1147,7 +1375,7 @@ export function QuizView() {
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold gradient-text">{studyMode === 'quiz' ? 'Quiz Practice' : 'Flashcard Study'}</h1>
+                <h1 className="text-xl font-bold gradient-text">{studyMode === 'quiz' ? 'Quiz Practice' : studyMode === 'flashcard' ? 'Flashcard Study' : 'Daily Challenge'}</h1>
                 {/* Mode toggle */}
                 <div className="flex items-center rounded-lg border border-border bg-background/50 p-0.5">
                   <button
@@ -1171,6 +1399,17 @@ export function QuizView() {
                   >
                     <Layers className="w-3.5 h-3.5" />
                     Flashcard
+                  </button>
+                  <button
+                    onClick={() => handleModeChange('daily')}
+                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                      studyMode === 'daily'
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Flame className="w-3.5 h-3.5" />
+                    Daily
                   </button>
                 </div>
               </div>
@@ -1204,7 +1443,8 @@ export function QuizView() {
                 )}
               </div>
             </div>
-            {/* Course filter tabs */}
+            {/* Course filter tabs (not shown in daily mode) */}
+            {studyMode !== 'daily' && (
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
             {COURSE_QUIZ_GROUPS.map((group) => (
               <button
@@ -1226,8 +1466,8 @@ export function QuizView() {
               </button>
             ))}
           </div>
-          {/* Difficulty Progress Tracker */}
-          {difficultyTotal > 0 && (
+            )}
+          {studyMode !== 'daily' && difficultyTotal > 0 && (
             <div className="flex items-center gap-3 mt-2">
               <div className="flex-1 flex h-1.5 rounded-full overflow-hidden bg-muted/40">
                 {difficultyCounts.easy > 0 && (
@@ -1277,6 +1517,7 @@ export function QuizView() {
               </div>
             </div>
           )}
+          {studyMode !== 'daily' && (
           <div className="flex items-center justify-between mb-2 mt-1">
             <span className="text-sm font-medium">
               {studyMode === 'quiz'
@@ -1307,7 +1548,9 @@ export function QuizView() {
               )}
             </div>
           </div>
-          {/* Custom gradient progress bar */}
+          )}
+          {/* Custom gradient progress bar (not shown in daily mode) */}
+          {studyMode !== 'daily' && (
           <div className="relative h-2.5 w-full rounded-full bg-muted/50 overflow-hidden">
             <motion.div
               className="absolute inset-y-0 left-0 rounded-full"
@@ -1326,8 +1569,515 @@ export function QuizView() {
               {Math.round(studyMode === 'quiz' ? progress : flashcardProgress)}%
             </motion.div>
           </div>
+          )}
           </div>
         </motion.div>
+
+        {/* Daily Challenge Hero Banner */}
+        {studyMode === 'daily' && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <div className="glass-accent-top rounded-2xl p-6 animated-border relative overflow-hidden">
+              <div className="relative z-10">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-2">
+                    <h2 className="text-2xl font-bold gradient-text-animated">Daily Challenge</h2>
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="h-4 w-4" />
+                        <span>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
+                      </div>
+                      {dailyStreak.current > 0 && (
+                        <motion.div
+                          initial={{ scale: 0.9 }}
+                          animate={{ scale: 1 }}
+                          className="flex items-center gap-1.5 text-orange-600 dark:text-orange-400 font-semibold"
+                        >
+                          <Flame className="h-4 w-4" />
+                          <span>{dailyStreak.current} day streak!</span>
+                        </motion.div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Clock className="h-3.5 w-3.5" />
+                      <span>Resets in</span>
+                    </div>
+                    <div className="font-mono text-lg font-bold tabular-nums">
+                      {String(dailyTimeLeft.hours).padStart(2, '0')}:{String(dailyTimeLeft.minutes).padStart(2, '0')}:{String(dailyTimeLeft.seconds).padStart(2, '0')}
+                    </div>
+                  </div>
+                </div>
+                {/* Daily progress bar */}
+                {!dailyShowResults && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+                      <span>Question {Math.min(currentIndex + 1, dailyQuestions.length)} of {dailyQuestions.length}</span>
+                      <span>{dailyScore} correct</span>
+                    </div>
+                    <div className="relative h-2 w-full rounded-full bg-muted/50 overflow-hidden">
+                      <motion.div
+                        className="absolute inset-y-0 left-0 rounded-full"
+                        style={{
+                          background: 'linear-gradient(90deg, #f59e0b 0%, #ef4444 50%, #ec4899 100%)',
+                        }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${dailyProgress}%` }}
+                        transition={{ duration: 0.5, ease: 'easeOut' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Daily Challenge Results Screen */}
+        {studyMode === 'daily' && dailyShowResults && dailyChallenge?.completed && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+            className="flex flex-col items-center justify-center min-h-[50vh] gap-6"
+          >
+            {/* Confetti for perfect score */}
+            <AnimatePresence>
+              {dailyChallenge.score === dailyChallenge.total && (
+                <div className="fixed inset-0 pointer-events-none z-50">
+                  {Array.from({ length: 40 }).map((_, i) => (
+                    <ConfettiParticle
+                      key={`daily-confetti-${i}`}
+                      delay={i * 0.03}
+                      color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
+                    />
+                  ))}
+                </div>
+              )}
+            </AnimatePresence>
+            <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full glow-emerald-strong">
+              {/* Animated circular progress */}
+              <div className="relative inline-flex">
+                <svg width="160" height="160" className="-rotate-90">
+                  <circle
+                    cx="80"
+                    cy="80"
+                    r="62"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="10"
+                    className="text-muted/20"
+                  />
+                  <motion.circle
+                    cx="80"
+                    cy="80"
+                    r="62"
+                    fill="none"
+                    stroke="url(#dailyScoreGrad)"
+                    strokeWidth="12"
+                    strokeLinecap="round"
+                    strokeDasharray={dailyCircumference}
+                    initial={{ strokeDashoffset: dailyCircumference }}
+                    animate={{ strokeDashoffset: dailyStrokeDashoffset }}
+                    transition={{ duration: 1.5, ease: 'easeOut' }}
+                  />
+                  <defs>
+                    <linearGradient id="dailyScoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#f59e0b" />
+                      <stop offset="50%" stopColor="#ef4444" />
+                      <stop offset="100%" stopColor="#ec4899" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <motion.span
+                    className="text-4xl font-bold gradient-text"
+                    key={dailyAnimatedScore}
+                  >
+                    {dailyAnimatedScore}<span className="text-lg font-normal text-muted-foreground">/{dailyChallenge.total}</span>
+                  </motion.span>
+                  <span className="text-xs text-muted-foreground mt-1">
+                    {Math.round(dailyScorePercent * 100)}% correct
+                  </span>
+                </div>
+              </div>
+
+              {/* Streak display */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+                className="flex items-center justify-center gap-2"
+              >
+                <div className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-orange-500/10 border border-orange-500/20">
+                  <Flame className="h-5 w-5 text-orange-500" />
+                  <span className="font-bold text-orange-600 dark:text-orange-400">{dailyStreak.current} day streak</span>
+                </div>
+              </motion.div>
+
+              {dailyStreak.best > 1 && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.8 }}
+                  className="text-xs text-muted-foreground"
+                >
+                  Best streak: {dailyStreak.best} days
+                </motion.p>
+              )}
+
+              {/* Come back tomorrow message */}
+              <motion.div
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 1 }}
+                className="text-center"
+              >
+                <h2 className="text-xl font-bold">
+                  {dailyChallenge.score === dailyChallenge.total
+                    ? 'Perfect Score!'
+                    : dailyChallenge.score >= dailyChallenge.total * 0.6
+                      ? 'Great work!'
+                      : 'Keep practicing!'}
+                </h2>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Come back tomorrow for a new challenge!
+                </p>
+              </motion.div>
+
+              {/* Per-question breakdown */}
+              <div className="space-y-2 text-left">
+                <h3 className="text-sm font-semibold">Question Breakdown</h3>
+                <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                  {dailyQuestions.map((q, i) => {
+                    const wasCorrect = answered[q.id] && isCorrect(q, answers[q.id] || '');
+                    return (
+                      <motion.div
+                        key={q.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.05 + 0.3 }}
+                        className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md ${wasCorrect ? 'bg-emerald-500/5' : 'bg-destructive/5'}`}
+                      >
+                        <motion.span
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          transition={{ type: 'spring', stiffness: 300, delay: i * 0.05 + 0.3 }}
+                          className={`flex h-5 w-5 items-center justify-center rounded-full ${wasCorrect ? 'bg-emerald-500 text-white' : 'bg-destructive/20 text-destructive'}`}
+                        >
+                          {wasCorrect ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                        </motion.span>
+                        <span className="flex-1 truncate">{q.question.slice(0, 60)}{q.question.length > 60 ? '...' : ''}</span>
+                        <span className={`text-[9px] px-1.5 py-0 rounded-full font-medium border ${TYPE_BADGE_GRADIENT[q.type] || 'bg-muted text-muted-foreground border-border'}`}>
+                          {q.type.replace('_', ' ')}
+                        </span>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-center gap-3">
+                <Button onClick={handleDailyShare} variant="outline">
+                  <Copy className="h-4 w-4 mr-2" />
+                  {dailyShareCopied ? 'Copied!' : 'Share Results'}
+                </Button>
+                <Button onClick={() => navigate('dashboard')}>
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Dashboard
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Daily Challenge Question Card */}
+        {studyMode === 'daily' && !dailyShowResults && dailyCurrentQ && (
+        <AnimatePresence mode="wait">
+          {dailyCurrentQ && (
+            <motion.div
+              key={dailyCurrentQ.id}
+              initial={{ opacity: 0, x: 40, scale: 0.98 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -40, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              className="glass rounded-xl p-6 space-y-6 glow-emerald"
+            >
+              {/* Concept tag */}
+              {dailyCurrentQ.concept && (
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="flex items-center gap-2"
+                >
+                  <Badge variant="secondary" className="text-xs bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/10">
+                    {dailyCurrentQ.concept}
+                  </Badge>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${
+                    dailyCurrentQ.difficulty === 'easy'
+                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+                      : dailyCurrentQ.difficulty === 'medium'
+                        ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
+                        : 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20'
+                  }`}>
+                    {dailyCurrentQ.difficulty}
+                  </span>
+                </motion.div>
+              )}
+
+              {/* Question text */}
+              <h2 className="text-lg font-semibold leading-relaxed">{dailyCurrentQ.question}</h2>
+
+              {/* Question type renderers — reuse the same pattern as quiz mode */}
+              {dailyCurrentQ.type === 'multiple_choice' && dailyCurrentQ.options && (
+                <div className="grid gap-2">
+                  {dailyCurrentQ.options.map((opt, i) => {
+                    const letter = String.fromCharCode(65 + i);
+                    const isAnswered = answered[dailyCurrentQ.id];
+                    const isSelected = answers[dailyCurrentQ.id] === opt;
+                    const isCorrectOpt = opt === dailyCurrentQ.answer;
+
+                    return (
+                      <motion.button
+                        key={opt}
+                        whileHover={!isAnswered ? { scale: 1.01, y: -1 } : {}}
+                        whileTap={!isAnswered ? { scale: 0.99 } : {}}
+                        onClick={() => !isAnswered && handleDailyAnswer(opt)}
+                        disabled={isAnswered}
+                        className={`relative flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition-all ${
+                          isAnswered
+                            ? isCorrectOpt
+                              ? 'border-emerald-500/60 bg-emerald-500/8 shadow-sm shadow-emerald-500/10'
+                              : isSelected
+                                ? 'border-destructive/60 bg-destructive/8'
+                                : 'border-border opacity-60'
+                            : 'border-border hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm hover:shadow-primary/5 cursor-pointer'
+                        }`}
+                      >
+                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-bold transition-colors ${
+                          isAnswered && isCorrectOpt
+                            ? 'bg-emerald-500 text-white'
+                            : isAnswered && isSelected
+                              ? 'bg-destructive text-white'
+                              : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {isAnswered && isCorrectOpt ? (
+                            <CheckCircle2 className="h-4 w-4" />
+                          ) : isAnswered && isSelected ? (
+                            <XCircle className="h-4 w-4" />
+                          ) : (
+                            letter
+                          )}
+                        </span>
+                        <span className={isAnswered && isCorrectOpt ? 'text-emerald-700 dark:text-emerald-300' : ''}>{opt}</span>
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {dailyCurrentQ.type === 'true_false' && (
+                <div className="flex gap-3">
+                  {['True', 'False'].map((opt) => {
+                    const isAnswered = answered[dailyCurrentQ.id];
+                    const isSelected = answers[dailyCurrentQ.id] === opt;
+                    const isCorrectOpt = opt === dailyCurrentQ.answer;
+
+                    return (
+                      <motion.button
+                        key={opt}
+                        whileHover={!isAnswered ? { scale: 1.03, y: -2 } : {}}
+                        whileTap={!isAnswered ? { scale: 0.97 } : {}}
+                        onClick={() => !isAnswered && handleDailyAnswer(opt)}
+                        disabled={isAnswered}
+                        className={`flex-1 rounded-lg border p-4 text-center font-semibold transition-all ${
+                          isAnswered
+                            ? isCorrectOpt
+                              ? 'border-emerald-500/60 bg-emerald-500/8 text-emerald-700 dark:text-emerald-400 shadow-sm shadow-emerald-500/10'
+                              : isSelected
+                                ? 'border-destructive/60 bg-destructive/8 text-destructive'
+                                : 'border-border opacity-60'
+                            : 'border-border hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm hover:shadow-primary/5 cursor-pointer'
+                        }`}
+                      >
+                        {isAnswered && isCorrectOpt && <CheckCircle2 className="h-5 w-5 inline mr-1.5" />}
+                        {isAnswered && isSelected && !isCorrectOpt && <XCircle className="h-5 w-5 inline mr-1.5" />}
+                        {opt}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {dailyCurrentQ.type === 'short_answer' && !answered[dailyCurrentQ.id] && (
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Type your answer..."
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                        handleDailyAnswer((e.target as HTMLInputElement).value);
+                      }
+                    }}
+                    id="daily-short-answer-input"
+                  />
+                  <Button
+                    onClick={() => {
+                      const input = document.getElementById('daily-short-answer-input') as HTMLInputElement;
+                      if (input?.value.trim()) handleDailyAnswer(input.value);
+                    }}
+                  >
+                    Submit
+                  </Button>
+                </div>
+              )}
+
+              {dailyCurrentQ.type === 'short_answer' && answered[dailyCurrentQ.id] && (
+                <div className="rounded-lg border p-4 text-sm space-y-1">
+                  <p className="text-muted-foreground">Your answer:</p>
+                  <p className="font-medium">{answers[dailyCurrentQ.id]}</p>
+                </div>
+              )}
+
+              {dailyCurrentQ.type === 'fill_blank' && !answered[dailyCurrentQ.id] && (
+                <div className="flex gap-2 items-center">
+                  <Input
+                    placeholder="Fill in the blank..."
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                        handleDailyAnswer((e.target as HTMLInputElement).value);
+                      }
+                    }}
+                    id="daily-fill-blank-input"
+                  />
+                  <Button
+                    onClick={() => {
+                      const input = document.getElementById('daily-fill-blank-input') as HTMLInputElement;
+                      if (input?.value.trim()) handleDailyAnswer(input.value);
+                    }}
+                  >
+                    Submit
+                  </Button>
+                </div>
+              )}
+
+              {dailyCurrentQ.type === 'fill_blank' && answered[dailyCurrentQ.id] && (
+                <div className="rounded-lg border p-4 text-sm space-y-1">
+                  <p className="text-muted-foreground">Your answer:</p>
+                  <p className="font-medium">{answers[dailyCurrentQ.id]}</p>
+                </div>
+              )}
+
+              {dailyCurrentQ.type === 'matching' && dailyCurrentQ.matchingPairs && !answered[dailyCurrentQ.id] && (
+                <MatchingInput
+                  pairs={dailyCurrentQ.matchingPairs}
+                  onAnswer={(answer) => handleDailyAnswer(answer)}
+                />
+              )}
+
+              {dailyCurrentQ.type === 'error_correction' && dailyCurrentQ.errorText && !answered[dailyCurrentQ.id] && (
+                <ErrorCorrectionInput
+                  errorText={dailyCurrentQ.errorText}
+                  onAnswer={(answer) => handleDailyAnswer(answer)}
+                />
+              )}
+
+              {dailyCurrentQ.type === 'error_correction' && answered[dailyCurrentQ.id] && (
+                <div className="rounded-lg border p-4 text-sm space-y-1">
+                  <p className="text-muted-foreground">Your correction:</p>
+                  <p className="font-medium">{answers[dailyCurrentQ.id] || '(empty)'}</p>
+                </div>
+              )}
+
+              {/* Explanation */}
+              <AnimatePresence>
+                {showExplanation && dailyCurrentQ.explanation && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+                    exit={{ opacity: 0, y: -10, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        <span className="text-sm font-semibold text-primary">Explanation</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {dailyCurrentQ.explanation}
+                      </p>
+                      {dailyCurrentQ.type === 'short_answer' || dailyCurrentQ.type === 'error_correction' || dailyCurrentQ.type === 'fill_blank' ? (
+                        <div className="mt-2">
+                          <span className="text-xs text-muted-foreground">Expected answer: </span>
+                          <span className="text-xs font-medium">{dailyCurrentQ.answer}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Navigation buttons */}
+              <div className="flex items-center justify-between">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
+                  disabled={currentIndex === 0}
+                  className="text-muted-foreground"
+                >
+                  Previous
+                </Button>
+                {answered[dailyCurrentQ.id] && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    <Button onClick={handleDailyNext}>
+                      {currentIndex < dailyQuestions.length - 1 ? (
+                        <>
+                          Next <ChevronRight className="h-4 w-4 ml-1" />
+                        </>
+                      ) : (
+                        <>
+                          Finish Challenge <Trophy className="h-4 w-4 ml-1" />
+                        </>
+                      )}
+                    </Button>
+                  </motion.div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        )}
+
+        {/* Daily challenge question navigator dots */}
+        {studyMode === 'daily' && !dailyShowResults && dailyQuestions.length > 1 && (
+          <div className="flex items-center justify-center gap-1.5 mt-6 flex-wrap">
+            {dailyQuestions.map((q, i) => (
+              <motion.button
+                key={q.id}
+                whileHover={{ scale: 1.3 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setCurrentIndex(i)}
+                className={`h-2.5 rounded-full transition-all ${
+                  i === currentIndex
+                    ? 'bg-primary w-7 shadow-sm shadow-primary/30'
+                    : answered[q.id]
+                      ? isCorrect(q, answers[q.id] || '')
+                        ? 'bg-emerald-500 w-2.5'
+                        : 'bg-destructive/60 w-2.5'
+                      : 'bg-muted hover:bg-primary/40 w-2.5'
+                }`}
+                aria-label={`Go to question ${i + 1}`}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Quiz question card */}
         {studyMode === 'quiz' && (

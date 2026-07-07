@@ -50,7 +50,7 @@ function SocialIcon({
     <motion.a
       href={href}
       aria-label={label}
-      className="w-10 h-10 rounded-lg glass-subtle flex items-center justify-center text-muted-foreground transition-colors duration-200 relative overflow-hidden group"
+      className="w-10 h-10 rounded-lg glass-subtle flex items-center justify-center text-muted-foreground transition-colors duration-200 relative overflow-hidden group dark:group-hover:shadow-[0_0_15px_rgba(16,185,129,0.4),0_0_30px_rgba(16,185,129,0.15)]"
       whileHover={{ scale: 1.15, y: -2 }}
       whileTap={{ scale: 0.95 }}
       transition={{ type: 'spring', stiffness: 400, damping: 20 }}
@@ -70,16 +70,27 @@ function SocialIcon({
 export default function Footer() {
   return (
     <footer className="mt-auto">
-      {/* Animated gradient top border */}
+      {/* Animated gradient top border - emerald to transparent */}
       <div className="relative h-px overflow-hidden">
         <motion.div
-          className="absolute inset-0 bg-gradient-to-r from-transparent via-emerald-400 to-transparent"
+          className="absolute inset-0"
+          style={{
+            background: 'linear-gradient(90deg, transparent 0%, rgba(16,185,129,0.8) 20%, rgba(20,184,166,0.6) 50%, rgba(16,185,129,0.8) 80%, transparent 100%)',
+          }}
           initial={{ x: '-100%' }}
           animate={{ x: '100%' }}
           transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-emerald-400/50 to-transparent" />
+        <div
+          className="absolute inset-0"
+          style={{
+            background: 'linear-gradient(90deg, transparent 0%, rgba(16,185,129,0.5) 30%, rgba(16,185,129,0.5) 70%, transparent 100%)',
+          }}
+        />
       </div>
+
+      {/* Dark mode footer glass background */}
+      <div className="dark:bg-black/30 dark:backdrop-blur-[20px]">
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
@@ -186,6 +197,7 @@ export default function Footer() {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </footer>
   );

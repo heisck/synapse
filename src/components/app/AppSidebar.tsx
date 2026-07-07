@@ -16,6 +16,7 @@ import {
   Settings,
   X,
   Flame,
+  Timer,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -46,6 +47,7 @@ const navItems: NavItem[] = [
   { icon: MessageSquare, label: 'Tutor', view: 'tutor', shortcut: '\u23182' },
   { icon: ClipboardCheck, label: 'Quiz Mode', view: 'quiz', shortcut: '\u23184' },
   { icon: BookMarked, label: 'Notes', view: 'notes', shortcut: '\u23185' },
+  { icon: Timer, label: 'Focus Timer', view: 'focus-timer', shortcut: '\u23188' },
   { icon: User, label: 'Profile', view: 'profile', shortcut: '\u23186' },
   { icon: Settings, label: 'Settings', view: 'settings', shortcut: '\u23187' },
 ];

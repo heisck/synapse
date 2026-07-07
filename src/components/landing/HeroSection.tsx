@@ -23,8 +23,8 @@ const fullSubtitle =
 const orbs = [
   {
     size: 'w-[500px] h-[500px] sm:w-[600px] sm:h-[600px]',
-    gradient: 'bg-emerald-400/20',
-    blur: 'blur-[100px]',
+    gradient: 'bg-emerald-400/20 dark:bg-emerald-400/40',
+    blur: 'blur-[100px] dark:blur-[120px]',
     x: '10%',
     y: '20%',
     animX: [0, 40, -20, 30, 0],
@@ -33,8 +33,8 @@ const orbs = [
   },
   {
     size: 'w-[400px] h-[400px] sm:w-[500px] sm:h-[500px]',
-    gradient: 'bg-teal-400/15',
-    blur: 'blur-[80px]',
+    gradient: 'bg-teal-400/15 dark:bg-cyan-400/30',
+    blur: 'blur-[80px] dark:blur-[100px]',
     x: '70%',
     y: '60%',
     animX: [0, -30, 20, -40, 0],
@@ -43,8 +43,8 @@ const orbs = [
   },
   {
     size: 'w-[300px] h-[300px] sm:w-[400px] sm:h-[400px]',
-    gradient: 'bg-emerald-300/10',
-    blur: 'blur-[60px]',
+    gradient: 'bg-emerald-300/10 dark:bg-green-300/25',
+    blur: 'blur-[60px] dark:blur-[80px]',
     x: '50%',
     y: '10%',
     animX: [0, 20, -40, 10, 0],
@@ -139,6 +139,48 @@ export default function HeroSection() {
           backgroundSize: '128px 128px',
         }}
       />
+
+      {/* Dark mode starfield effect */}
+      <div className="absolute inset-0 z-0 pointer-events-none hidden dark:block">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `
+              radial-gradient(1px 1px at 10% 15%, rgba(16,185,129,0.5) 0%, transparent 100%),
+              radial-gradient(1px 1px at 25% 35%, rgba(20,184,166,0.4) 0%, transparent 100%),
+              radial-gradient(1.5px 1.5px at 40% 10%, rgba(52,211,153,0.6) 0%, transparent 100%),
+              radial-gradient(1px 1px at 55% 55%, rgba(16,185,129,0.3) 0%, transparent 100%),
+              radial-gradient(1px 1px at 70% 25%, rgba(20,184,166,0.5) 0%, transparent 100%),
+              radial-gradient(1.5px 1.5px at 85% 45%, rgba(110,231,183,0.5) 0%, transparent 100%),
+              radial-gradient(1px 1px at 15% 70%, rgba(16,185,129,0.35) 0%, transparent 100%),
+              radial-gradient(1px 1px at 30% 85%, rgba(20,184,166,0.3) 0%, transparent 100%),
+              radial-gradient(1.5px 1.5px at 60% 75%, rgba(52,211,153,0.45) 0%, transparent 100%),
+              radial-gradient(1px 1px at 80% 65%, rgba(16,185,129,0.4) 0%, transparent 100%),
+              radial-gradient(1px 1px at 90% 80%, rgba(110,231,183,0.35) 0%, transparent 100%),
+              radial-gradient(1px 1px at 5% 90%, rgba(20,184,166,0.3) 0%, transparent 100%),
+              radial-gradient(1.5px 1.5px at 45% 40%, rgba(16,185,129,0.55) 0%, transparent 100%),
+              radial-gradient(1px 1px at 65% 90%, rgba(52,211,153,0.4) 0%, transparent 100%),
+              radial-gradient(1px 1px at 95% 15%, rgba(20,184,166,0.45) 0%, transparent 100%),
+              radial-gradient(1px 1px at 50% 50%, rgba(110,231,183,0.3) 0%, transparent 100%)
+            `,
+          }}
+        />
+        <motion.div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `
+              radial-gradient(1px 1px at 20% 60%, rgba(52,211,153,0.5) 0%, transparent 100%),
+              radial-gradient(1.5px 1.5px at 35% 20%, rgba(16,185,129,0.4) 0%, transparent 100%),
+              radial-gradient(1px 1px at 75% 70%, rgba(20,184,166,0.45) 0%, transparent 100%),
+              radial-gradient(1px 1px at 8% 45%, rgba(110,231,183,0.35) 0%, transparent 100%),
+              radial-gradient(1.5px 1.5px at 92% 35%, rgba(16,185,129,0.5) 0%, transparent 100%),
+              radial-gradient(1px 1px at 48% 92%, rgba(52,211,153,0.3) 0%, transparent 100%)
+            `,
+          }}
+          animate={{ opacity: [0.4, 0.8, 0.4] }}
+          transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+        />
+      </div>
 
       {/* Animated floating orbs */}
       {orbs.map((orb, i) => (

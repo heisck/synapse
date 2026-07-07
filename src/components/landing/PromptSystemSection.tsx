@@ -93,7 +93,7 @@ function FlowConnector({ active }: { active: boolean }) {
       transition={{ duration: 0.5 }}
     >
       <motion.div
-        className="w-6 h-0.5 bg-gradient-to-r from-emerald-400 to-teal-400"
+        className="w-6 h-0.5 bg-gradient-to-r from-emerald-400 to-teal-400 dark:from-emerald-400 dark:to-cyan-300 dark:shadow-[0_0_8px_rgba(16,185,129,0.5)]"
         initial={{ scaleX: 0 }}
         animate={{ scaleX: 1 }}
         transition={{ duration: 0.6, delay: 0.2 }}
@@ -103,7 +103,7 @@ function FlowConnector({ active }: { active: boolean }) {
         animate={{ x: [0, 3, 0] }}
         transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
       >
-        <ArrowRight className="w-5 h-5 text-emerald-400 -ml-1" />
+        <ArrowRight className="w-5 h-5 text-emerald-400 dark:text-emerald-300 dark:drop-shadow-[0_0_6px_rgba(16,185,129,0.6)] -ml-1" />
       </motion.div>
     </motion.div>
   );
@@ -149,6 +149,30 @@ function LayerCard({
             ease: 'easeInOut',
           }}
         />
+        {/* Dark mode enhanced glow ring */}
+        <div className="absolute inset-0 hidden dark:block">
+          <motion.div
+            className="w-5 h-5 rounded-full"
+            style={{
+              backgroundColor: 'transparent',
+              boxShadow: `0 0 8px ${layer.nodeColor}60, 0 0 16px ${layer.nodeColor}30`,
+            }}
+            animate={{
+              boxShadow: [
+                `0 0 8px ${layer.nodeColor}40, 0 0 16px ${layer.nodeColor}15`,
+                `0 0 16px ${layer.nodeColor}80, 0 0 32px ${layer.nodeColor}40, 0 0 48px ${layer.nodeColor}15`,
+                `0 0 8px ${layer.nodeColor}40, 0 0 16px ${layer.nodeColor}15`,
+              ],
+              scale: [1, 1.2, 1],
+            }}
+            transition={{
+              duration: 2.5,
+              repeat: Infinity,
+              delay: index * 0.6,
+              ease: 'easeInOut',
+            }}
+          />
+        </div>
       </div>
 
       {/* Flow connector on larger screens */}
@@ -156,12 +180,12 @@ function LayerCard({
 
       {/* Card */}
       <motion.div
-        className="rounded-2xl glass p-6 h-full transition-all duration-300 overflow-hidden relative"
+        className="rounded-2xl glass p-6 h-full transition-all duration-300 overflow-hidden relative dark:backdrop-blur-[24px] dark:bg-white/[0.04] dark:border-white/[0.12]"
         whileHover={{ y: -6, scale: 1.02 }}
         transition={{ type: 'spring', stiffness: 300, damping: 20 }}
       >
         {/* Hover glow background */}
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-500/0 to-teal-500/0 group-hover:from-emerald-500/[0.04] group-hover:to-teal-500/[0.03] transition-all duration-500" />
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-500/0 to-teal-500/0 group-hover:from-emerald-500/[0.04] group-hover:to-teal-500/[0.03] dark:group-hover:from-emerald-400/[0.08] dark:group-hover:to-cyan-400/[0.06] transition-all duration-500" />
 
         {/* Top accent line */}
         <motion.div
@@ -209,7 +233,7 @@ function PrincipleCard({
 
   return (
     <motion.div
-      className="principle-card rounded-2xl glass-subtle p-5 transition-all duration-300 relative overflow-hidden group"
+      className="principle-card rounded-2xl glass-subtle p-5 transition-all duration-300 relative overflow-hidden group dark:backdrop-blur-[20px] dark:bg-white/[0.03] dark:border-white/[0.1]"
       initial={{ opacity: 0, scale: 0.95 }}
       whileInView={{ opacity: 1, scale: 1 }}
       viewport={{ once: true, margin: '-30px' }}
@@ -226,6 +250,14 @@ function PrincipleCard({
         style={{
           background:
             'linear-gradient(135deg, rgba(16,185,129,0.05) 0%, rgba(20,184,166,0.03) 100%)',
+        }}
+      />
+      {/* Dark mode enhanced hover glow */}
+      <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 hidden dark:block"
+        style={{
+          background:
+            'linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(20,184,166,0.05) 100%)',
+          boxShadow: 'inset 0 0 20px rgba(16,185,129,0.05)',
         }}
       />
 
@@ -245,7 +277,7 @@ function PrincipleCard({
               ease: 'easeInOut',
             }}
           >
-            <Icon className="w-5 h-5 text-emerald-500" />
+            <Icon className="w-5 h-5 text-emerald-500 dark:text-emerald-400 dark:drop-shadow-[0_0_4px_rgba(16,185,129,0.5)]" />
             <motion.div
               className="absolute -inset-2 rounded-full bg-emerald-400/0"
               animate={{

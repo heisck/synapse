@@ -2,7 +2,7 @@
 
 import { Suspense, lazy, useState, useRef, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Keyboard } from 'lucide-react';
+import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Keyboard, Timer } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { AppSidebar } from './AppSidebar';
 import { StoreInitializer } from './StoreInitializer';
@@ -24,6 +24,7 @@ const ProfileView = lazy(() => import('./ProfileView'));
 const CourseDetail = lazy(() => import('./CourseDetail'));
 const NotesView = lazy(() => import('./NotesView'));
 const SettingsView = lazy(() => import('./SettingsView'));
+const FocusTimerView = lazy(() => import('./FocusTimerView').then((m) => ({ default: m.FocusTimerView })));
 
 function ViewLoader() {
   return (
@@ -128,6 +129,11 @@ const viewTransitions: Record<string, { initial: object; animate: object; exit: 
     animate: { opacity: 1, x: 0 },
     exit: { opacity: 0, x: 40 },
   },
+  'focus-timer': {
+    initial: { opacity: 0, scale: 0.95 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.95 },
+  },
   profile: {
     initial: { opacity: 0, scale: 0.92 },
     animate: { opacity: 1, scale: 1 },
@@ -163,6 +169,7 @@ function SearchModal() {
     { label: 'Upload Slides', view: 'upload' as AppView, icon: Upload },
     { label: 'Quiz Mode', view: 'quiz' as AppView, icon: ClipboardCheck },
     { label: 'Notes', view: 'notes' as AppView, icon: BookMarked },
+    { label: 'Focus Timer', view: 'focus-timer' as AppView, icon: Timer },
     { label: 'Profile', view: 'profile' as AppView, icon: User },
     { label: 'Settings', view: 'settings' as AppView, icon: Settings },
   ];
@@ -464,6 +471,7 @@ const shortcutGroups = [
       { keys: ['⌘', '5'], description: 'Notes' },
       { keys: ['⌘', '6'], description: 'Profile' },
       { keys: ['⌘', '7'], description: 'Settings' },
+      { keys: ['⌘', '8'], description: 'Focus Timer' },
     ],
   },
   {
@@ -513,6 +521,7 @@ function KeyboardShortcuts() {
       if ((e.metaKey || e.ctrlKey) && e.key === '5') { e.preventDefault(); navigate('notes'); }
       if ((e.metaKey || e.ctrlKey) && e.key === '6') { e.preventDefault(); navigate('profile'); }
       if ((e.metaKey || e.ctrlKey) && e.key === '7') { e.preventDefault(); navigate('settings'); }
+      if ((e.metaKey || e.ctrlKey) && e.key === '8') { e.preventDefault(); navigate('focus-timer'); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -629,6 +638,8 @@ export function AppShell() {
         return <CourseDetail />;
       case 'notes':
         return <NotesView />;
+      case 'focus-timer':
+        return <FocusTimerView />;
       case 'settings':
         return <SettingsView />;
       default:

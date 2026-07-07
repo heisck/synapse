@@ -8,6 +8,7 @@ export type AppView =
   | 'profile'
   | 'course-detail'
   | 'notes'
+  | 'focus-timer'
   | 'settings';
 
 export interface LearnerProfile {
