@@ -2104,7 +2104,7 @@ export function Dashboard() {
 
       {/* Stats Row - with floating animation */}
       <motion.div variants={fadeUp}>
-        <div className="glass rounded-xl p-4 card-hover-lift card-hover-shadow-lift">
+        <div className="glass rounded-xl p-4 card-hover-lift card-hover-shadow-lift stat-card-gradient">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               { icon: BookOpen, label: 'Active Courses', value: animatedCourses, trend: 'up' as const, change: studySessions.length > 0 ? `${studySessions.length} sessions` : 'No sessions yet', idx: 0 },
@@ -2506,6 +2506,11 @@ export function Dashboard() {
       {/* Weekly Review Summary */}
       <motion.div variants={fadeUp}>
         <WeeklyReviewSummary />
+      </motion.div>
+
+      {/* Quick Review Cards */}
+      <motion.div variants={fadeUp}>
+        <QuickReviewCards />
       </motion.div>
 
       {/* Learning Analytics */}
@@ -3391,6 +3396,74 @@ function WeeklyReviewSummary() {
             </span>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Quick Review Cards — shows concepts to review based on mastery data */
+function QuickReviewCards() {
+  const { masteryMap, navigate } = useAppStore();
+
+  // Compute weak concepts from mastery map
+  const weakConcepts = (() => {
+    const entries = Object.entries(masteryMap)
+      .map(([concept, data]) => ({
+        concept,
+        level: (data as Record<string, unknown>).level as number || 0,
+        attempts: (data as Record<string, unknown>).attempts as number || 0,
+      }))
+      .filter((c) => c.level < 60 && c.attempts > 0)
+      .sort((a, b) => a.level - b.level);
+
+    return weakConcepts.slice(0, 4);
+  })();
+
+  if (weakConcepts.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
+          <Target className="h-3.5 w-3.5 text-amber-500" />
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">Needs Review</h3>
+          <p className="text-[10px] text-muted-foreground">Concepts with low mastery</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {weakConcepts.map((c, i) => (
+          <motion.div
+            key={c.concept}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.05 }}
+            whileHover={{ scale: 1.02 }}
+            className="glass rounded-xl p-3 cursor-pointer card-hover-shadow-lift border-l-4"
+            style={{ borderLeftColor: c.level < 30 ? '#ef4444' : c.level < 50 ? '#f59e0b' : '#10b981' }}
+            onClick={() => navigate('tutor')}
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-semibold text-foreground truncate max-w-[140px]">{c.concept}</span>
+              <span className={`text-[10px] font-bold tabular-nums ${c.level < 30 ? 'text-red-500' : c.level < 50 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                {c.level}%
+              </span>
+            </div>
+            <div className="w-full h-1.5 rounded-full bg-muted/50 overflow-hidden">
+              <motion.div
+                className="h-full rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${c.level}%` }}
+                transition={{ duration: 0.8, delay: 0.2 + i * 0.05 }}
+                style={{ background: c.level < 30 ? '#ef4444' : c.level < 50 ? '#f59e0b' : '#10b981' }}
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              {c.attempts} attempt{c.attempts !== 1 ? 's' : ''} · Click to review
+            </p>
+          </motion.div>
+        ))}
       </div>
     </div>
   );

@@ -2381,3 +2381,92 @@ html.lenis, html.lenis body {
 .dark .card-hover-shadow-lift:hover {
   box-shadow: 0 10px 30px oklch(0 0 0 / 0.3), 0 0 0 1px oklch(0.627 0.194 149.214 / 0.06);
 }
+
+/* ──────────────────────────────────────────────
+   ROUND 13 ENHANCED UTILITIES
+   ============================================ */
+
+/* 18. glass-header — Frosted glass header for tutor */
+@utility glass-header {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+.dark .glass-header,
+:is(.dark *) .glass-header {
+  background: rgba(10, 20, 15, 0.6);
+  border-bottom: 1px solid oklch(0.627 0.194 149.214 / 0.08);
+}
+
+/* 19. topic-chip-glow — Emerald glow on hover for topic chips */
+@utility topic-chip-glow {
+  transition: all 0.2s ease;
+}
+.topic-chip-glow:hover {
+  box-shadow: 0 0 16px oklch(0.627 0.194 149.214 / 0.15), 0 0 4px oklch(0.627 0.194 149.214 / 0.1);
+}
+
+/* 20. stat-card-gradient — Gradient top accent for stat cards */
+@utility stat-card-gradient {
+  position: relative;
+  overflow: hidden;
+}
+.stat-card-gradient::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89), oklch(0.627 0.194 149.214));
+  background-size: 200% 100%;
+  animation: gradientShift 4s ease-in-out infinite;
+  border-radius: 9999px 9999px 0 0;
+}
+
+/* 21. progress-bar-animated — Smooth animated progress fill */
+@utility progress-bar-animated {
+  transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 22. glow-badge — Pulsing glow for notification badges */
+@utility glow-badge {
+  animation: badgeGlow 2s ease-in-out infinite;
+}
+@keyframes badgeGlow {
+  0%, 100% { box-shadow: 0 0 4px oklch(0.627 0.194 149.214 / 0.3); }
+  50% { box-shadow: 0 0 12px oklch(0.627 0.194 149.214 / 0.5), 0 0 24px oklch(0.627 0.194 149.214 / 0.15); }
+}
+
+/* 23. text-balance — Better text wrapping for long words */
+@utility text-balance {
+  text-wrap: balance;
+}
+
+/* 24. border-subtle-animate — Subtle border color animation */
+@utility border-subtle-animate {
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.border-subtle-animate:hover {
+  border-color: oklch(0.627 0.194 149.214 / 0.3);
+}
+
+/* 25. scroll-fade-bottom — Fade gradient at bottom of scroll containers */
+@utility scroll-fade-bottom {
+  position: relative;
+}
+.scroll-fade-bottom::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: linear-gradient(to bottom, transparent, oklch(1 0 0 / 0.8));
+  pointer-events: none;
+  border-radius: inherit;
+}
+.dark .scroll-fade-bottom::after {
+  background: linear-gradient(to bottom, transparent, oklch(0.15 0.02 260 / 0.9));
+}

@@ -63,8 +63,10 @@ function CopyCodeButton({ code }: { code: string }) {
   }, [code])
 
   return (
-    <button
+    <motion.button
       onClick={handleCopy}
+      whileTap={{ scale: 0.88 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 20 }}
       className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-800/80 hover:bg-zinc-700/80 rounded-md border border-zinc-700/50 transition-colors"
       aria-label="Copy code"
     >
@@ -85,7 +87,7 @@ function CopyCodeButton({ code }: { code: string }) {
           Copy
         </>
       )}
-    </button>
+    </motion.button>
   )
 }
 
@@ -253,7 +255,7 @@ function MarkdownContent({ content }: { content: string }) {
             const codeString = String(children).replace(/\n$/, '')
             if (match) {
               return (
-                <div className="relative my-2.5 rounded-lg overflow-hidden border border-zinc-800">
+                <div className="relative my-2.5 rounded-lg overflow-hidden border border-zinc-800 card-hover-shadow-lift">
                   <CopyCodeButton code={codeString} />
                   <SyntaxHighlighter
                     style={vscDarkPlus}
@@ -582,6 +584,7 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate }: ChatB
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+      whileHover={{ scale: 1.005 }}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}
     >
       <div className={`flex items-end gap-2 max-w-[80%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -605,12 +608,20 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate }: ChatB
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 350, damping: 26, delay: 0.05 }}
             onClick={showCursor ? completeTypewriter : undefined}
-            className={`relative px-4 py-2.5 text-sm leading-relaxed ${
+            className={`relative px-4 py-2.5 text-sm leading-relaxed overflow-hidden ${
               isUser
                 ? 'bg-emerald-600 text-white rounded-2xl rounded-br-md chat-bubble-user'
-                : 'tutor-ai-bubble rounded-2xl rounded-bl-md'
+                : 'tutor-ai-bubble glass-card-shine rounded-2xl rounded-bl-md'
             } ${showCursor ? 'cursor-pointer' : ''}`}
           >
+            {/* Pulsing emerald gradient left border for user messages */}
+            {isUser && (
+              <motion.div
+                className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-gradient-to-b from-emerald-400 via-teal-300 to-emerald-400"
+                animate={{ opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            )}
             {/* Gradient glow on new assistant messages */}
             {isAssistant && glowVisible && (
               <motion.div

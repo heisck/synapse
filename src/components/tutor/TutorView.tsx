@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { StudySoundscapes } from '@/components/app/StudySoundscapes'
+import { ConversationInsights } from './ConversationInsights'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1183,7 +1184,7 @@ export function TutorView() {
                           whileHover={{ scale: 1.03, y: -1 }}
                           whileTap={{ scale: 0.97 }}
                           onClick={() => handleSend(prompt)}
-                          className="px-3 py-1.5 text-xs font-medium rounded-full border border-border/60 glass-hover text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                          className="px-3 py-1.5 text-xs font-medium rounded-full border border-border/60 glass-hover text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 hover:shadow-[0_0_12px_rgba(16,185,129,0.1)] transition-all duration-200"
                         >
                           {prompt}
                         </motion.button>
@@ -1208,7 +1209,7 @@ export function TutorView() {
                       transition={{ duration: 0.3 }}
                     />
                   )}
-                  <div className="flex items-end gap-1.5 glass rounded-xl border border-border/60 p-1.5 transition-shadow duration-300">
+                  <div className="flex items-end gap-1.5 glass-blur-strong rounded-xl border border-border/60 p-1.5 transition-shadow duration-300">
                     <Textarea
                       ref={textareaRef}
                       placeholder="Ask me anything..."
@@ -1465,7 +1466,9 @@ export function TutorView() {
               <Separator />
 
               {/* Mastery Tracker */}
-              <MasteryTracker />
+              <div className="glass-blur-strong rounded-lg p-2 -mx-1">
+                <MasteryTracker />
+              </div>
 
               <Separator />
 
@@ -1510,6 +1513,11 @@ export function TutorView() {
 
               {/* Feedback Bar */}
               <FeedbackBar />
+
+              <Separator />
+
+              {/* Conversation Insights */}
+              <ConversationInsights messages={messages} masteryMap={masteryMap} />
             </div>
           </div>
         )}
