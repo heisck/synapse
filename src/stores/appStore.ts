@@ -384,8 +384,8 @@ export const useAppStore = create<AppState>((set) => ({
     return { goals: arr };
   }),
   settings: (() => {
-    if (typeof window === 'undefined') return {
-      theme: 'system',
+    const DEFAULT_SETTINGS = {
+      theme: 'system' as const,
       compactMode: false,
       defaultPersona: 'storyteller',
       responseSpeed: 'balanced',
@@ -396,47 +396,19 @@ export const useAppStore = create<AppState>((set) => ({
       sessionReminders: true,
       streakAlerts: true,
     };
+    if (typeof window === 'undefined') return DEFAULT_SETTINGS;
     try {
       const stored = localStorage.getItem('synapse-settings');
       if (stored) {
-        return { ...{
-          theme: 'system',
-          compactMode: false,
-          defaultPersona: 'storyteller',
-          responseSpeed: 'balanced',
-          language: 'English',
-          defaultSessionDuration: 30,
-          autoBreakReminders: true,
-          dailyGoalHours: 2,
-          sessionReminders: true,
-          streakAlerts: true,
-        }, ...JSON.parse(stored) };
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return { ...DEFAULT_SETTINGS, ...parsed };
+        }
+        return DEFAULT_SETTINGS;
       }
-      return {
-        theme: 'system',
-        compactMode: false,
-        defaultPersona: 'storyteller',
-        responseSpeed: 'balanced',
-        language: 'English',
-        defaultSessionDuration: 30,
-        autoBreakReminders: true,
-        dailyGoalHours: 2,
-        sessionReminders: true,
-        streakAlerts: true,
-      };
+      return DEFAULT_SETTINGS;
     } catch {
-      return {
-        theme: 'system',
-        compactMode: false,
-        defaultPersona: 'storyteller',
-        responseSpeed: 'balanced',
-        language: 'English',
-        defaultSessionDuration: 30,
-        autoBreakReminders: true,
-        dailyGoalHours: 2,
-        sessionReminders: true,
-        streakAlerts: true,
-      };
+      return DEFAULT_SETTINGS;
     }
   })(),
   updateSettings: (updates) => set((s) => {
@@ -744,7 +716,7 @@ export const useAppStore = create<AppState>((set) => ({
     if (typeof window === 'undefined') return [];
     try {
       const stored = localStorage.getItem('synapse-study-goals');
-      return stored ? JSON.parse(stored) : [];
+      return stored ? safeArray(JSON.parse(stored)) as StudyGoal[] : [];
     } catch {
       return [];
     }
@@ -907,7 +879,7 @@ export const useAppStore = create<AppState>((set) => ({
     if (typeof window === 'undefined') return [];
     try {
       const stored = localStorage.getItem('synapse-bookmarks');
-      return stored ? JSON.parse(stored) : [];
+      return stored ? safeArray(JSON.parse(stored)) as string[] : [];
     } catch { return []; }
   })(),
   toggleBookmark: (courseId: string) => set((s) => {
