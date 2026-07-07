@@ -26,6 +26,7 @@ import {
   ChevronUp,
   ChevronDown,
   Trash2,
+  Download,
 } from 'lucide-react';
 import {
   BarChart,
@@ -352,6 +353,32 @@ export function Dashboard() {
     toast('Goal removed');
   };
 
+  const handleExportStudyData = () => {
+    if (studySessions.length === 0) {
+      toast.info('No study data to export yet');
+      return;
+    }
+    const headers = ['Date', 'Topic', 'Duration (min)', 'Messages', 'Mastery Gained'];
+    const rows = studySessions.map((s) => [
+      format(new Date(s.date), 'yyyy-MM-dd'),
+      `"${(s.topic || '').replace(/"/g, '""')}"`,
+      String(s.duration),
+      String(s.messagesCount),
+      String(s.masteryGained),
+    ]);
+    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `synapselearn-study-data-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${studySessions.length} study sessions`);
+  };
+
   const handleMoveGoal = (index: number, direction: 'up' | 'down') => {
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= goals.length) return;
@@ -514,6 +541,10 @@ export function Dashboard() {
           className="flex items-center gap-2 pl-14 lg:pl-0"
         >
           <ThemeToggle />
+          <Button variant="outline" size="sm" onClick={handleExportStudyData}>
+            <Download className="h-4 w-4 mr-2" />
+            Export Data
+          </Button>
           <Button onClick={() => handleStartSession('General Study')} size="sm">
             <Sparkles className="h-4 w-4 mr-2" />
             Start Session

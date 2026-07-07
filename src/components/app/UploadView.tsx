@@ -17,6 +17,9 @@ import {
   Hash,
   File,
   Presentation,
+  Lightbulb,
+  FileUp,
+  ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -120,6 +123,42 @@ function FloatingParticles() {
         />
       ))}
     </div>
+  );
+}
+
+// Quick Tips component
+function QuickTips() {
+  const tips = [
+    { icon: FileUp, text: 'Upload multiple files at once by selecting them together' },
+    { icon: Lightbulb, text: 'PDF and PPTX files yield the best question generation results' },
+    { icon: ShieldCheck, text: 'All files are processed locally and kept private' },
+  ];
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.3, type: 'spring', stiffness: 200, damping: 25 }}
+      className="glass rounded-xl p-5 space-y-3 card-shadow gradient-border"
+    >
+      <h3 className="text-sm font-semibold flex items-center gap-2">
+        <Lightbulb className="h-4 w-4 text-amber-500" />
+        Quick Tips
+      </h3>
+      <div className="space-y-2.5">
+        {tips.map((tip, idx) => (
+          <motion.div
+            key={idx}
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.4 + idx * 0.1 }}
+            className="flex items-start gap-2.5 text-sm text-muted-foreground"
+          >
+            <tip.icon className="h-4 w-4 text-emerald-500/60 shrink-0 mt-0.5" />
+            <span>{tip.text}</span>
+          </motion.div>
+        ))}
+      </div>
+    </motion.div>
   );
 }
 
@@ -382,7 +421,14 @@ export function UploadView() {
       case 'uploading':
         return <Loader2 className="h-5 w-5 text-primary animate-spin" />;
       case 'processing':
-        return <Loader2 className="h-5 w-5 text-amber-500 animate-spin" />;
+        return (
+          <div className="relative">
+            <Loader2 className="h-5 w-5 text-emerald-500 animate-spin" />
+            <div className="absolute inset-0 animate-ping opacity-20">
+              <Loader2 className="h-5 w-5 text-emerald-500" />
+            </div>
+          </div>
+        );
       case 'done':
         return <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 300 }}><CheckCircle2 className="h-5 w-5 text-emerald-500" /></motion.div>;
       case 'error':
@@ -415,22 +461,25 @@ export function UploadView() {
 
       {/* Course Category & Title */}
       <motion.div variants={fadeUp} className="space-y-4">
-        {/* Colored category pills */}
+        {/* Colored category pills with spring entrance */}
         <div className="space-y-2">
           <Label className="text-sm font-medium">Course Category</Label>
           <div className="flex flex-wrap gap-2">
-            {COURSE_CATEGORIES.map((cat) => (
+            {COURSE_CATEGORIES.map((cat, idx) => (
               <motion.button
                 key={cat}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
+                initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ delay: 0.05 * idx, type: 'spring', stiffness: 400, damping: 25 }}
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.92 }}
                 onClick={() => {
                   if (showCustomCategory) setShowCustomCategory(false);
                   setSelectedCategory(cat);
                 }}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
                   selectedCategory === cat && !showCustomCategory
-                    ? `bg-gradient-to-r ${CATEGORY_COLORS[cat] || CATEGORY_COLORS['Other']} shadow-sm`
+                    ? `bg-gradient-to-r ${CATEGORY_COLORS[cat] || CATEGORY_COLORS['Other']} shadow-sm glow-emerald`
                     : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                 }`}
               >
@@ -438,15 +487,18 @@ export function UploadView() {
               </motion.button>
             ))}
             <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+              initial={{ opacity: 0, scale: 0.8, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ delay: 0.05 * COURSE_CATEGORIES.length, type: 'spring', stiffness: 400, damping: 25 }}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
               onClick={() => {
                 setShowCustomCategory(true);
                 setSelectedCategory('');
               }}
               className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
                 showCustomCategory
-                  ? 'bg-gradient-to-r from-primary/15 to-secondary/15 text-primary border-primary/20'
+                  ? 'bg-gradient-to-r from-primary/15 to-secondary/15 text-primary border-primary/20 glow-emerald'
                   : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
               }`}
             >
@@ -484,7 +536,8 @@ export function UploadView() {
               onChange={(e) => setCourseTitle(e.target.value)}
               onBlur={() => setTitleTouched(true)}
               className={titleError ? 'border-destructive focus-visible:ring-destructive/50' : ''}
-            />\n            <AnimatePresence>
+            />
+            <AnimatePresence>
               {titleError && (
                 <motion.p
                   initial={{ opacity: 0, y: -4 }}
@@ -499,7 +552,7 @@ export function UploadView() {
         </div>
       </motion.div>
 
-      {/* Drop Zone */}
+      {/* Drop Zone - enhanced with glass bg and animated dashed border */}
       <motion.div variants={fadeUp}>
         <div
           onDragOver={(e) => {
@@ -509,11 +562,14 @@ export function UploadView() {
           onDragLeave={() => setIsDragOver(false)}
           onDrop={handleDrop}
           onClick={() => inputRef.current?.click()}
-          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all overflow-hidden ${
+          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all overflow-hidden glass ${
             isDragOver
-              ? 'border-primary bg-primary/5 scale-[1.01] glow-emerald'
-              : 'border-border hover:border-primary/40 hover:bg-accent/20'
+              ? 'border-primary bg-primary/5 scale-[1.01] glow-emerald-strong pulse-glow'
+              : 'border-border/60 hover:border-primary/40 hover:bg-accent/20'
           }`}
+          style={isDragOver ? {
+            animation: 'dashMove 1s linear infinite',
+          } : undefined}
         >
           <FloatingParticles />
           <input
@@ -526,9 +582,9 @@ export function UploadView() {
           />
           <div className="relative z-10 flex flex-col items-center gap-3">
             <motion.div
-              className={`h-16 w-16 rounded-2xl flex items-center justify-center transition-colors ${isDragOver ? 'bg-primary/20' : 'bg-primary/10'}`}
-              animate={isDragOver ? { y: [0, -6, 0] } : {}}
-              transition={{ duration: 0.6, repeat: isDragOver ? Infinity : 0 }}
+              className={`h-16 w-16 rounded-2xl flex items-center justify-center transition-colors ${isDragOver ? 'bg-primary/20 glow-emerald-strong' : 'bg-primary/10'}`}
+              animate={isDragOver ? { y: [0, -6, 0], rotate: [0, 5, -5, 0] } : { y: [0, -3, 0] }}
+              transition={{ duration: 0.6, repeat: Infinity, ease: 'easeInOut' }}
             >
               <Upload className={`h-8 w-8 transition-colors ${isDragOver ? 'text-primary' : 'text-primary/60'}`} />
             </motion.div>
@@ -551,7 +607,7 @@ export function UploadView() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="space-y-2 max-h-96 overflow-y-auto"
+            className="space-y-2 max-h-96 overflow-y-auto scroll-fade-bottom"
           >
             {files.map((f, idx) => {
               const ext = getFileExt(f.file.name);
@@ -563,7 +619,7 @@ export function UploadView() {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 20 }}
                   transition={{ delay: idx * 0.06 }}
-                  className={`glass rounded-lg p-3 flex items-center gap-3 ${f.status === 'done' ? 'glow-emerald' : ''}`}
+                  className={`glass-hover rounded-lg p-3 flex items-center gap-3 ${f.status === 'done' ? 'glow-emerald' : ''}`}
                 >
                   <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${typeConfig?.bg || 'bg-muted'}`}>
                     {statusIcon(f.status, f.file.name)}
@@ -577,11 +633,21 @@ export function UploadView() {
                     {(f.status === 'uploading' || f.status === 'processing') && (
                       <div className="mt-2 relative h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
                         <motion.div
-                          className="absolute inset-y-0 left-0 rounded-full"
+                          className="absolute inset-y-0 left-0 rounded-full relative overflow-hidden"
                           style={{ background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))' }}
                           animate={{ width: `${f.status === 'processing' ? 100 : f.progress}%` }}
                           transition={{ duration: 0.3 }}
-                        />
+                        >
+                          {/* Shimmer on progress bar */}
+                          <motion.div
+                            className="absolute inset-0 -translate-x-full"
+                            animate={{ translateX: ['-100%', '100%', '200%'] }}
+                            transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+                            style={{
+                              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent)',
+                            }}
+                          />
+                        </motion.div>
                       </div>
                     )}
                   </div>
@@ -594,7 +660,9 @@ export function UploadView() {
                       Done
                     </motion.span>
                   )}
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
                   onClick={(e) => {
                     e.stopPropagation();
                     removeFile(f.id);
@@ -603,7 +671,7 @@ export function UploadView() {
                   aria-label={`Remove ${f.file.name}`}
                 >
                   <X className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                </button>
+                </motion.button>
               </motion.div>
               );
             })}
@@ -614,48 +682,55 @@ export function UploadView() {
       {/* Action Buttons */}
       {files.length > 0 && !generatedCount && (
         <motion.div variants={fadeUp} className="flex flex-wrap gap-3">
-          <Button
-            onClick={simulateUpload}
-            disabled={files.every((f) => f.status === 'done') || files.every((f) => f.status === 'uploading' || f.status === 'processing')}
-          >
-            <Upload className="h-4 w-4 mr-2" />
-            Upload Files
-          </Button>
+          <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+            <Button
+              onClick={simulateUpload}
+              disabled={files.every((f) => f.status === 'done') || files.every((f) => f.status === 'uploading' || f.status === 'processing')}
+              className="glow-emerald transition-shadow duration-300"
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Upload Files
+            </Button>
+          </motion.div>
           {(extractedSlides.length > 0 || files.some((f) => f.status === 'done')) && (
             <>
-              <Button
-                onClick={() => simulateGenerate(false)}
-                disabled={!files.some((f) => f.status === 'done') || isGenerating}
-                variant="outline"
-              >
-                {isGenerating ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4 mr-2" />
-                )}
-                Generate Questions for All
-              </Button>
-              {extractedSlides.length > 0 && (
+              <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
                 <Button
-                  onClick={() => simulateGenerate(true)}
-                  disabled={selectedSlideIds.size === 0 || isGenerating}
+                  onClick={() => simulateGenerate(false)}
+                  disabled={!files.some((f) => f.status === 'done') || isGenerating}
                   variant="outline"
-                  className="text-emerald-600 border-emerald-300 hover:bg-emerald-50"
                 >
                   {isGenerating ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
                     <Sparkles className="h-4 w-4 mr-2" />
                   )}
-                  Generate for Selected ({selectedSlideIds.size})
+                  Generate Questions for All
                 </Button>
+              </motion.div>
+              {extractedSlides.length > 0 && (
+                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                  <Button
+                    onClick={() => simulateGenerate(true)}
+                    disabled={selectedSlideIds.size === 0 || isGenerating}
+                    variant="outline"
+                    className="text-emerald-600 border-emerald-300 hover:bg-emerald-50"
+                  >
+                    {isGenerating ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 mr-2" />
+                    )}
+                    Generate for Selected ({selectedSlideIds.size})
+                  </Button>
+                </motion.div>
               )}
             </>
           )}
         </motion.div>
       )}
 
-      {/* Slide Grouping Preview */}
+      {/* Slide Grouping Preview - enhanced with smoother layout animation */}
       <AnimatePresence>
         {extractedSlides.length > 0 && !generatedCount && (
           <motion.div
@@ -663,16 +738,22 @@ export function UploadView() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-            className="glass rounded-xl overflow-hidden gradient-border glow-emerald"
+            className="glass rounded-xl overflow-hidden gradient-border glow-emerald card-shadow"
+            layout
           >
             <Collapsible open={slidesOpen} onOpenChange={setSlidesOpen}>
               <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-accent/30 transition-colors">
                 <div className="flex items-center gap-2">
-                  {slidesOpen ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  )}
+                  <motion.div
+                    animate={{ rotate: slidesOpen ? 0 : 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    {slidesOpen ? (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </motion.div>
                   <span className="font-medium text-sm">
                     Extracted Slides ({extractedSlides.length})
                   </span>
@@ -694,42 +775,52 @@ export function UploadView() {
                   </Button>
                 </div>
               </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="max-h-96 overflow-y-auto border-t">
-                  {extractedSlides.map((slide) => {
-                    const isSelected = selectedSlideIds.has(slide.id);
-                    const previewTitle = slide.title.length > 50 ? slide.title.slice(0, 50) + '…' : slide.title;
-                    return (
-                      <motion.div
-                        key={slide.id}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.15 }}
-                        className={`flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 transition-colors cursor-pointer ${
-                          isSelected ? 'bg-emerald-50/50' : 'hover:bg-accent/20'
-                        }`}
-                        onClick={() => toggleSlideSelection(slide.id)}
-                      >
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={() => toggleSlideSelection(slide.id)}
-                          className={isSelected ? 'border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600' : ''}
-                        />
-                        <div className="flex items-center justify-center h-6 w-6 rounded-md bg-muted text-muted-foreground text-xs font-mono flex-shrink-0">
-                          {slide.order}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{previewTitle}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {slide.wordCount} words
-                          </p>
-                        </div>
-                        <Hash className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              </CollapsibleContent>
+              <AnimatePresence initial={false}>
+                <CollapsibleContent forceMount>
+                  <motion.div
+                    initial={false}
+                    animate={{ height: slidesOpen ? 'auto' : 0, opacity: slidesOpen ? 1 : 0 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="max-h-96 overflow-y-auto scroll-fade-bottom border-t">
+                      {extractedSlides.map((slide) => {
+                        const isSelected = selectedSlideIds.has(slide.id);
+                        const previewTitle = slide.title.length > 50 ? slide.title.slice(0, 50) + '…' : slide.title;
+                        return (
+                          <motion.div
+                            key={slide.id}
+                            layout
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.15 }}
+                            className={`flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 transition-colors cursor-pointer ${
+                              isSelected ? 'bg-emerald-50/50' : 'hover:bg-accent/20'
+                            }`}
+                            onClick={() => toggleSlideSelection(slide.id)}
+                          >
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => toggleSlideSelection(slide.id)}
+                              className={isSelected ? 'border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600' : ''}
+                            />
+                            <div className="flex items-center justify-center h-6 w-6 rounded-md bg-muted text-muted-foreground text-xs font-mono flex-shrink-0">
+                              {slide.order}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{previewTitle}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {slide.wordCount} words
+                              </p>
+                            </div>
+                            <Hash className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                </CollapsibleContent>
+              </AnimatePresence>
             </Collapsible>
           </motion.div>
         )}
@@ -741,7 +832,7 @@ export function UploadView() {
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="glass rounded-xl p-6 text-center space-y-4"
+            className="glass rounded-xl p-6 text-center space-y-4 card-shadow gradient-border"
           >
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/15 to-teal-500/15 mx-auto pulse-glow">
               <CheckCircle2 className="h-8 w-8 text-emerald-500" />
@@ -753,49 +844,57 @@ export function UploadView() {
               </p>
             </div>
             <div className="flex justify-center gap-3">
-              <Button
-                onClick={() => {
-                  setQuizScore(0, generatedCount);
-                  navigate('quiz');
-                }}
-              >
-                <ClipboardCheck className="h-4 w-4 mr-2" />
-                Take Quiz
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setActiveCourse({
-                    id: uploadedCourseId || 'uploaded-' + Date.now(),
-                    title: courseTitle.trim() || 'Uploaded Material',
-                    description: `${effectiveCategory || 'General'} course from uploaded files`,
-                    subject: effectiveCategory || 'General',
-                    _count: { slides: extractedSlides.length || files.filter((f) => f.status === 'done').length, enrollments: 1, sessions: 0 },
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                  });
-                  if (extractedSlides.length > 0) {
-                    setActiveSlides(
-                      extractedSlides.map((s, idx) => ({
-                        id: s.id,
-                        courseId: uploadedCourseId || 'uploaded-' + Date.now(),
-                        title: s.title,
-                        content: s.content,
-                        order: s.order,
-                        createdAt: new Date().toISOString(),
-                      })),
-                    );
-                  }
-                  navigate('dashboard');
-                }}
-              >
-                <BookOpen className="h-4 w-4 mr-2" />
-                View Course
-              </Button>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button
+                  onClick={() => {
+                    setQuizScore(0, generatedCount);
+                    navigate('quiz');
+                  }}
+                  className="glow-emerald transition-shadow duration-300"
+                >
+                  <ClipboardCheck className="h-4 w-4 mr-2" />
+                  Take Quiz
+                </Button>
+              </motion.div>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setActiveCourse({
+                      id: uploadedCourseId || 'uploaded-' + Date.now(),
+                      title: courseTitle.trim() || 'Uploaded Material',
+                      description: `${effectiveCategory || 'General'} course from uploaded files`,
+                      subject: effectiveCategory || 'General',
+                      _count: { slides: extractedSlides.length || files.filter((f) => f.status === 'done').length, enrollments: 1, sessions: 0 },
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                    });
+                    if (extractedSlides.length > 0) {
+                      setActiveSlides(
+                        extractedSlides.map((s, idx) => ({
+                          id: s.id,
+                          courseId: uploadedCourseId || 'uploaded-' + Date.now(),
+                          title: s.title,
+                          content: s.content,
+                          order: s.order,
+                          createdAt: new Date().toISOString(),
+                        })),
+                      );
+                    }
+                    navigate('dashboard');
+                  }}
+                >
+                  <BookOpen className="h-4 w-4 mr-2" />
+                  View Course
+                </Button>
+              </motion.div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Quick Tips Section */}
+      {files.length === 0 && generatedCount === null && <QuickTips />}
     </motion.div>
   );
 }

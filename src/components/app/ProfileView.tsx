@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useMemo, useState, useEffect } from 'react';
+import { motion, AnimatePresence, useSpring, useMotionValue, useTransform } from 'framer-motion';
 import {
   Mail,
   Palette,
@@ -81,6 +81,32 @@ const achievementCardVariant = {
   animate: { opacity: 1, scale: 1, y: 0, transition: { type: 'spring', stiffness: 400, damping: 25 } },
 };
 
+/* ── Animated Number Component ── */
+function AnimatedNumber({ value }: { value: string }) {
+  const numericValue = parseInt(value, 10);
+  const motionVal = useMotionValue(0);
+  const display = useTransform(motionVal, (v) => Math.round(v).toString());
+  const spring = useSpring(motionVal, { stiffness: 100, damping: 30, mass: 1 });
+
+  useEffect(() => {
+    if (!isNaN(numericValue)) {
+      motionVal.set(numericValue);
+    }
+  }, [numericValue, motionVal]);
+
+  // Subscribe to the spring value for rendering
+  const [displayValue, setDisplayValue] = useState('0');
+  useEffect(() => {
+    const unsubscribe = spring.on('change', (v) => {
+      setDisplayValue(Math.round(v).toString());
+    });
+    return unsubscribe;
+  }, [spring]);
+
+  if (isNaN(numericValue)) return <>{value}</>;
+  return <>{displayValue}</>;
+}
+
 /* ── Static Data ── */
 const styleLabels: Record<string, { icon: typeof Eye; label: string; color: string }> = {
   visual: { icon: Eye, label: 'Visual', color: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' },
@@ -103,11 +129,11 @@ const categoryTabs: Array<{ key: 'all' | Achievement['category']; label: string 
   { key: 'mastery', label: 'Mastery' },
 ];
 
-const rarityStyles: Record<Achievement['rarity'], { border: string; bg: string; badgeBg: string; badgeText: string; text: string }> = {
-  common: { border: 'border-gray-500/30', bg: 'bg-gray-500/10', badgeBg: 'bg-gray-500/10', badgeText: 'text-gray-600 dark:text-gray-400', text: 'text-gray-500' },
-  rare: { border: 'border-blue-500/30', bg: 'bg-blue-500/10', badgeBg: 'bg-blue-500/10', badgeText: 'text-blue-600 dark:text-blue-400', text: 'text-blue-500' },
-  epic: { border: 'border-purple-500/30', bg: 'bg-purple-500/10', badgeBg: 'bg-purple-500/10', badgeText: 'text-purple-600 dark:text-purple-400', text: 'text-purple-500' },
-  legendary: { border: 'border-amber-500/30', bg: 'bg-amber-500/10', badgeBg: 'bg-amber-500/10', badgeText: 'text-amber-600 dark:text-amber-400', text: 'text-amber-500' },
+const rarityStyles: Record<Achievement['rarity'], { border: string; bg: string; badgeBg: string; badgeText: string; text: string; glow: string }> = {
+  common: { border: 'border-gray-500/30', bg: 'bg-gray-500/10', badgeBg: 'bg-gray-500/10', badgeText: 'text-gray-600 dark:text-gray-400', text: 'text-gray-500', glow: '' },
+  rare: { border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', badgeBg: 'bg-emerald-500/10', badgeText: 'text-emerald-600 dark:text-emerald-400', text: 'text-emerald-500', glow: 'hover:shadow-[0_0_20px_rgba(16,185,129,0.15)]' },
+  epic: { border: 'border-blue-500/30', bg: 'bg-blue-500/10', badgeBg: 'bg-blue-500/10', badgeText: 'text-blue-600 dark:text-blue-400', text: 'text-blue-500', glow: 'hover:shadow-[0_0_20px_rgba(59,130,246,0.15)]' },
+  legendary: { border: 'border-purple-500/30', bg: 'bg-purple-500/10', badgeBg: 'bg-purple-500/10', badgeText: 'text-purple-600 dark:text-purple-400', text: 'text-purple-500', glow: 'hover:shadow-[0_0_25px_rgba(168,85,247,0.2)]' },
 };
 
 const skillBars = [
@@ -140,6 +166,48 @@ function generateHeatmap(): { opacity: number }[][] {
 
 const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+/* ── Heatmap Cell Component ── */
+function HeatmapCell({ opacity, weekIdx, dayIdx }: { opacity: number; weekIdx: number; dayIdx: number }) {
+  const [hovered, setHovered] = useState(false);
+  const hasActivity = opacity > 0;
+  const levelLabel = hasActivity
+    ? opacity === 1 ? 'High' : opacity >= 0.6 ? 'Medium' : opacity >= 0.3 ? 'Low' : 'Minimal'
+    : 'No activity';
+
+  return (
+    <div className="relative flex-1">
+      <motion.div
+        className={`aspect-square rounded-sm cursor-default transition-all duration-300 ${
+          hasActivity ? 'hover:scale-125 hover:rounded-md' : 'bg-muted/40 dark:bg-muted/20'
+        }`}
+        style={
+          hasActivity
+            ? {
+                backgroundColor: `oklch(0.627 0.194 149.214 / ${opacity})`,
+              }
+            : undefined
+        }
+        whileHover={hasActivity ? { scale: 1.3, zIndex: 10 } : undefined}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      />
+      <AnimatePresence>
+        {hovered && hasActivity && (
+          <motion.div
+            initial={{ opacity: 0, y: 4, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.9 }}
+            transition={{ duration: 0.15 }}
+            className="absolute -top-8 left-1/2 -translate-x-1/2 z-20 px-2 py-1 rounded-md bg-popover border border-border shadow-lg text-[10px] font-medium whitespace-nowrap pointer-events-none"
+          >
+            {levelLabel} activity
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 /* ── Achievement Card Component ── */
 function AchievementCard({ achievement, index }: { achievement: Achievement; index: number }) {
   const isUnlocked = achievement.unlockedAt !== null;
@@ -149,7 +217,9 @@ function AchievementCard({ achievement, index }: { achievement: Achievement; ind
   return (
     <motion.div
       variants={achievementCardVariant}
-      className={`relative rounded-xl border ${rarity.border} overflow-hidden ${
+      className={`relative rounded-xl border ${rarity.border} overflow-hidden glass-hover transition-shadow duration-300 ${
+        rarity.glow
+      } ${
         isUnlocked ? rarity.bg : 'bg-muted/30 dark:bg-muted/20 border-border/50'
       }`}
     >
@@ -299,38 +369,69 @@ export function ProfileView() {
       {/* ════════════════════════════════════════════
           1. Profile Header
       ════════════════════════════════════════════ */}
-      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8">
-        <div className="flex items-start gap-5">
-          <Avatar className="h-20 w-20 ring-2 ring-emerald-500/20 ring-offset-2 ring-offset-background shrink-0">
-            <AvatarFallback className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xl font-bold">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0 space-y-1.5">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl sm:text-3xl font-bold gradient-text truncate">
-                {userName || 'Student'}
-              </h1>
-              <ThemeToggle />
+      <motion.div variants={fadeUp} className="glass rounded-2xl overflow-hidden gradient-border card-shadow">
+        {/* Animated gradient header strip */}
+        <div className="h-24 sm:h-28 mesh-gradient relative overflow-hidden">
+          <motion.div
+            className="absolute inset-0"
+            animate={{
+              background: [
+                'radial-gradient(ellipse 80% 50% at 20% 40%, rgba(16,185,129,0.12) 0%, transparent 50%), radial-gradient(ellipse 60% 40% at 80% 20%, rgba(20,184,166,0.1) 0%, transparent 50%)',
+                'radial-gradient(ellipse 80% 50% at 60% 60%, rgba(16,185,129,0.15) 0%, transparent 50%), radial-gradient(ellipse 60% 40% at 30% 30%, rgba(20,184,166,0.12) 0%, transparent 50%)',
+                'radial-gradient(ellipse 80% 50% at 20% 40%, rgba(16,185,129,0.12) 0%, transparent 50%), radial-gradient(ellipse 60% 40% at 80% 20%, rgba(20,184,166,0.1) 0%, transparent 50%)',
+              ],
+            }}
+            transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <div className="absolute inset-0 grid-pattern opacity-30" />
+        </div>
+        <div className="px-6 sm:px-8 pb-6 sm:pb-8 -mt-12 relative z-10">
+          <div className="flex items-start gap-5">
+            {/* Avatar with pulsing glow ring */}
+            <div className="relative">
+              <motion.div
+                className="absolute -inset-1 rounded-full"
+                animate={{
+                  boxShadow: [
+                    '0 0 8px rgba(16,185,129,0.2), 0 0 16px rgba(16,185,129,0.1)',
+                    '0 0 16px rgba(16,185,129,0.4), 0 0 32px rgba(16,185,129,0.2)',
+                    '0 0 8px rgba(16,185,129,0.2), 0 0 16px rgba(16,185,129,0.1)',
+                  ],
+                }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              <Avatar className="h-20 w-20 ring-2 ring-emerald-500/30 ring-offset-2 ring-offset-background shrink-0 relative z-10">
+                <AvatarFallback className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xl font-bold">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
             </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Mail className="h-4 w-4 shrink-0" />
-              <p className="text-sm truncate">{userEmail || 'student@synapselearn.ai'}</p>
-            </div>
-            <div className="flex items-center gap-3 pt-1">
-              <Badge
-                variant="secondary"
-                className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15"
-              >
-                <Sparkles className="h-3 w-3 mr-1" />
-                Free Plan
-              </Badge>
-              {unlockedCount > 0 && (
-                <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400 border-amber-500/20">
-                  <Trophy className="h-3 w-3 mr-1" />
-                  {unlockedCount} unlocked
+            <div className="flex-1 min-w-0 space-y-1.5 pt-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-2xl sm:text-3xl font-bold gradient-text truncate">
+                  {userName || 'Student'}
+                </h1>
+                <ThemeToggle />
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Mail className="h-4 w-4 shrink-0" />
+                <p className="text-sm truncate">{userEmail || 'student@synapselearn.ai'}</p>
+              </div>
+              <div className="flex items-center gap-3 pt-1">
+                <Badge
+                  variant="secondary"
+                  className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15"
+                >
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  Free Plan
                 </Badge>
-              )}
+                {unlockedCount > 0 && (
+                  <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400 border-amber-500/20">
+                    <Trophy className="h-3 w-3 mr-1" />
+                    {unlockedCount} unlocked
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -339,16 +440,23 @@ export function ProfileView() {
       {/* ════════════════════════════════════════════
           2. Learning Profile
       ════════════════════════════════════════════ */}
-      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-5">
+      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-5 card-shadow">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Brain className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            <motion.div
+              animate={{ y: [0, -2, 0] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <Brain className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            </motion.div>
             <h2 className="text-lg font-semibold gradient-text">Learning Profile</h2>
           </div>
-          <Button variant="ghost" size="sm" onClick={handleReconfigure} className="text-muted-foreground">
-            <Settings className="h-4 w-4 mr-1" />
-            Reconfigure
-          </Button>
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <Button variant="ghost" size="sm" onClick={handleReconfigure} className="text-muted-foreground hover:text-foreground transition-colors">
+              <Settings className="h-4 w-4 mr-1" />
+              Reconfigure
+            </Button>
+          </motion.div>
         </div>
 
         {learnerProfile ? (
@@ -496,14 +604,23 @@ export function ProfileView() {
       ════════════════════════════════════════════ */}
       <motion.div variants={fadeUp}>
         <h2 className="text-lg font-semibold gradient-text mb-4 flex items-center gap-2">
-          <BarChart3 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          <motion.div
+            animate={{ rotate: [0, 5, -5, 0] }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <BarChart3 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          </motion.div>
           Stats Overview
         </h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          {statsData.map((stat) => (
-            <div
+          {statsData.map((stat, idx) => (
+            <motion.div
               key={stat.label}
-              className="glass rounded-2xl p-4 sm:p-5 space-y-3 hover:glow-emerald transition-shadow duration-300"
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: idx * 0.1, type: 'spring', stiffness: 300, damping: 25 }}
+              className="glass rounded-2xl p-4 sm:p-5 space-y-3 hover:glow-emerald-strong transition-shadow duration-500 card-shadow"
+              whileHover={{ y: -4, transition: { duration: 0.2 } }}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-emerald-500/10">
@@ -511,13 +628,15 @@ export function ProfileView() {
                 </div>
               </div>
               <div>
-                <p className="text-2xl sm:text-3xl font-bold tracking-tight">{stat.value}</p>
+                <p className="text-2xl sm:text-3xl font-bold tracking-tight">
+                  <AnimatedNumber value={stat.value} />
+                </p>
                 <p className="text-xs text-muted-foreground mt-0.5">{stat.label}</p>
               </div>
               <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
                 {stat.change}
               </p>
-            </div>
+            </motion.div>
           ))}
         </div>
       </motion.div>
@@ -525,12 +644,17 @@ export function ProfileView() {
       {/* ════════════════════════════════════════════
           4. Achievements (Enhanced)
       ════════════════════════════════════════════ */}
-      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-5">
+      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-5 card-shadow">
         <div className="space-y-4">
           {/* Header + Progress */}
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-2">
-              <Trophy className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              <motion.div
+                animate={{ rotate: [0, 10, -10, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                <Trophy className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </motion.div>
               <h2 className="text-lg font-semibold gradient-text">Achievements</h2>
             </div>
             <span className="text-sm text-muted-foreground font-medium">
@@ -542,11 +666,13 @@ export function ProfileView() {
           <div className="space-y-1.5">
             <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
               <motion.div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500"
+                className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500 relative overflow-hidden"
                 initial={{ width: 0 }}
                 animate={{ width: `${achievements.length > 0 ? (unlockedCount / achievements.length) * 100 : 0}%` }}
                 transition={{ duration: 0.8, ease: 'easeOut', delay: 0.2 }}
-              />
+              >
+                <div className="absolute inset-0 shimmer" />
+              </motion.div>
             </div>
           </div>
 
@@ -560,11 +686,12 @@ export function ProfileView() {
               return (
                 <motion.button
                   key={tab.key}
+                  whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => setActiveCategory(tab.key)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     isActive
-                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 glow-emerald'
                       : 'text-muted-foreground hover:bg-muted/50 border border-transparent'
                   }`}
                 >
@@ -602,9 +729,14 @@ export function ProfileView() {
       {/* ════════════════════════════════════════════
           5. Activity Heatmap
       ════════════════════════════════════════════ */}
-      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-4">
+      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-4 card-shadow">
         <div className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          <motion.div
+            animate={{ y: [0, -2, 0] }}
+            transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <TrendingUp className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          </motion.div>
           <h2 className="text-lg font-semibold gradient-text">Activity</h2>
         </div>
 
@@ -631,27 +763,12 @@ export function ProfileView() {
                 </span>
                 {heatmap.map((week, weekIdx) => {
                   const cell = week[dayIdx];
-                  const hasActivity = cell.opacity > 0;
                   return (
-                    <div
+                    <HeatmapCell
                       key={`${weekIdx}-${dayIdx}`}
-                      className={`flex-1 aspect-square rounded-sm transition-colors duration-200 cursor-default ${
-                        hasActivity
-                          ? ''
-                          : 'bg-muted/40 dark:bg-muted/20'
-                      }`}
-                      style={
-                        hasActivity
-                          ? {
-                              backgroundColor: `oklch(0.627 0.194 149.214 / ${cell.opacity})`,
-                            }
-                          : undefined
-                      }
-                      title={
-                        hasActivity
-                          ? `${cell.opacity === 1 ? 'High' : cell.opacity >= 0.6 ? 'Medium' : cell.opacity >= 0.3 ? 'Low' : 'Minimal'} activity`
-                          : 'No activity'
-                      }
+                      opacity={cell.opacity}
+                      weekIdx={weekIdx}
+                      dayIdx={dayIdx}
                     />
                   );
                 })}
@@ -664,7 +781,7 @@ export function ProfileView() {
               {[0.1, 0.3, 0.6, 1].map((op) => (
                 <div
                   key={op}
-                  className="h-3 w-3 rounded-sm"
+                  className="h-3 w-3 rounded-sm transition-transform hover:scale-125 cursor-default"
                   style={{ backgroundColor: `oklch(0.627 0.194 149.214 / ${op})` }}
                 />
               ))}
@@ -689,31 +806,51 @@ export function ProfileView() {
       {/* ════════════════════════════════════════════
           6. Skill Radar (horizontal bars)
       ════════════════════════════════════════════ */}
-      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-5">
+      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-5 card-shadow">
         <div className="flex items-center gap-2">
-          <BarChart3 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          <motion.div
+            animate={{ rotate: [0, 3, -3, 0] }}
+            transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <BarChart3 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          </motion.div>
           <h2 className="text-lg font-semibold gradient-text">Skill Radar</h2>
         </div>
         <div className="space-y-4">
-          {skillBars.map((skill) => (
+          {skillBars.map((skill, idx) => (
             <div key={skill.name} className="space-y-1.5">
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium">{skill.name}</span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
+                <motion.span
+                  className="text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.8 + idx * 0.1 }}
+                >
                   {skill.value}%
-                </span>
+                </motion.span>
               </div>
               <div className="h-2.5 w-full rounded-full bg-muted/60 dark:bg-muted/30 overflow-hidden">
                 <motion.div
-                  className="h-full rounded-full"
+                  className="h-full rounded-full relative overflow-hidden"
                   style={{
                     background:
                       'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))',
                   }}
                   initial={{ width: 0 }}
                   animate={{ width: `${skill.value}%` }}
-                  transition={{ duration: 0.8, ease: 'easeOut', delay: 0.2 }}
-                />
+                  transition={{ duration: 1.2, ease: 'easeOut', delay: 0.2 + idx * 0.08 }}
+                >
+                  {/* Shimmer effect while loading */}
+                  <motion.div
+                    className="absolute inset-0 -translate-x-full"
+                    animate={{ translateX: ['-100%', '100%', '200%'] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: 'linear', delay: idx * 0.3 }}
+                    style={{
+                      background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent)',
+                    }}
+                  />
+                </motion.div>
               </div>
             </div>
           ))}
@@ -724,22 +861,26 @@ export function ProfileView() {
           7. Action Buttons
       ════════════════════════════════════════════ */}
       <motion.div variants={fadeUp} className="flex flex-wrap gap-3 pt-2">
-        <Button
-          variant="outline"
-          className="border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300"
-          onClick={handleReconfigure}
-        >
-          <Settings className="h-4 w-4 mr-2" />
-          Reconfigure Learning Profile
-        </Button>
-        <Button
-          variant="outline"
-          className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/20"
-          onClick={handleSignOut}
-        >
-          <LogOut className="h-4 w-4 mr-2" />
-          Sign Out
-        </Button>
+        <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+          <Button
+            variant="outline"
+            className="border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300 hover:border-emerald-500/40 transition-all"
+            onClick={handleReconfigure}
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            Reconfigure Learning Profile
+          </Button>
+        </motion.div>
+        <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+          <Button
+            variant="outline"
+            className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/20 hover:border-destructive/40 transition-all"
+            onClick={handleSignOut}
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign Out
+          </Button>
+        </motion.div>
       </motion.div>
     </motion.div>
   );

@@ -90,16 +90,20 @@ function getStudyStreak(): number {
   }
 }
 
-function GlassNavTooltip({ children, shortcut }: { children: React.ReactNode; shortcut: string }) {
-  if (!shortcut) return <>{children}</>;
+function GlassNavTooltip({ children, label, shortcut }: { children: React.ReactNode; label: string; shortcut: string }) {
   return (
-    <Tooltip delayDuration={600}>
+    <Tooltip delayDuration={400}>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent side="right" sideOffset={8} className="text-xs">
-        <kbd className="font-mono text-[11px] bg-muted/80 px-1.5 py-0.5 rounded border border-border/50 mr-1">
-          {shortcut}
-        </kbd>
-        <span className="text-muted-foreground">to navigate</span>
+        <span className="font-medium">{label}</span>
+        {shortcut && (
+          <>
+            <span className="mx-1.5 text-muted-foreground">·</span>
+            <kbd className="font-mono text-[11px] bg-muted/80 px-1.5 py-0.5 rounded border border-border/50">
+              {shortcut}
+            </kbd>
+          </>
+        )}
       </TooltipContent>
     </Tooltip>
   );
@@ -128,19 +132,9 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
 
       {/* Brand */}
       <div className="flex items-center gap-3 px-4 py-5">
-        <motion.div
-          animate={{
-            boxShadow: [
-              '0 0 8px rgba(16, 185, 129, 0.15)',
-              '0 0 20px rgba(16, 185, 129, 0.3)',
-              '0 0 8px rgba(16, 185, 129, 0.15)',
-            ],
-          }}
-          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-          className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"
-        >
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground pulse-glow">
           <Brain className="h-5 w-5" />
-        </motion.div>
+        </div>
         <span className="text-lg font-bold tracking-tight gradient-text">SynapseLearn</span>
       </div>
 
@@ -153,7 +147,7 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
             {navItems.map((item, index) => {
               const isActive = currentView === item.view;
               return (
-                <GlassNavTooltip key={item.view + item.label} shortcut={item.shortcut}>
+                <GlassNavTooltip key={item.view + item.label} label={item.label} shortcut={item.shortcut}>
                   <motion.button
                     onClick={() => handleNav(item.view)}
                     initial={isMobile ? { opacity: 0, x: -16 } : false}
@@ -178,7 +172,7 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
                     {isActive && !isMobile && (
                       <motion.div
                         layoutId="sidebar-active"
-                        className="absolute inset-0 rounded-lg bg-gradient-to-r from-primary/15 to-teal-500/10 border border-primary/20"
+                        className="absolute inset-0 rounded-lg bg-primary/5 backdrop-blur-sm border border-primary/20"
                         transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                       />
                     )}
@@ -190,7 +184,13 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
                         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                       />
                     )}
-                    <item.icon className={`h-4 w-4 shrink-0 relative z-10 ${isActive && isMobile ? 'text-primary-foreground' : ''}`} />
+                    <motion.div
+                      className="shrink-0 relative z-10"
+                      whileTap={{ y: -2, scale: 1.15 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                    >
+                      <item.icon className={`h-4 w-4 ${isActive && isMobile ? 'text-primary-foreground' : ''}`} />
+                    </motion.div>
                     <span className={`relative z-10 ${isActive && !isMobile ? 'text-primary font-semibold' : ''}`}>{item.label}</span>
                     {/* Notification dot on Notes */}
                     {item.label === 'Notes' && notesCount > 0 && (
@@ -202,6 +202,25 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
                       >
                         {notesCount}
                       </motion.span>
+                    )}
+                    {/* Pulsing notification dot on Quiz */}
+                    {item.label === 'Quiz Mode' && (
+                      <motion.span
+                        className="relative z-10 ml-auto h-2 w-2 rounded-full bg-red-500 shrink-0"
+                        animate={{
+                          scale: [1, 1.3, 1],
+                          opacity: [1, 0.6, 1],
+                        }}
+                        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                      />
+                    )}
+                    {/* Animated gradient line at bottom of active item */}
+                    {isActive && (
+                      <motion.div
+                        layoutId="active-nav-gradient-line"
+                        className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+                        transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                      />
                     )}
                   </motion.button>
                 </GlassNavTooltip>

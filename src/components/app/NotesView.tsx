@@ -18,21 +18,31 @@ import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { EmptyState } from './EmptyState';
 import { useAppStore } from '@/stores/appStore';
 import type { Note } from '@/types';
 
 const PREDEFINED_TAGS = ['biology', 'cs', 'math', 'review', 'important', 'physics', 'chemistry', 'general'];
 
-const TAG_COLORS: Record<string, string> = {
-  biology: 'from-emerald-500/15 to-teal-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
-  cs: 'from-cyan-500/15 to-sky-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/20',
-  math: 'from-violet-500/15 to-purple-500/15 text-violet-700 dark:text-violet-300 border-violet-500/20',
-  review: 'from-amber-500/15 to-orange-500/15 text-amber-700 dark:text-amber-300 border-amber-500/20',
-  important: 'from-rose-500/15 to-red-500/15 text-rose-700 dark:text-rose-300 border-rose-500/20',
-  physics: 'from-blue-500/15 to-indigo-500/15 text-blue-700 dark:text-blue-300 border-blue-500/20',
-  chemistry: 'from-pink-500/15 to-fuchsia-500/15 text-pink-700 dark:text-pink-300 border-pink-500/20',
-  general: 'from-slate-500/15 to-gray-500/15 text-slate-600 dark:text-slate-300 border-slate-500/20',
+const TAG_COLORS: Record<string, { bg: string; border: string }> = {
+  biology: { bg: 'from-emerald-500/15 to-teal-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20', border: 'border-l-emerald-500' },
+  cs: { bg: 'from-cyan-500/15 to-sky-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/20', border: 'border-l-cyan-500' },
+  math: { bg: 'from-violet-500/15 to-purple-500/15 text-violet-700 dark:text-violet-300 border-violet-500/20', border: 'border-l-violet-500' },
+  review: { bg: 'from-amber-500/15 to-orange-500/15 text-amber-700 dark:text-amber-300 border-amber-500/20', border: 'border-l-amber-500' },
+  important: { bg: 'from-rose-500/15 to-red-500/15 text-rose-700 dark:text-rose-300 border-rose-500/20', border: 'border-l-rose-500' },
+  physics: { bg: 'from-blue-500/15 to-indigo-500/15 text-blue-700 dark:text-blue-300 border-blue-500/20', border: 'border-l-blue-500' },
+  chemistry: { bg: 'from-pink-500/15 to-fuchsia-500/15 text-pink-700 dark:text-pink-300 border-pink-500/20', border: 'border-l-pink-500' },
+  general: { bg: 'from-slate-500/15 to-gray-500/15 text-slate-600 dark:text-slate-300 border-slate-500/20', border: 'border-l-slate-500' },
+};
+
+const TAG_BORDER_COLORS: Record<string, string> = {
+  biology: 'border-l-emerald-500',
+  cs: 'border-l-cyan-500',
+  math: 'border-l-violet-500',
+  review: 'border-l-amber-500',
+  important: 'border-l-rose-500',
+  physics: 'border-l-blue-500',
+  chemistry: 'border-l-pink-500',
+  general: 'border-l-slate-400',
 };
 
 const springConfig = { type: 'spring' as const, stiffness: 400, damping: 30 };
@@ -57,6 +67,7 @@ type SortMode = 'newest' | 'oldest' | 'title-asc' | 'title-desc';
 export function NotesView() {
   const { notes, addNote, updateNote, deleteNote } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<SortMode>('newest');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -215,7 +226,7 @@ export function NotesView() {
             </div>
             <p className="text-muted-foreground text-sm">
               {notes.length} {notes.length === 1 ? 'note' : 'notes'} total
-              {activeFilterCount > 0 && ` -- showing ${filteredNotes.length}`}
+              {activeFilterCount > 0 && ` — showing ${filteredNotes.length}`}
             </p>
           </div>
           <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
@@ -237,88 +248,91 @@ export function NotesView() {
             transition={{ type: 'spring', stiffness: 400, damping: 30, opacity: { duration: 0.2 } }}
             className="overflow-hidden"
           >
-            <div className="glass rounded-xl p-5 space-y-4 glow-emerald gradient-border">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Pencil className="h-4 w-4 text-primary" />
-                  <h3 className="text-sm font-semibold">New Note</h3>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => {
-                    setIsCreating(false);
-                    setNewTitle('');
-                    setNewContent('');
-                    setNewTags([]);
-                  }}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-              <Input
-                placeholder="Note title..."
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                autoFocus
-              />
-              <Textarea
-                placeholder="Write your note here..."
-                value={newContent}
-                onChange={(e) => setNewContent(e.target.value)}
-                className="min-h-[120px] resize-y"
-              />
-              {/* Animated word count */}
-              <div className="flex items-center justify-between">
-                <div className="space-y-2 flex-1">
-                  <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                    <Tag className="h-3 w-3" /> Tags
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {PREDEFINED_TAGS.map((tag) => (
-                      <motion.button
-                        key={tag}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => toggleTagOnNote(tag, false)}
-                        className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
-                          newTags.includes(tag)
-                            ? `bg-gradient-to-r ${TAG_COLORS[tag] || TAG_COLORS['general']}`
-                            : 'bg-background/60 border-border hover:bg-accent'
-                        }`}
-                      >
-                        {tag}
-                      </motion.button>
-                    ))}
+            <div className="glass rounded-xl p-5 space-y-4 glow-emerald gradient-border card-shadow relative">
+              <div className="absolute inset-0 rounded-xl mesh-gradient opacity-30 pointer-events-none" />
+              <div className="relative z-10">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Pencil className="h-4 w-4 text-primary" />
+                    <h3 className="text-sm font-semibold">New Note</h3>
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => {
+                      setIsCreating(false);
+                      setNewTitle('');
+                      setNewContent('');
+                      setNewTags([]);
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
-                <motion.span
-                  key={newContent.length}
-                  initial={{ scale: 1.1, opacity: 0.7 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="text-xs text-muted-foreground flex items-center gap-1 self-end"
-                >
-                  <Type className="h-3 w-3" />
-                  {newContent.trim().split(/\s+/).filter(Boolean).length} words
-                </motion.span>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setIsCreating(false);
-                    setNewTitle('');
-                    setNewContent('');
-                    setNewTags([]);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button size="sm" onClick={handleCreateNote}>
-                  Save Note
-                </Button>
+                <Input
+                  placeholder="Note title..."
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  autoFocus
+                />
+                <Textarea
+                  placeholder="Write your note here..."
+                  value={newContent}
+                  onChange={(e) => setNewContent(e.target.value)}
+                  className="min-h-[120px] resize-y"
+                />
+                {/* Animated word count */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-2 flex-1">
+                    <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                      <Tag className="h-3 w-3" /> Tags
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PREDEFINED_TAGS.map((tag) => (
+                        <motion.button
+                          key={tag}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => toggleTagOnNote(tag, false)}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                            newTags.includes(tag)
+                              ? `bg-gradient-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg}`
+                              : 'bg-background/60 border-border hover:bg-accent'
+                          }`}
+                        >
+                          {tag}
+                        </motion.button>
+                      ))}
+                    </div>
+                  </div>
+                  <motion.span
+                    key={newContent.length}
+                    initial={{ scale: 1.1, opacity: 0.7 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="text-xs text-muted-foreground flex items-center gap-1 self-end"
+                  >
+                    <Type className="h-3 w-3" />
+                    {newContent.trim().split(/\s+/).filter(Boolean).length} words
+                  </motion.span>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setIsCreating(false);
+                      setNewTitle('');
+                      setNewContent('');
+                      setNewTags([]);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={handleCreateNote} className="glow-emerald transition-shadow duration-300">
+                    Save Note
+                  </Button>
+                </div>
               </div>
             </div>
           </motion.div>
@@ -330,43 +344,61 @@ export function NotesView() {
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search notes..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
+            <div className={searchFocused ? 'gradient-border rounded-md' : ''}>
+              <Input
+                placeholder="Search notes..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setSearchFocused(false)}
+                className="pl-9"
+              />
+            </div>
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={cycleSortMode}
-            className="w-full sm:w-auto shrink-0"
-          >
-            <ArrowUpDown className="h-4 w-4 mr-2" />
-            {sortLabel()}
-          </Button>
+          <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={cycleSortMode}
+              className="w-full sm:w-auto shrink-0 hover:glow-emerald transition-shadow duration-300"
+            >
+              <motion.span
+                key={sortMode}
+                initial={{ rotate: -90, opacity: 0 }}
+                animate={{ rotate: 0, opacity: 1 }}
+                exit={{ rotate: 90, opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="mr-2 inline-flex"
+              >
+                <ArrowUpDown className="h-4 w-4" />
+              </motion.span>
+              {sortLabel()}
+            </Button>
+          </motion.div>
         </div>
 
-        {/* Tag Filters */}
+        {/* Tag Filters with spring entrance */}
         <div className="flex flex-wrap gap-1.5">
-          {PREDEFINED_TAGS.map((tag) => (
+          {PREDEFINED_TAGS.map((tag, idx) => (
             <motion.button
               key={tag}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+              initial={{ opacity: 0, scale: 0.8, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ delay: 0.03 * idx, type: 'spring', stiffness: 400, damping: 25 }}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
               onClick={() => toggleTagFilter(tag)}
               className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
                 selectedTags.includes(tag)
-                  ? `bg-gradient-to-r ${TAG_COLORS[tag] || TAG_COLORS['general']}`
+                  ? `bg-gradient-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg} glow-emerald`
                   : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
               }`}
             >
@@ -374,12 +406,16 @@ export function NotesView() {
             </motion.button>
           ))}
           {selectedTags.length > 0 && (
-            <button
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => setSelectedTags([])}
               className="px-2.5 py-1 rounded-full text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
             >
               Clear filters
-            </button>
+            </motion.button>
           )}
         </div>
       </motion.div>
@@ -387,27 +423,53 @@ export function NotesView() {
       {/* Notes List */}
       {filteredNotes.length === 0 && notes.length === 0 ? (
         <motion.div variants={fadeUp}>
-          <EmptyState
-            icon={BookMarked}
-            title="No notes yet"
-            description="Create your first note to start capturing ideas, summaries, and study notes."
-            actionLabel="Create Note"
-            onAction={() => setIsCreating(true)}
-          />
+          <div className="glass rounded-xl p-12 mesh-gradient card-shadow relative overflow-hidden">
+            <div className="absolute inset-0 dot-pattern opacity-20 pointer-events-none" />
+            <div className="relative z-10 flex flex-col items-center">
+              <motion.div
+                animate={{ y: [0, -8, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                className="mb-4"
+              >
+                <BookMarked className="h-12 w-12 text-primary/40" />
+              </motion.div>
+              <h3 className="text-lg font-semibold mb-1">No notes yet</h3>
+              <p className="text-sm text-muted-foreground text-center max-w-sm">
+                Create your first note to start capturing ideas, summaries, and study notes.
+              </p>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="mt-4">
+                <Button onClick={() => setIsCreating(true)} size="sm" className="glow-emerald">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Note
+                </Button>
+              </motion.div>
+            </div>
+          </div>
         </motion.div>
       ) : filteredNotes.length === 0 ? (
         <motion.div variants={fadeUp} className="text-center py-12">
-          <FileText className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">No notes match your search or filters.</p>
-          <button
-            onClick={() => {
-              setSearchQuery('');
-              setSelectedTags([]);
-            }}
-            className="text-sm text-primary hover:underline mt-1"
-          >
-            Clear all filters
-          </button>
+          <div className="glass rounded-xl p-8 card-shadow relative overflow-hidden">
+            <div className="absolute inset-0 mesh-gradient opacity-20 pointer-events-none" />
+            <div className="relative z-10">
+              <motion.div
+                animate={{ y: [0, -6, 0] }}
+                transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+                className="mb-3 inline-block"
+              >
+                <FileText className="h-10 w-10 text-muted-foreground/40" />
+              </motion.div>
+              <p className="text-sm text-muted-foreground">No notes match your search or filters.</p>
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedTags([]);
+                }}
+                className="text-sm text-primary hover:underline mt-1 transition-colors"
+              >
+                Clear all filters
+              </button>
+            </div>
+          </div>
         </motion.div>
       ) : (
         <motion.div
@@ -417,157 +479,172 @@ export function NotesView() {
           className="grid gap-3"
         >
           <AnimatePresence mode="popLayout">
-            {filteredNotes.map((note) => (
-              <motion.div
-                key={note.id}
-                variants={cardVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                layout
-                className={`glass rounded-xl noise transition-shadow hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 ${
-                  expandedId === note.id ? 'ring-1 ring-primary/20 glow-emerald' : ''
-                }`}
-              >
-                {editingId === note.id ? (
-                  /* Edit Mode */
-                  <div className="p-4 space-y-4">
-                    <Input
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      placeholder="Note title..."
-                      autoFocus
-                    />
-                    <Textarea
-                      value={editContent}
-                      onChange={(e) => setEditContent(e.target.value)}
-                      className="min-h-[120px] resize-y"
-                      placeholder="Note content..."
-                    />
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                        <Tag className="h-3 w-3" /> Tags
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {PREDEFINED_TAGS.map((tag) => (
-                          <motion.button
-                            key={tag}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => toggleTagOnNote(tag, true)}
-                            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
-                              editTags.includes(tag)
-                                ? `bg-gradient-to-r ${TAG_COLORS[tag] || TAG_COLORS['general']}`
-                                : 'bg-background/60 border-border hover:bg-accent'
-                            }`}
-                          >
-                            {tag}
-                          </motion.button>
-                        ))}
+            {filteredNotes.map((note) => {
+              const primaryTag = note.tags[0];
+              const borderClass = primaryTag ? TAG_BORDER_COLORS[primaryTag] || 'border-l-slate-400' : '';
+              return (
+                <motion.div
+                  key={note.id}
+                  variants={cardVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  layout
+                  className={`glass-hover rounded-xl noise transition-all duration-300 border-l-4 ${borderClass} ${
+                    expandedId === note.id ? 'ring-1 ring-primary/20 glow-emerald' : ''
+                  }`}
+                >
+                  {editingId === note.id ? (
+                    /* Edit Mode */
+                    <div className="p-4 space-y-4 relative z-10">
+                      <Input
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        placeholder="Note title..."
+                        autoFocus
+                      />
+                      <Textarea
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                        className="min-h-[120px] resize-y"
+                        placeholder="Note content..."
+                      />
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                          <Tag className="h-3 w-3" /> Tags
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {PREDEFINED_TAGS.map((tag) => (
+                            <motion.button
+                              key={tag}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => toggleTagOnNote(tag, true)}
+                              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                                editTags.includes(tag)
+                                  ? `bg-gradient-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg}`
+                                  : 'bg-background/60 border-border hover:bg-accent'
+                              }`}
+                            >
+                              {tag}
+                            </motion.button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={handleCancelEdit}>
-                        Cancel
-                      </Button>
-                      <Button size="sm" onClick={handleSaveEdit}>
-                        Save Changes
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  /* View Mode */
-                  <div
-                    className="cursor-pointer p-4"
-                    onClick={() =>
-                      setExpandedId((prev) => (prev === note.id ? null : note.id))
-                    }
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-sm truncate">{note.title}</h3>
-                        {note.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {note.tags.map((tag) => (
-                              <motion.span
-                                key={tag}
-                                whileHover={{ scale: 1.1 }}
-                                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border bg-gradient-to-r ${TAG_COLORS[tag] || TAG_COLORS['general']}`}
-                              >
-                                {tag}
-                              </motion.span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-[10px] text-muted-foreground hidden sm:inline-block">
-                          {format(new Date(note.updatedAt), 'MMM d, yyyy')}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleStartEdit(note);
-                          }}
-                        >
-                          <FileText className="h-3.5 w-3.5" />
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={handleCancelEdit}>
+                          Cancel
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteNote(note.id);
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
+                        <Button size="sm" onClick={handleSaveEdit}>
+                          Save Changes
                         </Button>
                       </div>
                     </div>
-
-                    <AnimatePresence>
-                      {expandedId === note.id && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                          className="overflow-hidden"
-                        >
-                          <div className="mt-3 pt-3 border-t border-border/50">
-                            <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                              {note.content || 'No content'}
-                            </p>
-                            <div className="flex items-center justify-between mt-3">
-                              <div className="flex items-center gap-3">
-                                <span className="text-[10px] text-muted-foreground sm:hidden">
-                                  {format(new Date(note.updatedAt), 'MMM d, yyyy')}
-                                </span>
-                                <span className="text-[10px] text-muted-foreground">
-                                  Updated {format(new Date(note.updatedAt), 'h:mm a')}
-                                </span>
-                              </div>
-                              <motion.span
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                className="text-[10px] text-muted-foreground flex items-center gap-1"
-                              >
-                                <Type className="h-3 w-3" />
-                                {note.content.trim().split(/\s+/).filter(Boolean).length} words
-                              </motion.span>
+                  ) : (
+                    /* View Mode */
+                    <div
+                      className="cursor-pointer p-4 relative z-10"
+                      onClick={() =>
+                        setExpandedId((prev) => (prev === note.id ? null : note.id))
+                      }
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-sm truncate">{note.title}</h3>
+                          {note.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {note.tags.map((tag) => (
+                                <motion.span
+                                  key={tag}
+                                  whileHover={{ scale: 1.1 }}
+                                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border bg-gradient-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg}`}
+                                >
+                                  {tag}
+                                </motion.span>
+                              ))}
                             </div>
-                          </div>
-                        </motion.div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[10px] text-muted-foreground hidden sm:inline-block">
+                            {format(new Date(note.updatedAt), 'MMM d, yyyy')}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0 hover:glow-emerald transition-shadow duration-300"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStartEdit(note);
+                            }}
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                          </Button>
+                          <motion.div
+                            whileHover={{ x: [0, -2, 2, -2, 0], transition: { duration: 0.4 } }}
+                          >
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteNote(note.id);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </motion.div>
+                        </div>
+                      </div>
+
+                      {/* Content preview with line-clamp in collapsed state */}
+                      {expandedId !== note.id && note.content && (
+                        <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                          {note.content}
+                        </p>
                       )}
-                    </AnimatePresence>
-                  </div>
-                )}
-              </motion.div>
-            ))}
+
+                      <AnimatePresence>
+                        {expandedId === note.id && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="mt-3 pt-3 border-t border-border/50">
+                              <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                                {note.content || 'No content'}
+                              </p>
+                              <div className="flex items-center justify-between mt-3">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-[10px] text-muted-foreground sm:hidden">
+                                    {format(new Date(note.updatedAt), 'MMM d, yyyy')}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground">
+                                    Updated {format(new Date(note.updatedAt), 'h:mm a')}
+                                  </span>
+                                </div>
+                                <motion.span
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  className="text-[10px] text-muted-foreground flex items-center gap-1"
+                                >
+                                  <Type className="h-3 w-3" />
+                                  {note.content.trim().split(/\s+/).filter(Boolean).length} words
+                                </motion.span>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })}
           </AnimatePresence>
         </motion.div>
       )}

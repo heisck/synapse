@@ -144,6 +144,12 @@ export function CourseDetail() {
       >
         <div className="mesh-gradient gradient-border rounded-xl p-5">
           <div className="relative z-10">
+            {/* Breadcrumb navigation */}
+            <nav className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3" aria-label="Breadcrumb">
+              <button onClick={() => navigate('dashboard')} className="hover:text-foreground transition-colors font-medium">Dashboard</button>
+              <ChevronRight className="h-3 w-3 shrink-0" />
+              <span className="text-foreground truncate max-w-[200px] sm:max-w-none">{activeCourse?.title ?? 'Course Detail'}</span>
+            </nav>
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
@@ -173,7 +179,7 @@ export function CourseDetail() {
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                   <Button size="sm" variant="outline" onClick={handleTakeQuiz}>
                     <ClipboardCheck className="h-4 w-4 mr-2" />
-                    Take Quiz
+                    Start Quiz
                   </Button>
                 </motion.div>
               </div>
@@ -186,7 +192,7 @@ export function CourseDetail() {
               </Button>
               <Button size="sm" variant="outline" className="flex-1" onClick={handleTakeQuiz}>
                 <ClipboardCheck className="h-4 w-4 mr-2" />
-                Take Quiz
+                Start Quiz
               </Button>
             </div>
           </div>
@@ -206,7 +212,7 @@ export function CourseDetail() {
       </motion.div>
 
       {/* Content area: two panels */}
-      <motion.div variants={fadeUp} className="flex flex-col lg:flex-row gap-4 min-h-[60vh]">
+      <motion.div variants={fadeUp} className="flex flex-col lg:flex-row gap-4 min-h-[60vh] glass rounded-2xl p-2 lg:p-3">
         {/* Left panel: mini-map / table of contents */}
         <div className="lg:w-72 shrink-0">
           <div className="glass rounded-xl p-4 lg:sticky lg:top-4">
@@ -236,10 +242,16 @@ export function CourseDetail() {
               ))}
             </div>
             <ScrollArea className="max-h-80 lg:max-h-[65vh]">
-              <div className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0">
+              <motion.div
+                className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0"
+                variants={{ animate: { transition: { staggerChildren: 0.06 } } }}
+                initial="initial"
+                animate="animate"
+              >
                 {slides.map((slide, i) => (
                   <motion.button
                     key={slide.id}
+                    variants={{ initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } } }}
                     whileHover={{ x: 2 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => handleSlideSelect(i)}
@@ -267,7 +279,7 @@ export function CourseDetail() {
                     <span className="truncate">{slide.title}</span>
                   </motion.button>
                 ))}
-              </div>
+              </motion.div>
             </ScrollArea>
           </div>
         </div>
@@ -431,7 +443,7 @@ export function CourseDetail() {
                   <p className="text-sm text-muted-foreground">
                     5 questions generated for &ldquo;{currentSlide.title}&rdquo;.
                     <Button variant="link" size="sm" className="px-1 h-auto font-medium" onClick={handleTakeQuiz}>
-                      Take Quiz →
+                      Start Quiz →
                     </Button>
                   </p>
                 </motion.div>

@@ -1,0 +1,801 @@
+     1→'use client';
+     2→
+     3→import { useState, useCallback, useRef, useEffect } from 'react';
+     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→import {
+     6→  Upload,
+     7→  FileText,
+     8→  CheckCircle2,
+     9→  AlertCircle,
+    10→  Loader2,
+    11→  X,
+    12→  Sparkles,
+    13→  ClipboardCheck,
+    14→  BookOpen,
+    15→  ChevronDown,
+    16→  ChevronRight,
+    17→  Hash,
+    18→  File,
+    19→  Presentation,
+    20→} from 'lucide-react';
+    21→import { Button } from '@/components/ui/button';
+    22→import { Input } from '@/components/ui/input';
+    23→import { Label } from '@/components/ui/label';
+    24→import { Checkbox } from '@/components/ui/checkbox';
+    25→import {
+    26→  Collapsible,
+    27→  CollapsibleContent,
+    28→  CollapsibleTrigger,
+    29→} from '@/components/ui/collapsible';
+    30→import { useAppStore } from '@/stores/appStore';
+    31→import { toast } from 'sonner';
+    32→
+    33→type FileStatus = 'pending' | 'uploading' | 'processing' | 'done' | 'error';
+    34→
+    35→interface UploadFile {
+    36→  id: string;
+    37→  file: File;
+    38→  status: FileStatus;
+    39→  progress: number;
+    40→  error?: string;
+    41→}
+    42→
+    43→const ACCEPTED_TYPES = [
+    44→  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    45→  'application/vnd.ms-powerpoint',
+    46→  'application/pdf',
+    47→  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    48→];
+    49→
+    50→const ACCEPTED_EXTENSIONS = ['.pptx', '.ppt', '.pdf', '.docx'];
+    51→const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+    52→
+    53→const COURSE_CATEGORIES = [
+    54→  'Science',
+    55→  'Mathematics',
+    56→  'Computer Science',
+    57→  'Languages',
+    58→  'History',
+    59→  'Business',
+    60→  'Other',
+    61→];
+    62→
+    63→interface ExtractedSlide {
+    64→  id: string;
+    65→  order: number;
+    66→  title: string;
+    67→  content: string;
+    68→  wordCount: number;
+    69→}
+    70→
+    71→const stagger = {
+    72→  animate: { transition: { staggerChildren: 0.06 } },
+    73→};
+    74→const fadeUp = {
+    75→  initial: { opacity: 0, y: 20 },
+    76→  animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
+    77→};
+    78→
+    79→// File type config
+    80→const FILE_TYPE_CONFIG: Record<string, { icon: typeof File; color: string; bg: string }> = {
+    81→  '.pdf': { icon: FileText, color: 'text-red-500', bg: 'bg-red-500/10' },
+    82→  '.pptx': { icon: Presentation, color: 'text-orange-500', bg: 'bg-orange-500/10' },
+    83→  '.ppt': { icon: Presentation, color: 'text-orange-500', bg: 'bg-orange-500/10' },
+    84→  '.docx': { icon: File, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+    85→};
+    86→
+    87→// Category colors
+    88→const CATEGORY_COLORS: Record<string, string> = {
+    89→  'Science': 'from-emerald-500/15 to-teal-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+    90→  'Mathematics': 'from-violet-500/15 to-purple-500/15 text-violet-700 dark:text-violet-300 border-violet-500/20',
+    91→  'Computer Science': 'from-cyan-500/15 to-sky-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/20',
+    92→  'Languages': 'from-amber-500/15 to-orange-500/15 text-amber-700 dark:text-amber-300 border-amber-500/20',
+    93→  'History': 'from-rose-500/15 to-pink-500/15 text-rose-700 dark:text-rose-300 border-rose-500/20',
+    94→  'Business': 'from-slate-500/15 to-gray-500/15 text-slate-700 dark:text-slate-300 border-slate-500/20',
+    95→  'Other': 'from-muted to-muted text-muted-foreground border-border',
+    96→};
+    97→
+    98→// Floating particles for upload zone
+    99→function FloatingParticles() {
+   100→  return (
+   101→    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+   102→      {Array.from({ length: 6 }).map((_, i) => (
+   103→        <motion.div
+   104→          key={i}
+   105→          className="absolute w-1.5 h-1.5 rounded-full bg-primary/20"
+   106→          style={{
+   107→            left: `${15 + i * 15}%`,
+   108→            top: `${20 + (i % 3) * 25}%`,
+   109→          }}
+   110→          animate={{
+   111→            y: [0, -20, 0],
+   112→            opacity: [0.2, 0.6, 0.2],
+   113→          }}
+   114→          transition={{
+   115→            duration: 3 + i * 0.5,
+   116→            repeat: Infinity,
+   117→            delay: i * 0.3,
+   118→            ease: 'easeInOut',
+   119→          }}
+   120→        />
+   121→      ))}
+   122→    </div>
+   123→  );
+   124→}
+   125→
+   126→export function UploadView() {
+   127→  const { navigate, setActiveCourse, setActiveSlides, setCurrentQuestions, setQuizScore } = useAppStore();
+   128→  const [files, setFiles] = useState<UploadFile[]>([]);
+   129→  const [isDragOver, setIsDragOver] = useState(false);
+   130→  const [isGenerating, setIsGenerating] = useState(false);
+   131→  const [generatedCount, setGeneratedCount] = useState<number | null>(null);
+   132→  const [selectedCategory, setSelectedCategory] = useState<string>('');
+   133→  const [customCategory, setCustomCategory] = useState<string>('');
+   134→  const [showCustomCategory, setShowCustomCategory] = useState(false);
+   135→  const [courseTitle, setCourseTitle] = useState<string>('');
+   136→  const [titleTouched, setTitleTouched] = useState(false);
+   137→  const [extractedSlides, setExtractedSlides] = useState<ExtractedSlide[]>([]);
+   138→  const [selectedSlideIds, setSelectedSlideIds] = useState<Set<string>>(new Set());
+   139→  const [slidesOpen, setSlidesOpen] = useState(false);
+   140→  const [uploadedCourseId, setUploadedCourseId] = useState<string | null>(null);
+   141→  const inputRef = useRef<HTMLInputElement>(null);
+   142→
+   143→  // Default course title from first file
+   144→  useEffect(() => {
+   145→    if (files.length > 0 && !courseTitle) {
+   146→      const firstName = files[0].file.name.replace(/\.[^.]+$/, '');
+   147→      setCourseTitle(firstName);
+   148→    }
+   149→  }, [files, courseTitle]);
+   150→
+   151→  // Select all slides by default after extraction
+   152→  useEffect(() => {
+   153→    if (extractedSlides.length > 0) {
+   154→      setSelectedSlideIds(new Set(extractedSlides.map((s) => s.id)));
+   155→    }
+   156→  }, [extractedSlides]);
+   157→
+   158→  const effectiveCategory = showCustomCategory && customCategory.trim()
+   159→    ? customCategory.trim()
+   160→    : selectedCategory;
+   161→
+   162→  const titleError = titleTouched && !courseTitle.trim() ? 'Course title is required' : null;
+   163→
+   164→  const validateFile = (file: File): string | null => {
+   165→    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+   166→    if (!ACCEPTED_EXTENSIONS.includes(ext) && !ACCEPTED_TYPES.includes(file.type)) {
+   167→      return `Unsupported file type: ${ext}. Accepted: ${ACCEPTED_EXTENSIONS.join(', ')}`;
+   168→    }
+   169→    if (file.size > MAX_SIZE) {
+   170→      return `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max: 50MB`;
+   171→    }
+   172→    return null;
+   173→  };
+   174→
+   175→  const addFiles = useCallback((newFiles: FileList | File[]) => {
+   176→    const arr = Array.from(newFiles);
+   177→    const uploads: UploadFile[] = arr.map((file) => ({
+   178→      id: `${file.name}-${Date.now()}-${Math.random()}`,
+   179→      file,
+   180→      status: 'pending' as FileStatus,
+   181→      progress: 0,
+   182→    }));
+   183→
+   184→    let hasError = false;
+   185→    const validated = uploads.map((u) => {
+   186→      const err = validateFile(u.file);
+   187→      if (err) {
+   188→        hasError = true;
+   189→        return { ...u, status: 'error' as FileStatus, error: err };
+   190→      }
+   191→      return u;
+   192→    });
+   193→
+   194→    setFiles((prev) => [...prev, ...validated]);
+   195→    if (hasError) {
+   196→      toast.error('Some files were rejected. Check the list for details.');
+   197→    } else {
+   198→      toast.success(`${arr.length} file${arr.length !== 1 ? 's' : ''} added.`);
+   199→    }
+   200→  }, []);
+   201→
+   202→  const handleDrop = useCallback(
+   203→    (e: React.DragEvent) => {
+   204→      e.preventDefault();
+   205→      setIsDragOver(false);
+   206→      if (e.dataTransfer.files.length > 0) {
+   207→        addFiles(e.dataTransfer.files);
+   208→      }
+   209→    },
+   210→    [addFiles],
+   211→  );
+   212→
+   213→  const simulateUpload = async () => {
+   214→    // Validate course title
+   215→    setTitleTouched(true);
+   216→    if (!courseTitle.trim()) {
+   217→      toast.error('Please enter a course title before uploading.');
+   218→      return;
+   219→    }
+   220→
+   221→    if (!effectiveCategory) {
+   222→      toast.error('Please select or create a course category.');
+   223→      return;
+   224→    }
+   225→
+   226→    const pendingFiles = files.filter((f) => f.status === 'pending' || f.status === 'error');
+   227→    if (pendingFiles.length === 0) {
+   228→      toast.error('No valid files to upload.');
+   229→      return;
+   230→    }
+   231→
+   232→    setGeneratedCount(null);
+   233→    setExtractedSlides([]);
+   234→    setUploadedCourseId(null);
+   235→
+   236→    const allExtractedSlides: ExtractedSlide[] = [];
+   237→    let courseId = '';
+   238→
+   239→    for (let i = 0; i < pendingFiles.length; i++) {
+   240→      const file = pendingFiles[i];
+   241→      const id = file.id;
+   242→
+   243→      setFiles((prev) =>
+   244→        prev.map((f) => (f.id === id ? { ...f, status: 'uploading' as FileStatus, progress: 0, error: undefined } : f)),
+   245→      );
+   246→
+   247→      try {
+   248→        const formData = new FormData();
+   249→        formData.append('file', file.file);
+   250→        formData.append('category', effectiveCategory);
+   251→        formData.append('courseTitle', courseTitle.trim());
+   252→
+   253→        // Simulate progress during real upload
+   254→        const progressInterval = setInterval(() => {
+   255→          setFiles((prev) =>
+   256→            prev.map((f) => {
+   257→              if (f.id === id && f.status === 'uploading') {
+   258→                return { ...f, progress: Math.min(f.progress + 5, 90) };
+   259→              }
+   260→              return f;
+   261→            }),
+   262→          );
+   263→        }, 100);
+   264→
+   265→        const res = await fetch('/api/upload', {
+   266→          method: 'POST',
+   267→          body: formData,
+   268→        });
+   269→
+   270→        clearInterval(progressInterval);
+   271→
+   272→        if (!res.ok) {
+   273→          const errData = await res.json().catch(() => ({ error: 'Upload failed' }));
+   274→          throw new Error(errData.error || 'Upload failed');
+   275→        }
+   276→
+   277→        setFiles((prev) =>
+   278→          prev.map((f) => (f.id === id ? { ...f, progress: 95 } : f)),
+   279→        );
+   280→
+   281→        // Mark as processing
+   282→        setFiles((prev) =>
+   283→          prev.map((f) => (f.id === id ? { ...f, status: 'processing' as FileStatus, progress: 100 } : f)),
+   284→        );
+   285→
+   286→        const data = await res.json();
+   287→        courseId = data.courseId || courseId;
+   288→
+   289→        // Extract slides from response
+   290→        if (data.slides && Array.isArray(data.slides)) {
+   291→          const slides: ExtractedSlide[] = data.slides.map(
+   292→            (s: { id?: string; title: string; content: string; order: number }, idx: number) => ({
+   293→              id: s.id || `slide-${Date.now()}-${idx}`,
+   294→              order: s.order || idx + 1,
+   295→              title: s.title,
+   296→              content: s.content,
+   297→              wordCount: s.content.split(/\s+/).filter(Boolean).length,
+   298→            }),
+   299→          );
+   300→          allExtractedSlides.push(...slides);
+   301→        }
+   302→
+   303→        // Done
+   304→        setFiles((prev) =>
+   305→          prev.map((f) => (f.id === id ? { ...f, status: 'done' as FileStatus } : f)),
+   306→        );
+   307→      } catch (err) {
+   308→        setFiles((prev) =>
+   309→          prev.map((f) =>
+   310→            f.id === id
+   311→              ? { ...f, status: 'error' as FileStatus, error: err instanceof Error ? err.message : 'Upload failed' }
+   312→              : f,
+   313→          ),
+   314→        );
+   315→      }
+   316→    }
+   317→
+   318→    if (allExtractedSlides.length > 0) {
+   319→      setExtractedSlides(allExtractedSlides);
+   320→      setSlidesOpen(true);
+   321→      setUploadedCourseId(courseId);
+   322→      toast.success(`Uploaded! ${allExtractedSlides.length} slides extracted.`);
+   323→    } else {
+   324→      toast.success('All files uploaded successfully!');
+   325→    }
+   326→  };
+   327→
+   328→  const simulateGenerate = async (forSelected = false) => {
+   329→    const doneFiles = files.filter((f) => f.status === 'done');
+   330→    if (doneFiles.length === 0) {
+   331→      toast.error('Upload files first.');
+   332→      return;
+   333→    }
+   334→
+   335→    if (forSelected && selectedSlideIds.size === 0) {
+   336→      toast.error('Select at least one slide to generate questions.');
+   337→      return;
+   338→    }
+   339→
+   340→    setIsGenerating(true);
+   341→    await new Promise((r) => setTimeout(r, 2000));
+   342→    const baseCount = forSelected ? selectedSlideIds.size : extractedSlides.length || doneFiles.length;
+   343→    const count = Math.max(Math.floor(Math.random() * 3) + 2, Math.floor(baseCount * 1.5));
+   344→    setGeneratedCount(count);
+   345→    setIsGenerating(false);
+   346→    toast.success(`Generated ${count} questions from ${forSelected ? selectedSlideIds.size : 'all'} slides!`);
+   347→  };
+   348→
+   349→  const toggleSlideSelection = (slideId: string) => {
+   350→    setSelectedSlideIds((prev) => {
+   351→      const next = new Set(prev);
+   352→      if (next.has(slideId)) {
+   353→        next.delete(slideId);
+   354→      } else {
+   355→        next.add(slideId);
+   356→      }
+   357→      return next;
+   358→    });
+   359→  };
+   360→
+   361→  const toggleAllSlides = () => {
+   362→    if (selectedSlideIds.size === extractedSlides.length) {
+   363→      setSelectedSlideIds(new Set());
+   364→    } else {
+   365→      setSelectedSlideIds(new Set(extractedSlides.map((s) => s.id)));
+   366→    }
+   367→  };
+   368→
+   369→  const removeFile = (id: string) => {
+   370→    setFiles((prev) => prev.filter((f) => f.id !== id));
+   371→  };
+   372→
+   373→  const statusIcon = (status: FileStatus, fileName: string) => {
+   374→    const ext = '.' + (fileName.split('.').pop()?.toLowerCase() || '');
+   375→    const typeConfig = FILE_TYPE_CONFIG[ext];
+   376→    const TypeIcon = typeConfig?.icon || FileText;
+   377→    const typeColor = typeConfig?.color || 'text-muted-foreground';
+   378→
+   379→    switch (status) {
+   380→      case 'pending':
+   381→        return <TypeIcon className={`h-5 w-5 ${typeColor}`} />;
+   382→      case 'uploading':
+   383→        return <Loader2 className="h-5 w-5 text-primary animate-spin" />;
+   384→      case 'processing':
+   385→        return <Loader2 className="h-5 w-5 text-amber-500 animate-spin" />;
+   386→      case 'done':
+   387→        return <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 300 }}><CheckCircle2 className="h-5 w-5 text-emerald-500" /></motion.div>;
+   388→      case 'error':
+   389→        return <AlertCircle className="h-5 w-5 text-destructive" />;
+   390→    }
+   391→  };
+   392→
+   393→  const getFileExt = (fileName: string) => '.' + (fileName.split('.').pop()?.toLowerCase() || '');
+   394→
+   395→  return (
+   396→    <motion.div
+   397→      variants={stagger}
+   398→      initial="initial"
+   399→      animate="animate"
+   400→      className="space-y-6 pt-2 lg:pt-4 pl-14 lg:pl-0"
+   401→    >
+   402→      {/* Gradient header */}
+   403→      <motion.div
+   404→        variants={fadeUp}
+   405→        className="rounded-xl p-6 mesh-gradient gradient-border relative overflow-hidden"
+   406→      >
+   407→        <FloatingParticles />
+   408→        <div className="relative z-10">
+   409→          <h1 className="text-2xl font-bold gradient-text">Upload Slides</h1>
+   410→          <p className="text-muted-foreground text-sm mt-1">
+   411→            Upload your study materials and we&apos;ll generate questions automatically.
+   412→          </p>
+   413→        </div>
+   414→      </motion.div>
+   415→
+   416→      {/* Course Category & Title */}
+   417→      <motion.div variants={fadeUp} className="space-y-4">
+   418→        {/* Colored category pills */}
+   419→        <div className="space-y-2">
+   420→          <Label className="text-sm font-medium">Course Category</Label>
+   421→          <div className="flex flex-wrap gap-2">
+   422→            {COURSE_CATEGORIES.map((cat) => (
+   423→              <motion.button
+   424→                key={cat}
+   425→                whileHover={{ scale: 1.05 }}
+   426→                whileTap={{ scale: 0.95 }}
+   427→                onClick={() => {
+   428→                  if (showCustomCategory) setShowCustomCategory(false);
+   429→                  setSelectedCategory(cat);
+   430→                }}
+   431→                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+   432→                  selectedCategory === cat && !showCustomCategory
+   433→                    ? `bg-gradient-to-r ${CATEGORY_COLORS[cat] || CATEGORY_COLORS['Other']} shadow-sm`
+   434→                    : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+   435→                }`}
+   436→              >
+   437→                {cat}
+   438→              </motion.button>
+   439→            ))}
+   440→            <motion.button
+   441→              whileHover={{ scale: 1.05 }}
+   442→              whileTap={{ scale: 0.95 }}
+   443→              onClick={() => {
+   444→                setShowCustomCategory(true);
+   445→                setSelectedCategory('');
+   446→              }}
+   447→              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+   448→                showCustomCategory
+   449→                  ? 'bg-gradient-to-r from-primary/15 to-secondary/15 text-primary border-primary/20'
+   450→                  : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+   451→              }`}
+   452→            >
+   453→              Custom...
+   454→            </motion.button>
+   455→          </div>
+   456→          <AnimatePresence>
+   457→            {showCustomCategory && (
+   458→              <motion.div
+   459→                initial={{ opacity: 0, height: 0 }}
+   460→                animate={{ opacity: 1, height: 'auto' }}
+   461→                exit={{ opacity: 0, height: 0 }}
+   462→                transition={{ duration: 0.2 }}
+   463→              >
+   464→                <Input
+   465→                  placeholder="Enter custom category name..."
+   466→                  value={customCategory}
+   467→                  onChange={(e) => setCustomCategory(e.target.value)}
+   468→                  className="mt-2"
+   469→                  autoFocus
+   470→                />
+   471→              </motion.div>
+   472→            )}
+   473→          </AnimatePresence>
+   474→        </div>
+   475→
+   476→        <div className="space-y-2">
+   477→          <Label htmlFor="course-title" className="text-sm font-medium">
+   478→            Course Title <span className="text-destructive">*</span>
+   479→          </Label>
+   480→            <Input
+   481→              id="course-title"
+   482→              placeholder="Enter course title..."
+   483→              value={courseTitle}
+   484→              onChange={(e) => setCourseTitle(e.target.value)}
+   485→              onBlur={() => setTitleTouched(true)}
+   486→              className={titleError ? 'border-destructive focus-visible:ring-destructive/50' : ''}
+   487→            />\n            <AnimatePresence>
+   488→              {titleError && (
+   489→                <motion.p
+   490→                  initial={{ opacity: 0, y: -4 }}
+   491→                  animate={{ opacity: 1, y: 0 }}
+   492→                  exit={{ opacity: 0, y: -4 }}
+   493→                  className="text-xs text-destructive"
+   494→                >
+   495→                  {titleError}
+   496→                </motion.p>
+   497→              )}
+   498→            </AnimatePresence>
+   499→        </div>
+   500→      </motion.div>
+   501→
+   502→      {/* Drop Zone */}
+   503→      <motion.div variants={fadeUp}>
+   504→        <div
+   505→          onDragOver={(e) => {
+   506→            e.preventDefault();
+   507→            setIsDragOver(true);
+   508→          }}
+   509→          onDragLeave={() => setIsDragOver(false)}
+   510→          onDrop={handleDrop}
+   511→          onClick={() => inputRef.current?.click()}
+   512→          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all overflow-hidden ${
+   513→            isDragOver
+   514→              ? 'border-primary bg-primary/5 scale-[1.01] glow-emerald'
+   515→              : 'border-border hover:border-primary/40 hover:bg-accent/20'
+   516→          }`}
+   517→        >
+   518→          <FloatingParticles />
+   519→          <input
+   520→            ref={inputRef}
+   521→            type="file"
+   522→            multiple
+   523→            accept={ACCEPTED_EXTENSIONS.join(',')}
+   524→            className="hidden"
+   525→            onChange={(e) => e.target.files && addFiles(e.target.files)}
+   526→          />
+   527→          <div className="relative z-10 flex flex-col items-center gap-3">
+   528→            <motion.div
+   529→              className={`h-16 w-16 rounded-2xl flex items-center justify-center transition-colors ${isDragOver ? 'bg-primary/20' : 'bg-primary/10'}`}
+   530→              animate={isDragOver ? { y: [0, -6, 0] } : {}}
+   531→              transition={{ duration: 0.6, repeat: isDragOver ? Infinity : 0 }}
+   532→            >
+   533→              <Upload className={`h-8 w-8 transition-colors ${isDragOver ? 'text-primary' : 'text-primary/60'}`} />
+   534→            </motion.div>
+   535→            <div>
+   536→              <p className="font-medium">
+   537→                {isDragOver ? 'Drop files here' : 'Drag & drop files here, or click to browse'}
+   538→              </p>
+   539→              <p className="text-xs text-muted-foreground mt-1">
+   540→                Supports {ACCEPTED_EXTENSIONS.join(', ')} — Max 50MB per file
+   541→              </p>
+   542→            </div>
+   543→          </div>
+   544→        </div>
+   545→      </motion.div>
+   546→
+   547→      {/* File List */}
+   548→      <AnimatePresence>
+   549→        {files.length > 0 && (
+   550→          <motion.div
+   551→            initial={{ opacity: 0, height: 0 }}
+   552→            animate={{ opacity: 1, height: 'auto' }}
+   553→            exit={{ opacity: 0, height: 0 }}
+   554→            className="space-y-2 max-h-96 overflow-y-auto"
+   555→          >
+   556→            {files.map((f, idx) => {
+   557→              const ext = getFileExt(f.file.name);
+   558→              const typeConfig = FILE_TYPE_CONFIG[ext];
+   559→              return (
+   560→                <motion.div
+   561→                  key={f.id}
+   562→                  initial={{ opacity: 0, x: -20 }}
+   563→                  animate={{ opacity: 1, x: 0 }}
+   564→                  exit={{ opacity: 0, x: 20 }}
+   565→                  transition={{ delay: idx * 0.06 }}
+   566→                  className={`glass rounded-lg p-3 flex items-center gap-3 ${f.status === 'done' ? 'glow-emerald' : ''}`}
+   567→                >
+   568→                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${typeConfig?.bg || 'bg-muted'}`}>
+   569→                    {statusIcon(f.status, f.file.name)}
+   570→                  </div>
+   571→                  <div className="flex-1 min-w-0">
+   572→                    <p className="text-sm font-medium truncate">{f.file.name}</p>
+   573→                    <p className="text-xs text-muted-foreground">
+   574→                      {(f.file.size / 1024 / 1024).toFixed(2)}MB
+   575→                      {f.status === 'error' && f.error && ` — ${f.error}`}
+   576→                    </p>
+   577→                    {(f.status === 'uploading' || f.status === 'processing') && (
+   578→                      <div className="mt-2 relative h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
+   579→                        <motion.div
+   580→                          className="absolute inset-y-0 left-0 rounded-full"
+   581→                          style={{ background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))' }}
+   582→                          animate={{ width: `${f.status === 'processing' ? 100 : f.progress}%` }}
+   583→                          transition={{ duration: 0.3 }}
+   584→                        />
+   585→                      </div>
+   586→                    )}
+   587→                  </div>
+   588→                  {f.status === 'done' && (
+   589→                    <motion.span
+   590→                      initial={{ opacity: 0, scale: 0.8 }}
+   591→                      animate={{ opacity: 1, scale: 1 }}
+   592→                      className="text-xs text-emerald-600 dark:text-emerald-400 font-medium"
+   593→                    >
+   594→                      Done
+   595→                    </motion.span>
+   596→                  )}
+   597→                <button
+   598→                  onClick={(e) => {
+   599→                    e.stopPropagation();
+   600→                    removeFile(f.id);
+   601→                  }}
+   602→                  className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-destructive/10 transition-colors"
+   603→                  aria-label={`Remove ${f.file.name}`}
+   604→                >
+   605→                  <X className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+   606→                </button>
+   607→              </motion.div>
+   608→              );
+   609→            })}
+   610→          </motion.div>
+   611→        )}
+   612→      </AnimatePresence>
+   613→
+   614→      {/* Action Buttons */}
+   615→      {files.length > 0 && !generatedCount && (
+   616→        <motion.div variants={fadeUp} className="flex flex-wrap gap-3">
+   617→          <Button
+   618→            onClick={simulateUpload}
+   619→            disabled={files.every((f) => f.status === 'done') || files.every((f) => f.status === 'uploading' || f.status === 'processing')}
+   620→          >
+   621→            <Upload className="h-4 w-4 mr-2" />
+   622→            Upload Files
+   623→          </Button>
+   624→          {(extractedSlides.length > 0 || files.some((f) => f.status === 'done')) && (
+   625→            <>
+   626→              <Button
+   627→                onClick={() => simulateGenerate(false)}
+   628→                disabled={!files.some((f) => f.status === 'done') || isGenerating}
+   629→                variant="outline"
+   630→              >
+   631→                {isGenerating ? (
+   632→                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+   633→                ) : (
+   634→                  <Sparkles className="h-4 w-4 mr-2" />
+   635→                )}
+   636→                Generate Questions for All
+   637→              </Button>
+   638→              {extractedSlides.length > 0 && (
+   639→                <Button
+   640→                  onClick={() => simulateGenerate(true)}
+   641→                  disabled={selectedSlideIds.size === 0 || isGenerating}
+   642→                  variant="outline"
+   643→                  className="text-emerald-600 border-emerald-300 hover:bg-emerald-50"
+   644→                >
+   645→                  {isGenerating ? (
+   646→                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+   647→                  ) : (
+   648→                    <Sparkles className="h-4 w-4 mr-2" />
+   649→                  )}
+   650→                  Generate for Selected ({selectedSlideIds.size})
+   651→                </Button>
+   652→              )}
+   653→            </>
+   654→          )}
+   655→        </motion.div>
+   656→      )}
+   657→
+   658→      {/* Slide Grouping Preview */}
+   659→      <AnimatePresence>
+   660→        {extractedSlides.length > 0 && !generatedCount && (
+   661→          <motion.div
+   662→            initial={{ opacity: 0, y: 30, scale: 0.97 }}
+   663→            animate={{ opacity: 1, y: 0, scale: 1 }}
+   664→            exit={{ opacity: 0, y: -10 }}
+   665→            transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+   666→            className="glass rounded-xl overflow-hidden gradient-border glow-emerald"
+   667→          >
+   668→            <Collapsible open={slidesOpen} onOpenChange={setSlidesOpen}>
+   669→              <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-accent/30 transition-colors">
+   670→                <div className="flex items-center gap-2">
+   671→                  {slidesOpen ? (
+   672→                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+   673→                  ) : (
+   674→                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+   675→                  )}
+   676→                  <span className="font-medium text-sm">
+   677→                    Extracted Slides ({extractedSlides.length})
+   678→                  </span>
+   679→                </div>
+   680→                <div className="flex items-center gap-2">
+   681→                  <span className="text-xs text-muted-foreground">
+   682→                    {selectedSlideIds.size}/{extractedSlides.length} selected
+   683→                  </span>
+   684→                  <Button
+   685→                    variant="ghost"
+   686→                    size="sm"
+   687→                    className="h-7 text-xs"
+   688→                    onClick={(e) => {
+   689→                      e.stopPropagation();
+   690→                      toggleAllSlides();
+   691→                    }}
+   692→                  >
+   693→                    {selectedSlideIds.size === extractedSlides.length ? 'Deselect All' : 'Select All'}
+   694→                  </Button>
+   695→                </div>
+   696→              </CollapsibleTrigger>
+   697→              <CollapsibleContent>
+   698→                <div className="max-h-96 overflow-y-auto border-t">
+   699→                  {extractedSlides.map((slide) => {
+   700→                    const isSelected = selectedSlideIds.has(slide.id);
+   701→                    const previewTitle = slide.title.length > 50 ? slide.title.slice(0, 50) + '…' : slide.title;
+   702→                    return (
+   703→                      <motion.div
+   704→                        key={slide.id}
+   705→                        initial={{ opacity: 0, x: -10 }}
+   706→                        animate={{ opacity: 1, x: 0 }}
+   707→                        transition={{ duration: 0.15 }}
+   708→                        className={`flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 transition-colors cursor-pointer ${
+   709→                          isSelected ? 'bg-emerald-50/50' : 'hover:bg-accent/20'
+   710→                        }`}
+   711→                        onClick={() => toggleSlideSelection(slide.id)}
+   712→                      >
+   713→                        <Checkbox
+   714→                          checked={isSelected}
+   715→                          onCheckedChange={() => toggleSlideSelection(slide.id)}
+   716→                          className={isSelected ? 'border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600' : ''}
+   717→                        />
+   718→                        <div className="flex items-center justify-center h-6 w-6 rounded-md bg-muted text-muted-foreground text-xs font-mono flex-shrink-0">
+   719→                          {slide.order}
+   720→                        </div>
+   721→                        <div className="flex-1 min-w-0">
+   722→                          <p className="text-sm font-medium truncate">{previewTitle}</p>
+   723→                          <p className="text-xs text-muted-foreground">
+   724→                            {slide.wordCount} words
+   725→                          </p>
+   726→                        </div>
+   727→                        <Hash className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+   728→                      </motion.div>
+   729→                    );
+   730→                  })}
+   731→                </div>
+   732→              </CollapsibleContent>
+   733→            </Collapsible>
+   734→          </motion.div>
+   735→        )}
+   736→      </AnimatePresence>
+   737→
+   738→      {/* Post-generation Results */}
+   739→      <AnimatePresence>
+   740→        {generatedCount !== null && (
+   741→          <motion.div
+   742→            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+   743→            animate={{ opacity: 1, y: 0, scale: 1 }}
+   744→            className="glass rounded-xl p-6 text-center space-y-4"
+   745→          >
+   746→            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/15 to-teal-500/15 mx-auto pulse-glow">
+   747→              <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+   748→            </div>
+   749→            <div>
+   750→              <h3 className="text-xl font-bold gradient-text">Questions Generated!</h3>
+   751→              <p className="text-muted-foreground text-sm mt-1">
+   752→                {generatedCount} questions ready from {files.filter((f) => f.status === 'done').length} file(s)
+   753→              </p>
+   754→            </div>
+   755→            <div className="flex justify-center gap-3">
+   756→              <Button
+   757→                onClick={() => {
+   758→                  setQuizScore(0, generatedCount);
+   759→                  navigate('quiz');
+   760→                }}
+   761→              >
+   762→                <ClipboardCheck className="h-4 w-4 mr-2" />
+   763→                Take Quiz
+   764→              </Button>
+   765→              <Button
+   766→                variant="outline"
+   767→                onClick={() => {
+   768→                  setActiveCourse({
+   769→                    id: uploadedCourseId || 'uploaded-' + Date.now(),
+   770→                    title: courseTitle.trim() || 'Uploaded Material',
+   771→                    description: `${effectiveCategory || 'General'} course from uploaded files`,
+   772→                    subject: effectiveCategory || 'General',
+   773→                    _count: { slides: extractedSlides.length || files.filter((f) => f.status === 'done').length, enrollments: 1, sessions: 0 },
+   774→                    createdAt: new Date().toISOString(),
+   775→                    updatedAt: new Date().toISOString(),
+   776→                  });
+   777→                  if (extractedSlides.length > 0) {
+   778→                    setActiveSlides(
+   779→                      extractedSlides.map((s, idx) => ({
+   780→                        id: s.id,
+   781→                        courseId: uploadedCourseId || 'uploaded-' + Date.now(),
+   782→                        title: s.title,
+   783→                        content: s.content,
+   784→                        order: s.order,
+   785→                        createdAt: new Date().toISOString(),
+   786→                      })),
+   787→                    );
+   788→                  }
+   789→                  navigate('dashboard');
+   790→                }}
+   791→              >
+   792→                <BookOpen className="h-4 w-4 mr-2" />
+   793→                View Course
+   794→              </Button>
+   795→            </div>
+   796→          </motion.div>
+   797→        )}
+   798→      </AnimatePresence>
+   799→    </motion.div>
+   800→  );
+   801→}

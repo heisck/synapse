@@ -292,7 +292,7 @@ function SearchModal() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden">
+      <DialogContent className="w-[calc(100%-1rem)] sm:max-w-md p-0 gap-0 overflow-hidden">
         <div className="flex items-center border-b px-3">
           <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
           <input
@@ -563,9 +563,9 @@ export function AppShell() {
             className="flex min-h-screen"
           >
             <AppSidebar />
-            <main className={`relative flex-1 min-h-screen overflow-y-auto ${currentView === 'tutor' ? '!p-0 !max-w-none' : ''}`}>
+            <main className={`relative flex-1 min-h-screen overflow-y-auto overflow-x-hidden ${currentView === 'tutor' ? '!p-0 !max-w-none' : ''}`}>
               <TransitionIndicator show={transitioning} />
-              <div className={`mx-auto max-w-6xl p-4 lg:p-8 ${currentView === 'tutor' ? '!max-w-none !p-0' : ''}`}>
+              <div className={`mx-auto max-w-6xl p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] lg:p-8 ${currentView === 'tutor' ? '!max-w-none !p-0' : ''}`}>
                 <Suspense fallback={<ViewLoader />}>
                   <ErrorBoundary onGoDashboard={handleGoDashboard}>
                     {renderView()}
