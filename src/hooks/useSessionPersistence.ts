@@ -26,6 +26,7 @@ const KEYS = {
   completedCourses: 'synapse-completed-courses',
   notifications: 'synapse-notifications',
   adaptiveResults: 'synapse-adaptive-results',
+  courseCategories: 'synapse-course-categories',
 } as const;
 
 // Safely write to localStorage with quota handling
@@ -120,6 +121,7 @@ export function useSessionPersistence(): void {
     const savedCompletedCourses: string[] = safeGetItem(KEYS.completedCourses, []);
     const savedNotifications: StudyNotification[] = safeGetItem(KEYS.notifications, []);
     const savedAdaptiveResults: AdaptiveResult[] = safeGetItem(KEYS.adaptiveResults, []);
+    const savedCourseCategories: Record<string, string> = safeGetItem(KEYS.courseCategories, {});
 
     // Only restore if there is meaningful persisted data
     const hasData =
@@ -133,7 +135,8 @@ export function useSessionPersistence(): void {
       savedViewedSlides.length > 0 ||
       savedCompletedCourses.length > 0 ||
       savedNotifications.length > 0 ||
-      savedAdaptiveResults.length > 0;
+      savedAdaptiveResults.length > 0 ||
+      Object.keys(savedCourseCategories).length > 0;
 
     if (!hasData) return;
 
@@ -159,6 +162,7 @@ export function useSessionPersistence(): void {
       ...(savedCompletedCourses.length > 0 && { completedCourses: savedCompletedCourses }),
       ...(savedNotifications.length > 0 && { notifications: savedNotifications }),
       ...(savedAdaptiveResults.length > 0 && { adaptiveResults: savedAdaptiveResults }),
+      ...(Object.keys(savedCourseCategories).length > 0 && { courseCategories: savedCourseCategories }),
     });
   }, []);
 
@@ -288,6 +292,15 @@ export function useSessionPersistence(): void {
       },
     );
 
+    const unsubCourseCategories = store.subscribe(
+      (s) => s.courseCategories,
+      (courseCategories) => {
+        if (Object.keys(courseCategories).length > 0) {
+          safeSetItem(KEYS.courseCategories, JSON.stringify(courseCategories));
+        }
+      },
+    );
+
     return () => {
       unsubProfile();
       unsubCourses();
@@ -305,6 +318,7 @@ export function useSessionPersistence(): void {
       unsubDailyChallenge();
       unsubNotifications();
       unsubAdaptiveResults();
+      unsubCourseCategories();
     };
   }, [store]);
 

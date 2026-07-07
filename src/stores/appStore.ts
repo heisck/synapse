@@ -116,6 +116,7 @@ interface AppState {
   // Study Sessions
   studySessions: StudySession[];
   addStudySession: (session: StudySession) => void;
+  deleteStudySession: (id: string) => void;
 
   // Study Goals
   studyGoals: StudyGoal[];
@@ -155,6 +156,10 @@ interface AppState {
   isSlideViewed: (slideId: string) => boolean;
   completedCourses: string[];
   completeCourse: (courseId: string) => void;
+
+  // Course Categories
+  courseCategories: Record<string, string>;
+  setCourseCategory: (courseId: string, category: string) => void;
 
   // UI
   sidebarOpen: boolean;
@@ -692,6 +697,13 @@ export const useAppStore = create<AppState>((set) => ({
     setTimeout(() => useAppStore.getState().checkAchievements(), 100);
     return { studySessions: updated };
   }),
+  deleteStudySession: (id) => set((s) => {
+    const updated = s.studySessions.filter((session) => session.id !== id);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('synapse-study-sessions', JSON.stringify(updated));
+    }
+    return { studySessions: updated };
+  }),
 
   // Study Goals
   studyGoals: (() => {
@@ -759,6 +771,24 @@ export const useAppStore = create<AppState>((set) => ({
       try { localStorage.setItem('synapse-completed-courses', JSON.stringify(updated)); } catch { /* ignore */ }
     }
     return { completedCourses: updated };
+  }),
+
+  // Course Categories
+  courseCategories: (() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const stored = localStorage.getItem('synapse-course-categories');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  })(),
+  setCourseCategory: (courseId, category) => set((s) => {
+    const updated = { ...s.courseCategories, [courseId]: category };
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('synapse-course-categories', JSON.stringify(updated)); } catch { /* ignore */ }
+    }
+    return { courseCategories: updated };
   }),
 
   sidebarOpen: false,

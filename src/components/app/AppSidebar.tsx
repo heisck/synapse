@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import {
   Brain,
@@ -17,6 +17,7 @@ import {
   X,
   Flame,
   Timer,
+  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -92,6 +93,29 @@ function getStudyStreak(): number {
   }
 }
 
+function useDailyChallengeCountdown() {
+  const [timeLeft, setTimeLeft] = useState('');
+
+  useEffect(() => {
+    function updateCountdown() {
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+      const diff = tomorrow.getTime() - now.getTime();
+      const hours = Math.floor(diff / 3600000);
+      const mins = Math.floor((diff % 3600000) / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`);
+    }
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return timeLeft;
+}
+
 function GlassNavTooltip({ children, label, shortcut }: { children: React.ReactNode; label: string; shortcut: string }) {
   return (
     <Tooltip delayDuration={400}>
@@ -112,8 +136,17 @@ function GlassNavTooltip({ children, label, shortcut }: { children: React.ReactN
 }
 
 function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => void; isMobile?: boolean }) {
-  const { currentView, navigate, userName, recentViews, notes } = useAppStore();
+  const { currentView, navigate, userName, recentViews, notes, courses, completedCourses, dailyChallenge } = useAppStore();
   const [studyStreak] = useState(() => getStudyStreak());
+  const countdown = useDailyChallengeCountdown();
+  const isChallengeCompletedToday = dailyChallenge?.lastCompletedDate === new Date().toISOString().split('T')[0];
+
+  // Compute overall study progress
+  const overallProgress = useMemo(() => {
+    if (courses.length === 0) return 0;
+    const completed = courses.filter((c) => completedCourses.includes(c.id)).length;
+    return Math.round((completed / courses.length) * 100);
+  }, [courses, completedCourses]);
 
   const handleNav = useCallback((view: AppView) => {
     navigate(view);
@@ -205,16 +238,21 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
                         {notesCount}
                       </motion.span>
                     )}
-                    {/* Pulsing notification dot on Quiz */}
+                    {/* Daily challenge countdown badge on Quiz */}
                     {item.label === 'Quiz Mode' && (
                       <motion.span
-                        className="relative z-10 ml-auto h-2 w-2 rounded-full bg-red-500 shrink-0"
-                        animate={{
-                          scale: [1, 1.3, 1],
-                          opacity: [1, 0.6, 1],
-                        }}
-                        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                      />
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                        className={`relative z-10 ml-auto flex items-center gap-1 h-5 px-1.5 rounded-full text-[10px] font-bold shrink-0 ${
+                          isChallengeCompletedToday
+                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                            : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                        }`}
+                      >
+                        <Clock className="h-2.5 w-2.5" />
+                        {countdown}
+                      </motion.span>
                     )}
                     {/* Animated gradient line at bottom of active item */}
                     {isActive && (
@@ -268,6 +306,24 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
       )}
 
       <Separator />
+
+      {/* Overall Study Progress Bar */}
+      {courses.length > 0 && (
+        <div className="px-3 py-2">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-medium text-muted-foreground">Overall Progress</span>
+            <span className="text-[10px] text-muted-foreground">{overallProgress}%</span>
+          </div>
+          <div className="sidebar-progress-bar">
+            <motion.div
+              className="sidebar-progress-bar-fill"
+              initial={{ width: 0 }}
+              animate={{ width: `${overallProgress}%` }}
+              transition={{ delay: 0.5, duration: 0.8, ease: 'easeOut' }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* User area with glass card effect */}
       <div className="px-3 py-3">

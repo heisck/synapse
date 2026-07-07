@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { motion, useInView } from 'framer-motion';
@@ -78,6 +78,20 @@ function FeatureCard({
 }) {
   const Icon = feature.icon;
   const isEven = index % 2 === 0;
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [tiltStyle, setTiltStyle] = useState({ transform: 'translateY(0px)' });
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const y = (e.clientY - rect.top) / rect.height;
+    const translateY = (0.5 - y) * -6;
+    setTiltStyle({ transform: `translateY(${translateY}px)` });
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setTiltStyle({ transform: 'translateY(0px)' });
+  }, []);
 
   return (
     <motion.div
@@ -85,11 +99,17 @@ function FeatureCard({
       className="group relative"
       whileHover={{ y: -6 }}
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      ref={cardRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
     >
       {/* Glow border overlay */}
       <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-br from-emerald-500/0 via-teal-400/0 to-emerald-500/0 group-hover:from-emerald-500/40 group-hover:via-teal-400/30 group-hover:to-emerald-500/40 dark:group-hover:from-emerald-400/50 dark:group-hover:via-cyan-400/40 dark:group-hover:to-emerald-400/50 transition-all duration-500 blur-[1px] opacity-0 group-hover:opacity-100 group-hover:shadow-[0_0_20px_rgba(16,185,129,0.15)] dark:group-hover:shadow-[0_0_30px_rgba(16,185,129,0.3),0_0_60px_rgba(16,185,129,0.1)]" />
 
-      <div className="relative rounded-2xl glass p-6 sm:p-8 h-full transition-all duration-500 overflow-hidden dark:backdrop-blur-[24px] dark:bg-white/[0.04] dark:border-white/[0.12]">
+      <div
+        className="relative rounded-2xl glass p-6 sm:p-8 h-full transition-all duration-500 overflow-hidden dark:backdrop-blur-[24px] dark:bg-white/[0.04] dark:border-white/[0.12]"
+        style={tiltStyle}
+      >
         {/* Gradient accent line at top */}
         <motion.div
           className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent"

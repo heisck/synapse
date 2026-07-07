@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload,
@@ -20,6 +20,18 @@ import {
   Lightbulb,
   FileUp,
   ShieldCheck,
+  FlaskConical,
+  Calculator,
+  Code,
+  Languages,
+  Landmark,
+  Palette,
+  Briefcase,
+  FolderOpen,
+  Check,
+  RotateCcw,
+  StopCircle,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +42,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useAppStore } from '@/stores/appStore';
 import { toast } from 'sonner';
 
@@ -53,15 +71,27 @@ const ACCEPTED_TYPES = [
 const ACCEPTED_EXTENSIONS = ['.pptx', '.ppt', '.pdf', '.docx'];
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
 
-const COURSE_CATEGORIES = [
+export const COURSE_CATEGORIES = [
   'Science',
   'Mathematics',
   'Computer Science',
   'Languages',
   'History',
+  'Arts',
   'Business',
   'Other',
-];
+] as const;
+
+export const CATEGORY_CONFIG: Record<string, { icon: typeof FlaskConical; color: string; chipClass: string; stripeColor: string; barColor: string }> = {
+  'Science': { icon: FlaskConical, color: 'emerald', chipClass: 'category-chip-science', stripeColor: 'bg-emerald-500', barColor: 'oklch(0.627 0.194 149.214)' },
+  'Mathematics': { icon: Calculator, color: 'teal', chipClass: 'category-chip-mathematics', stripeColor: 'bg-teal-500', barColor: 'oklch(0.627 0.194 177.89)' },
+  'Computer Science': { icon: Code, color: 'cyan', chipClass: 'category-chip-computer-science', stripeColor: 'bg-cyan-500', barColor: 'oklch(0.687 0.159 220)' },
+  'Languages': { icon: Languages, color: 'amber', chipClass: 'category-chip-languages', stripeColor: 'bg-amber-500', barColor: 'oklch(0.752 0.145 85)' },
+  'History': { icon: Landmark, color: 'orange', chipClass: 'category-chip-history', stripeColor: 'bg-orange-500', barColor: 'oklch(0.687 0.159 60)' },
+  'Arts': { icon: Palette, color: 'pink', chipClass: 'category-chip-arts', stripeColor: 'bg-pink-500', barColor: 'oklch(0.687 0.159 340)' },
+  'Business': { icon: Briefcase, color: 'indigo', chipClass: 'category-chip-business', stripeColor: 'bg-indigo-500', barColor: 'oklch(0.565 0.194 265)' },
+  'Other': { icon: FolderOpen, color: 'gray', chipClass: 'category-chip-other', stripeColor: 'bg-gray-400', barColor: 'oklch(0.7 0.015 155)' },
+};
 
 interface ExtractedSlide {
   id: string;
@@ -69,6 +99,16 @@ interface ExtractedSlide {
   title: string;
   content: string;
   wordCount: number;
+}
+
+interface UploadHistoryItem {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  category: string;
+  status: FileStatus;
+  timestamp: number;
+  courseId?: string;
 }
 
 const stagger = {
@@ -85,17 +125,6 @@ const FILE_TYPE_CONFIG: Record<string, { icon: typeof File; color: string; bg: s
   '.pptx': { icon: Presentation, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   '.ppt': { icon: Presentation, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   '.docx': { icon: File, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-};
-
-// Category colors
-const CATEGORY_COLORS: Record<string, string> = {
-  'Science': 'from-emerald-500/15 to-teal-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
-  'Mathematics': 'from-violet-500/15 to-purple-500/15 text-violet-700 dark:text-violet-300 border-violet-500/20',
-  'Computer Science': 'from-cyan-500/15 to-sky-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/20',
-  'Languages': 'from-amber-500/15 to-orange-500/15 text-amber-700 dark:text-amber-300 border-amber-500/20',
-  'History': 'from-rose-500/15 to-pink-500/15 text-rose-700 dark:text-rose-300 border-rose-500/20',
-  'Business': 'from-slate-500/15 to-gray-500/15 text-slate-700 dark:text-slate-300 border-slate-500/20',
-  'Other': 'from-muted to-muted text-muted-foreground border-border',
 };
 
 // Floating particles for upload zone
@@ -162,8 +191,191 @@ function QuickTips() {
   );
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+// Batch upload progress panel
+function BatchProgressPanel({ files, onCancel }: { files: UploadFile[]; onCancel: () => void }) {
+  const total = files.length;
+  const completed = files.filter((f) => f.status === 'done').length;
+  const inProgress = files.filter((f) => f.status === 'uploading' || f.status === 'processing').length;
+  const failed = files.filter((f) => f.status === 'error').length;
+  const overallProgress = total > 0 ? Math.round(((completed + failed) / total) * 100) : 0;
+
+  if (total <= 1) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+      className="glass rounded-xl p-4 space-y-3 card-shadow"
+    >
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-semibold">Upload Progress</h4>
+        <span className="text-xs text-muted-foreground">
+          {completed}/{total} completed
+          {failed > 0 && <span className="text-destructive ml-1">({failed} failed)</span>}
+        </span>
+      </div>
+
+      {/* Overall progress bar */}
+      <div className="relative h-2 w-full rounded-full bg-muted/50 overflow-hidden">
+        <motion.div
+          className="absolute inset-y-0 left-0 rounded-full overflow-hidden"
+          style={{
+            background: failed > 0
+              ? 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89), oklch(0.55 0.2 25))'
+              : 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))',
+          }}
+          animate={{ width: `${overallProgress}%` }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+        >
+          <motion.div
+            className="absolute inset-0 -translate-x-full"
+            animate={{ translateX: ['-100%', '100%', '200%'] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+            style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent)' }}
+          />
+        </motion.div>
+      </div>
+
+      {/* Stats row */}
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <div className="h-2 w-2 rounded-full bg-emerald-500" />
+          {completed} completed
+        </span>
+        <span className="flex items-center gap-1">
+          <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+          {inProgress} in progress
+        </span>
+        {failed > 0 && (
+          <span className="flex items-center gap-1">
+            <div className="h-2 w-2 rounded-full bg-destructive" />
+            {failed} failed
+          </span>
+        )}
+      </div>
+
+      {/* Per-file progress */}
+      <div className="space-y-1.5 max-h-32 overflow-y-auto">
+        {files.map((f) => (
+          <div key={f.id} className="flex items-center gap-2 text-xs">
+            <span className="truncate flex-1 max-w-[180px]" title={f.file.name}>
+              {f.file.name}
+            </span>
+            {f.status === 'uploading' || f.status === 'processing' ? (
+              <div className="flex items-center gap-1.5 w-20 shrink-0">
+                <div className="flex-1 h-1 rounded-full bg-muted/50 overflow-hidden">
+                  <motion.div
+                    className="h-full rounded-full bg-primary"
+                    animate={{ width: `${f.progress}%` }}
+                    transition={{ duration: 0.3 }}
+                  />
+                </div>
+                <span className="text-muted-foreground w-8 text-right">{f.progress}%</span>
+              </div>
+            ) : f.status === 'done' ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+            ) : f.status === 'error' ? (
+              <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0" />
+            ) : (
+              <div className="h-3.5 w-3.5 shrink-0" />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Cancel button */}
+      {inProgress > 0 && (
+        <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={onCancel}
+          >
+            <StopCircle className="h-3.5 w-3.5 mr-1.5" />
+            Cancel Remaining
+          </Button>
+        </motion.div>
+      )}
+    </motion.div>
+  );
+}
+
+// Upload history panel
+function UploadHistoryPanel({ history, onReupload }: { history: UploadHistoryItem[]; onReupload: (item: UploadHistoryItem) => void }) {
+  if (history.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2, type: 'spring', stiffness: 200, damping: 25 }}
+      className="glass rounded-xl overflow-hidden card-shadow"
+    >
+      <div className="p-4 border-b border-border/50">
+        <h4 className="text-sm font-semibold flex items-center gap-2">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          Upload History
+        </h4>
+      </div>
+      <div className="max-h-64 overflow-y-auto divide-y divide-border/30">
+        {history.map((item, idx) => {
+          const config = CATEGORY_CONFIG[item.category];
+          const CatIcon = config?.icon || FolderOpen;
+          const isFailed = item.status === 'error';
+          return (
+            <motion.div
+              key={item.id}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: idx * 0.05 }}
+              className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/20 transition-colors"
+            >
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${isFailed ? 'bg-destructive/10' : 'bg-emerald-500/10'}`}>
+                {isFailed
+                  ? <AlertCircle className="h-4 w-4 text-destructive" />
+                  : <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium truncate">{item.fileName}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[10px] text-muted-foreground">{formatFileSize(item.fileSize)}</span>
+                  <span className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0 rounded-full ${config?.chipClass || 'category-chip-other'}`}>
+                    <CatIcon className="h-2.5 w-2.5" />
+                    {item.category}
+                  </span>
+                </div>
+              </div>
+              {isFailed && (
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => onReupload(item)}
+                  className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-accent transition-colors shrink-0"
+                  aria-label="Re-upload"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                </motion.button>
+              )}
+            </motion.div>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
+
 export function UploadView() {
-  const { navigate, setActiveCourse, setActiveSlides, setCurrentQuestions, setQuizScore } = useAppStore();
+  const { navigate, setActiveCourse, setActiveSlides, setCurrentQuestions, setQuizScore, setCourseCategory } = useAppStore();
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -177,6 +389,9 @@ export function UploadView() {
   const [selectedSlideIds, setSelectedSlideIds] = useState<Set<string>>(new Set());
   const [slidesOpen, setSlidesOpen] = useState(false);
   const [uploadedCourseId, setUploadedCourseId] = useState<string | null>(null);
+  const [uploadHistory, setUploadHistory] = useState<UploadHistoryItem[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const abortRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Default course title from first file
@@ -249,6 +464,19 @@ export function UploadView() {
     [addFiles],
   );
 
+  const cancelUpload = useCallback(() => {
+    abortRef.current = true;
+    setFiles((prev) =>
+      prev.map((f) => {
+        if (f.status === 'pending') {
+          return { ...f, status: 'error' as FileStatus, error: 'Cancelled' };
+        }
+        return f;
+      }),
+    );
+    toast.info('Remaining uploads cancelled.');
+  }, []);
+
   const simulateUpload = async () => {
     // Validate course title
     setTitleTouched(true);
@@ -271,11 +499,17 @@ export function UploadView() {
     setGeneratedCount(null);
     setExtractedSlides([]);
     setUploadedCourseId(null);
+    setIsUploading(true);
+    abortRef.current = false;
 
     const allExtractedSlides: ExtractedSlide[] = [];
     let courseId = '';
 
+    const newHistory: UploadHistoryItem[] = [];
+
     for (let i = 0; i < pendingFiles.length; i++) {
+      if (abortRef.current) break;
+
       const file = pendingFiles[i];
       const id = file.id;
 
@@ -343,6 +577,17 @@ export function UploadView() {
         setFiles((prev) =>
           prev.map((f) => (f.id === id ? { ...f, status: 'done' as FileStatus } : f)),
         );
+
+        // Add to history
+        newHistory.push({
+          id: `hist-${Date.now()}-${i}`,
+          fileName: file.file.name,
+          fileSize: file.file.size,
+          category: effectiveCategory,
+          status: 'done',
+          timestamp: Date.now(),
+          courseId,
+        });
       } catch (err) {
         setFiles((prev) =>
           prev.map((f) =>
@@ -351,18 +596,39 @@ export function UploadView() {
               : f,
           ),
         );
+
+        newHistory.push({
+          id: `hist-${Date.now()}-${i}`,
+          fileName: file.file.name,
+          fileSize: file.file.size,
+          category: effectiveCategory,
+          status: 'error',
+          timestamp: Date.now(),
+        });
       }
     }
+
+    // Set course category in store
+    if (courseId) {
+      setCourseCategory(courseId, effectiveCategory);
+    }
+
+    setUploadHistory((prev) => [...newHistory, ...prev]);
+    setIsUploading(false);
 
     if (allExtractedSlides.length > 0) {
       setExtractedSlides(allExtractedSlides);
       setSlidesOpen(true);
       setUploadedCourseId(courseId);
       toast.success(`Uploaded! ${allExtractedSlides.length} slides extracted.`);
-    } else {
+    } else if (newHistory.some((h) => h.status === 'done')) {
       toast.success('All files uploaded successfully!');
     }
   };
+
+  const handleReupload = useCallback((_item: UploadHistoryItem) => {
+    inputRef.current?.click();
+  }, []);
 
   const simulateGenerate = async (forSelected = false) => {
     const doneFiles = files.filter((f) => f.status === 'done');
@@ -461,50 +727,72 @@ export function UploadView() {
 
       {/* Course Category & Title */}
       <motion.div variants={fadeUp} className="space-y-4">
-        {/* Colored category pills with spring entrance */}
+        {/* Category chips with icons and checkmark overlay */}
         <div className="space-y-2">
           <Label className="text-sm font-medium">Course Category</Label>
-          <div className="flex flex-wrap gap-2">
-            {COURSE_CATEGORIES.map((cat, idx) => (
+          <TooltipProvider delayDuration={300}>
+            <div className="flex flex-wrap gap-2">
+              {COURSE_CATEGORIES.map((cat, idx) => {
+                const config = CATEGORY_CONFIG[cat];
+                const CatIcon = config?.icon || FolderOpen;
+                const isActive = selectedCategory === cat && !showCustomCategory;
+                return (
+                  <Tooltip key={cat}>
+                    <TooltipTrigger asChild>
+                      <motion.button
+                        initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        transition={{ delay: 0.04 * idx, type: 'spring', stiffness: 400, damping: 25 }}
+                        whileHover={{ scale: 1.08 }}
+                        whileTap={{ scale: 0.92 }}
+                        onClick={() => {
+                          if (showCustomCategory) setShowCustomCategory(false);
+                          setSelectedCategory(cat);
+                        }}
+                        className={`category-chip ${config?.chipClass || 'category-chip-other'} ${isActive ? 'active' : ''}`}
+                      >
+                        <CatIcon className="h-3.5 w-3.5" />
+                        <span>{cat}</span>
+                        <AnimatePresence>
+                          {isActive && (
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              exit={{ scale: 0 }}
+                              transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-xs">
+                      {cat}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
               <motion.button
-                key={cat}
                 initial={{ opacity: 0, scale: 0.8, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                transition={{ delay: 0.05 * idx, type: 'spring', stiffness: 400, damping: 25 }}
+                transition={{ delay: 0.04 * COURSE_CATEGORIES.length, type: 'spring', stiffness: 400, damping: 25 }}
                 whileHover={{ scale: 1.08 }}
                 whileTap={{ scale: 0.92 }}
                 onClick={() => {
-                  if (showCustomCategory) setShowCustomCategory(false);
-                  setSelectedCategory(cat);
+                  setShowCustomCategory(true);
+                  setSelectedCategory('');
                 }}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                  selectedCategory === cat && !showCustomCategory
-                    ? `bg-gradient-to-r ${CATEGORY_COLORS[cat] || CATEGORY_COLORS['Other']} shadow-sm glow-emerald`
-                    : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                className={`category-chip ${showCustomCategory
+                  ? 'active bg-gradient-to-r from-primary/15 to-secondary/15 text-primary border-primary/20'
+                  : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                 }`}
               >
-                {cat}
+                <Plus className="h-3.5 w-3.5" />
+                Custom...
               </motion.button>
-            ))}
-            <motion.button
-              initial={{ opacity: 0, scale: 0.8, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ delay: 0.05 * COURSE_CATEGORIES.length, type: 'spring', stiffness: 400, damping: 25 }}
-              whileHover={{ scale: 1.08 }}
-              whileTap={{ scale: 0.92 }}
-              onClick={() => {
-                setShowCustomCategory(true);
-                setSelectedCategory('');
-              }}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                showCustomCategory
-                  ? 'bg-gradient-to-r from-primary/15 to-secondary/15 text-primary border-primary/20 glow-emerald'
-                  : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-              }`}
-            >
-              Custom...
-            </motion.button>
-          </div>
+            </div>
+          </TooltipProvider>
           <AnimatePresence>
             {showCustomCategory && (
               <motion.div
@@ -552,7 +840,7 @@ export function UploadView() {
         </div>
       </motion.div>
 
-      {/* Drop Zone - enhanced with glass bg and animated dashed border */}
+      {/* Drop Zone */}
       <motion.div variants={fadeUp}>
         <div
           onDragOver={(e) => {
@@ -567,9 +855,6 @@ export function UploadView() {
               ? 'border-primary bg-primary/5 scale-[1.01] glow-emerald-strong pulse-glow gradient-border'
               : 'border-border/60 hover:border-primary/40 hover:bg-accent/20'
           }`}
-          style={isDragOver ? {
-            animation: 'dashMove 1s linear infinite',
-          } : undefined}
         >
           <FloatingParticles />
           <input
@@ -600,6 +885,13 @@ export function UploadView() {
         </div>
       </motion.div>
 
+      {/* Batch Upload Progress Panel */}
+      <AnimatePresence>
+        {isUploading && files.length > 1 && (
+          <BatchProgressPanel files={files} onCancel={cancelUpload} />
+        )}
+      </AnimatePresence>
+
       {/* File List */}
       <AnimatePresence>
         {files.length > 0 && (
@@ -627,7 +919,7 @@ export function UploadView() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{f.file.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {(f.file.size / 1024 / 1024).toFixed(2)}MB
+                      {formatFileSize(f.file.size)}
                       {f.status === 'error' && f.error && ` — ${f.error}`}
                     </p>
                     {(f.status === 'uploading' || f.status === 'processing') && (
@@ -650,7 +942,6 @@ export function UploadView() {
                         </motion.div>
                       </div>
                     )}
-                  </div>
                   {f.status === 'done' && (
                     <motion.span
                       initial={{ opacity: 0, scale: 0.8 }}
@@ -660,18 +951,19 @@ export function UploadView() {
                       Done
                     </motion.span>
                   )}
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeFile(f.id);
-                  }}
-                  className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-destructive/10 transition-colors"
-                  aria-label={`Remove ${f.file.name}`}
-                >
-                  <X className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                </motion.button>
+                </div>
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeFile(f.id);
+                    }}
+                    className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-destructive/10 transition-colors"
+                    aria-label={`Remove ${f.file.name}`}
+                  >
+                    <X className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                  </motion.button>
               </motion.div>
               );
             })}
@@ -685,7 +977,7 @@ export function UploadView() {
           <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
             <Button
               onClick={simulateUpload}
-              disabled={files.every((f) => f.status === 'done') || files.every((f) => f.status === 'uploading' || f.status === 'processing')}
+              disabled={files.every((f) => f.status === 'done') || files.every((f) => f.status === 'uploading' || f.status === 'processing') || isUploading}
               className="glow-emerald transition-shadow duration-300"
             >
               <Upload className="h-4 w-4 mr-2" />
@@ -730,7 +1022,7 @@ export function UploadView() {
         </motion.div>
       )}
 
-      {/* Slide Grouping Preview - enhanced with smoother layout animation */}
+      {/* Slide Grouping Preview */}
       <AnimatePresence>
         {extractedSlides.length > 0 && !generatedCount && (
           <motion.div
@@ -786,7 +1078,7 @@ export function UploadView() {
                     <div className="max-h-96 overflow-y-auto scroll-fade-bottom border-t">
                       {extractedSlides.map((slide) => {
                         const isSelected = selectedSlideIds.has(slide.id);
-                        const previewTitle = slide.title.length > 50 ? slide.title.slice(0, 50) + '…' : slide.title;
+                        const previewTitle = slide.title.length > 50 ? slide.title.slice(0, 50) + '...' : slide.title;
                         return (
                           <motion.div
                             key={slide.id}
@@ -860,8 +1152,9 @@ export function UploadView() {
                 <Button
                   variant="outline"
                   onClick={() => {
+                    const cid = uploadedCourseId || 'uploaded-' + Date.now();
                     setActiveCourse({
-                      id: uploadedCourseId || 'uploaded-' + Date.now(),
+                      id: cid,
                       title: courseTitle.trim() || 'Uploaded Material',
                       description: `${effectiveCategory || 'General'} course from uploaded files`,
                       subject: effectiveCategory || 'General',
@@ -869,11 +1162,12 @@ export function UploadView() {
                       createdAt: new Date().toISOString(),
                       updatedAt: new Date().toISOString(),
                     });
+                    setCourseCategory(cid, effectiveCategory || 'General');
                     if (extractedSlides.length > 0) {
                       setActiveSlides(
                         extractedSlides.map((s, idx) => ({
                           id: s.id,
-                          courseId: uploadedCourseId || 'uploaded-' + Date.now(),
+                          courseId: cid,
                           title: s.title,
                           content: s.content,
                           order: s.order,
@@ -893,8 +1187,11 @@ export function UploadView() {
         )}
       </AnimatePresence>
 
+      {/* Upload History */}
+      <UploadHistoryPanel history={uploadHistory} onReupload={handleReupload} />
+
       {/* Quick Tips Section */}
-      {files.length === 0 && generatedCount === null && <QuickTips />}
+      {files.length === 0 && generatedCount === null && uploadHistory.length === 0 && <QuickTips />}
     </motion.div>
   );
 }

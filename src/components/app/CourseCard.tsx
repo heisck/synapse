@@ -1,36 +1,16 @@
 'use client';
 
+import { useState, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { FileText, Layers, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { useAppStore } from '@/stores/appStore';
+import { CATEGORY_CONFIG } from './UploadView';
 import type { Course } from '@/types';
 
 interface CourseCardProps {
   course: Course;
   onClick: () => void;
-}
-
-const categoryColors: Record<string, string> = {
-  mathematics: 'from-rose-500 to-pink-500',
-  math: 'from-rose-500 to-pink-500',
-  science: 'from-sky-500 to-blue-500',
-  physics: 'from-sky-500 to-blue-500',
-  chemistry: 'from-violet-500 to-purple-500',
-  biology: 'from-lime-500 to-green-500',
-  history: 'from-amber-500 to-yellow-500',
-  english: 'from-orange-500 to-red-500',
-  literature: 'from-orange-500 to-red-500',
-  computer: 'from-cyan-500 to-teal-500',
-  programming: 'from-cyan-500 to-teal-500',
-  cs: 'from-cyan-500 to-teal-500',
-};
-
-function getCategoryColor(subject: string): string {
-  const lower = subject.toLowerCase();
-  for (const [key, color] of Object.entries(categoryColors)) {
-    if (lower.includes(key)) return color;
-  }
-  return 'from-primary to-emerald-400';
 }
 
 function getRelativeTime(dateStr: string): string {
@@ -50,22 +30,53 @@ function getRelativeTime(dateStr: string): string {
 
 export function CourseCard({ course, onClick }: CourseCardProps) {
   const slideCount = course._count?.slides ?? course.slides?.length ?? 0;
-  const categoryGradient = getCategoryColor(course.subject);
+  const { courseCategories } = useAppStore();
+  const category = courseCategories[course.id] || course.subject;
+  const config = CATEGORY_CONFIG[category];
+  const stripeColor = config?.stripeColor || 'bg-gray-400';
+
+  const [isHovered, setIsHovered] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    const rotateX = (0.5 - y) * 8;
+    const rotateY = (x - 0.5) * 8;
+    cardRef.current.style.transform = `perspective(800px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsHovered(false);
+    if (cardRef.current) {
+      cardRef.current.style.transform = 'perspective(800px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)';
+    }
+  }, []);
 
   return (
     <motion.button
-      whileHover={{
-        scale: 1.02,
-        y: -6,
-        transition: { type: 'spring', stiffness: 300, damping: 20 },
-      }}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      className="group text-left w-full"
+      className="group text-left w-full tilt-card"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={handleMouseLeave}
+      onMouseMove={handleMouseMove}
     >
-      <div className="glass-hover card-shadow rounded-xl overflow-hidden border border-border/50 relative">
+      <div
+        ref={cardRef}
+        className="glass-hover card-shadow rounded-xl overflow-hidden border border-border/50 relative transition-all duration-300"
+        style={{ transformStyle: 'preserve-3d', willChange: 'transform' }}
+      >
+        {/* Category color stripe on left edge */}
+        <div className={`absolute left-0 top-0 bottom-0 w-1 z-20 ${stripeColor}`} />
+
         {/* Category color top bar */}
-        <div className={`h-1 w-full bg-gradient-to-r ${categoryGradient}`} />
+        <div className={`h-1 w-full bg-gradient-to-r ${config ? '' : 'from-primary to-emerald-400'}`} style={config ? { backgroundColor: config.barColor } : undefined} />
+
+        {/* Shimmer overlay on hover */}
+        <div className={`shimmer-overlay ${isHovered ? 'shimmer-overlay-active' : ''}`} />
 
         {/* Thumbnail */}
         <div className="relative h-32 bg-gradient-to-br from-emerald-500/20 via-teal-500/15 to-emerald-600/10 flex items-center justify-center overflow-hidden">

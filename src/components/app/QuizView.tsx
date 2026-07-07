@@ -26,14 +26,21 @@ import {
   Bookmark,
   BookmarkCheck,
   Brain,
+  ArrowRight,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { useAppStore } from '@/stores/appStore';
 import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
-import type { Question, AdaptiveResult } from '@/types';
+import { toast } from 'sonner';
+import type { Question, AdaptiveResult, LearnerProfile } from '@/types';
 
 type StudyMode = 'quiz' | 'flashcard' | 'daily' | 'review';
 
@@ -835,6 +842,313 @@ function MatchingInput({
   );
 }
 
+// ---------- Error Analysis Types ----------
+
+interface ErrorAnalysisResponse {
+  summary: string;
+  errorPatterns: Array<{
+    pattern: string;
+    frequency: number;
+    severity: string;
+    concepts: string[];
+  }>;
+  weakAreas: Array<{
+    concept: string;
+    masteryEstimate: number;
+    errorType: string;
+    remediation: string;
+    resources: string[];
+  }>;
+  studyPriority: string[];
+  encouragement: string;
+}
+
+const ERROR_REPORT_STORAGE_KEY = 'synapse-error-report';
+
+// ---------- Weakness Report Dialog ----------
+
+function WeaknessReportDialog({
+  open,
+  onOpenChange,
+  report,
+  loading,
+  onStartReview,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  report: ErrorAnalysisResponse | null;
+  loading: boolean;
+  onStartReview: (topic: string) => void;
+}) {
+  const [expandedArea, setExpandedArea] = useState<string | null>(null);
+
+  const severityColor = (severity: string) => {
+    switch (severity) {
+      case 'high': return 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20';
+      case 'medium': return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+      default: return 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20';
+    }
+  };
+
+  const errorTypeColor = (type: string) => {
+    switch (type) {
+      case 'misconception': return 'bg-red-500/10 text-red-600 dark:text-red-400';
+      case 'gap': return 'bg-orange-500/10 text-orange-600 dark:text-orange-400';
+      case 'vocabulary': return 'bg-amber-500/10 text-amber-600 dark:text-amber-400';
+      case 'careless': return 'bg-teal-500/10 text-teal-600 dark:text-teal-400';
+      case 'partial': return 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400';
+      default: return 'bg-muted text-muted-foreground';
+    }
+  };
+
+  const masteryBarColor = (level: number) => {
+    if (level <= 1) return 'from-red-500 to-red-400';
+    if (level <= 2) return 'from-orange-500 to-amber-500';
+    if (level <= 3) return 'from-amber-500 to-yellow-400';
+    if (level <= 4) return 'from-teal-400 to-emerald-400';
+    return 'from-emerald-500 to-teal-500';
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto p-0">
+        <DialogHeader className="px-6 pt-6 pb-2">
+          <DialogTitle className="flex items-center gap-2 text-lg">
+            <Brain className="h-5 w-5 text-primary" />
+            Weakness Analysis Report
+          </DialogTitle>
+          <DialogDescription>
+            AI-powered analysis of your incorrect answers
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="px-6 pb-6 space-y-5">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-4">
+              <div className="relative">
+                <motion.div
+                  animate={{ scale: [1, 1.4, 1], opacity: [0.3, 0.6, 0.3] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                  className="absolute inset-0 rounded-full bg-primary/20"
+                />
+                <motion.div
+                  animate={{ scale: [1, 1.25, 1], opacity: [0.2, 0.4, 0.2] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }}
+                  className="absolute -inset-3 rounded-full bg-primary/10"
+                />
+                <Brain className="h-10 w-10 text-primary relative z-10" />
+              </div>
+              <div className="text-center space-y-1">
+                <p className="text-sm font-medium">Analyzing your mistakes...</p>
+                <p className="text-xs text-muted-foreground">AI is identifying patterns and generating recommendations</p>
+              </div>
+            </div>
+          ) : report ? (
+            <>
+              {/* Summary */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                className="glass rounded-xl p-4"
+              >
+                <h4 className="text-sm font-semibold mb-2">Overall Assessment</h4>
+                <p className="text-sm text-muted-foreground leading-relaxed">{report.summary}</p>
+              </motion.div>
+
+              {/* Error Patterns */}
+              {report.errorPatterns.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.1 }}
+                  className="space-y-3"
+                >
+                  <h4 className="text-sm font-semibold">Error Patterns</h4>
+                  <div className="space-y-2">
+                    {report.errorPatterns.map((ep, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.15 + i * 0.08, type: 'spring', stiffness: 350, damping: 25 }}
+                        className="glass rounded-lg p-3 space-y-2"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm flex-1">{ep.pattern}</p>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge variant="outline" className={`text-[10px] ${severityColor(ep.severity)}`}>
+                              {ep.severity}
+                            </Badge>
+                            <Badge variant="secondary" className="text-[10px]">
+                              {ep.frequency}x
+                            </Badge>
+                          </div>
+                        </div>
+                        {ep.concepts.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {ep.concepts.map((c, j) => (
+                              <Badge key={j} variant="outline" className="text-[10px] text-primary border-primary/20">
+                                {c}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Weak Areas */}
+              {report.weakAreas.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.2 }}
+                  className="space-y-3"
+                >
+                  <h4 className="text-sm font-semibold">Weak Areas</h4>
+                  <div className="space-y-2">
+                    {report.weakAreas.map((wa, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.25 + i * 0.08, type: 'spring', stiffness: 350, damping: 25 }}
+                        className="glass rounded-lg overflow-hidden"
+                      >
+                        <button
+                          onClick={() => setExpandedArea(expandedArea === wa.concept ? null : wa.concept)}
+                          className="w-full flex items-center gap-3 p-3 text-left hover:bg-accent/30 transition-colors"
+                        >
+                          <div className="flex-1 min-w-0 space-y-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium">{wa.concept}</span>
+                              <Badge variant="outline" className={`text-[10px] ${errorTypeColor(wa.errorType)}`}>
+                                {wa.errorType}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2 w-full">
+                              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                                <motion.div
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${(wa.masteryEstimate / 5) * 100}%` }}
+                                  transition={{ duration: 0.8, delay: 0.3 + i * 0.08 }}
+                                  className={`h-full rounded-full bg-gradient-to-r ${masteryBarColor(wa.masteryEstimate)}`}
+                                />
+                              </div>
+                              <span className="text-[10px] text-muted-foreground shrink-0 w-5 text-right">
+                                {wa.masteryEstimate}/5
+                              </span>
+                            </div>
+                          </div>
+                          {expandedArea === wa.concept ? (
+                            <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                          )}
+                        </button>
+                        <AnimatePresence>
+                          {expandedArea === wa.concept && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="px-3 pb-3 space-y-2 border-t border-border/50 pt-3">
+                                <p className="text-sm text-muted-foreground leading-relaxed">{wa.remediation}</p>
+                                {wa.resources.length > 0 && (
+                                  <div className="space-y-1">
+                                    <p className="text-xs font-medium text-muted-foreground">Suggested Resources</p>
+                                    <ul className="space-y-1">
+                                      {wa.resources.map((r, j) => (
+                                        <li key={j} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                          <ArrowRight className="h-3 w-3 text-primary shrink-0" />
+                                          {r}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Study Priority */}
+              {report.studyPriority.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.35 }}
+                  className="space-y-3"
+                >
+                  <h4 className="text-sm font-semibold">Study Priority</h4>
+                  <div className="glass rounded-lg p-3 space-y-2">
+                    {report.studyPriority.slice(0, 3).map((topic, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.4 + i * 0.1, type: 'spring', stiffness: 350, damping: 25 }}
+                        className="flex items-center gap-3"
+                      >
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold">
+                          {i + 1}
+                        </div>
+                        <span className="text-sm">{topic}</span>
+                        <ArrowRight className="h-3.5 w-3.5 text-primary ml-auto shrink-0" />
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Encouragement */}
+              <motion.div
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+                className="text-center pt-2 pb-1"
+              >
+                <p className="text-sm font-medium gradient-text">{report.encouragement}</p>
+              </motion.div>
+            </>
+          ) : null}
+        </div>
+
+        {!loading && report && (
+          <DialogFooter className="px-6 pb-6 flex gap-2">
+            {report.studyPriority.length > 0 && (
+              <Button
+                onClick={() => {
+                  onStartReview(report.studyPriority[0]);
+                  onOpenChange(false);
+                }}
+                className="glow-emerald"
+              >
+                <Brain className="h-4 w-4 mr-2" />
+                Start Review Session
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ---------- Main QuizView ----------
 export function QuizView() {
   const { navigate, currentQuestions, activeCourse, updateMastery, adaptiveResults, addAdaptiveResult, masteryMap } = useAppStore();
@@ -855,6 +1169,17 @@ export function QuizView() {
   const [streak, setStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
   const [showStreakPopup, setShowStreakPopup] = useState(false);
+  const [weaknessReportOpen, setWeaknessReportOpen] = useState(false);
+  const [weaknessReportLoading, setWeaknessReportLoading] = useState(false);
+  const [weaknessReport, setWeaknessReport] = useState<ErrorAnalysisResponse | null>(null);
+  const [lastReportExists] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return !!localStorage.getItem(ERROR_REPORT_STORAGE_KEY);
+    } catch {
+      return false;
+    }
+  });
   const animatedScore = useAnimatedCounter(showResults ? score : 0, 1500);
 
   // Spaced Repetition
@@ -919,6 +1244,71 @@ export function QuizView() {
   const [dailyShareCopied, setDailyShareCopied] = useState(false);
   const [dailyTimerLeft, setDailyTimerLeft] = useState(DAILY_TIMER_SECONDS);
   const [dailyTimerActive, setDailyTimerActive] = useState(false);
+
+  // Compute wrong answers for error analysis
+  const wrongAnswers = useMemo(() => {
+    return questions
+      .filter((q) => answered[q.id] && !isCorrect(q, answers[q.id] || ''))
+      .map((q) => ({
+        question: q.question,
+        userAnswer: answers[q.id] || '',
+        correctAnswer: q.answer,
+        concept: q.concept || 'General',
+      }));
+  }, [questions, answered, answers, isCorrect]);
+
+  const handleAnalyzeMistakes = useCallback(async () => {
+    if (wrongAnswers.length === 0) return;
+    setWeaknessReportLoading(true);
+    setWeaknessReportOpen(true);
+    setWeaknessReport(null);
+    try {
+      const { learnerProfile } = useAppStore.getState();
+      const res = await fetch('/api/error-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wrongAnswers,
+          learnerProfile: learnerProfile || undefined,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error('Failed to analyze errors');
+      }
+      const data: ErrorAnalysisResponse = await res.json();
+      setWeaknessReport(data);
+      // Persist to localStorage
+      try {
+        localStorage.setItem(ERROR_REPORT_STORAGE_KEY, JSON.stringify(data));
+      } catch {
+        // ignore storage errors
+      }
+    } catch {
+      toast.error('Failed to analyze mistakes. Please try again.');
+      setWeaknessReportOpen(false);
+    } finally {
+      setWeaknessReportLoading(false);
+    }
+  }, [wrongAnswers]);
+
+  const handleViewLastReport = useCallback(() => {
+    try {
+      const stored = localStorage.getItem(ERROR_REPORT_STORAGE_KEY);
+      if (stored) {
+        const data: ErrorAnalysisResponse = JSON.parse(stored);
+        setWeaknessReport(data);
+        setWeaknessReportOpen(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleStartReviewFromReport = useCallback((topic: string) => {
+    const { setActiveTopic, navigate: nav } = useAppStore.getState();
+    setActiveTopic(topic);
+    nav('tutor');
+  }, []);
   const dailyQuestions = useMemo<Question[]>(() => {
     if (dailyChallenge?.questions) {
       return dailyChallenge.questions
@@ -1620,6 +2010,52 @@ export function QuizView() {
           </div>
 
           <div className="flex justify-center gap-3">
+            {wrongAnswers.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.4, type: 'spring', stiffness: 300, damping: 20 }}
+              >
+                <Button
+                  onClick={handleAnalyzeMistakes}
+                  className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20"
+                >
+                  <Brain className="h-4 w-4 mr-2" />
+                  Analyze My Mistakes
+                </Button>
+              </motion.div>
+            )}
+            {wrongAnswers.length === 0 && lastReportExists && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.4, type: 'spring', stiffness: 300, damping: 20 }}
+              >
+                <Button
+                  onClick={handleViewLastReport}
+                  variant="outline"
+                  className="border-primary/30 text-primary hover:bg-primary/10"
+                >
+                  <Brain className="h-4 w-4 mr-2" />
+                  View Last Report
+                </Button>
+              </motion.div>
+            )}
+            {wrongAnswers.length > 0 && lastReportExists && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.45, type: 'spring', stiffness: 300, damping: 20 }}
+              >
+                <Button
+                  onClick={handleViewLastReport}
+                  variant="outline"
+                  size="sm"
+                >
+                  View Last Report
+                </Button>
+              </motion.div>
+            )}
             <Button onClick={handleRetry} variant="outline">
               <RotateCcw className="h-4 w-4 mr-2" />
               Try Again
@@ -1646,6 +2082,14 @@ export function QuizView() {
             </Button>
           </div>
         </div>
+
+        <WeaknessReportDialog
+          open={weaknessReportOpen}
+          onOpenChange={setWeaknessReportOpen}
+          report={weaknessReport}
+          loading={weaknessReportLoading}
+          onStartReview={handleStartReviewFromReport}
+        />
       </motion.div>
     );
   }

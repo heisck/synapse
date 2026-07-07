@@ -35,6 +35,15 @@ import {
   RefreshCw,
   ClipboardCheck,
   Check,
+  Layers,
+  FlaskConical,
+  Calculator,
+  Code,
+  Languages,
+  Landmark,
+  Palette,
+  Briefcase,
+  FolderOpen,
 } from 'lucide-react';
 import {
   BarChart,
@@ -56,6 +65,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/stores/appStore';
+import { CATEGORY_CONFIG, COURSE_CATEGORIES } from './UploadView';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { StatsCard } from './StatsCard';
 import { CourseCard } from './CourseCard';
@@ -987,6 +997,24 @@ export function Dashboard() {
   const [toastShown, setToastShown] = useState(false);
   const [newGoalText, setNewGoalText] = useState('');
 
+  // Weak areas state
+  const ERROR_REPORT_STORAGE_KEY = 'synapse-error-report';
+  const [weakAreasReport] = useState<{
+    weakAreas: Array<{ concept: string; masteryEstimate: number; errorType: string }>;
+    studyPriority: string[];
+  } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const stored = localStorage.getItem(ERROR_REPORT_STORAGE_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch {
+      // ignore
+    }
+    return null;
+  });
+  const [weakAreasDialogOpen, setWeakAreasDialogOpen] = useState(false);
+  const [weakAreasDialogReport, setWeakAreasDialogReport] = useState<Record<string, unknown> | null>(null);
+
   // Study goals state
   const [showAddGoalDialog, setShowAddGoalDialog] = useState(false);
   const [selectedGoalType, setSelectedGoalType] = useState<StudyGoal['type']>('sessions');
@@ -1264,9 +1292,45 @@ export function Dashboard() {
 
   const greeting = getGreeting();
   const displayName = userName || 'Student';
-  const showViewAll = courses.length > 3;
-  const displayedCourses = courses.slice(0, 3);
-  const lastCourse = courses.length > 0 ? courses[0] : null;
+  const { courseCategories } = useAppStore();
+
+  // Category filter state
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('All');
+
+  // Compute used categories from courses and store
+  const usedCategories = useMemo(() => {
+    const cats = new Set<string>();
+    courses.forEach((c) => {
+      const cat = courseCategories[c.id] || c.subject;
+      if (cat) cats.add(cat);
+    });
+    return COURSE_CATEGORIES.filter((cat) => cats.has(cat));
+  }, [courses, courseCategories]);
+
+  // Compute category stats for breakdown bar
+  const categoryStats = useMemo(() => {
+    const stats: Record<string, { count: number; questions: number }> = {};
+    courses.forEach((c) => {
+      const cat = courseCategories[c.id] || c.subject || 'Other';
+      const slideCount = c._count?.slides ?? c.slides?.length ?? 0;
+      if (!stats[cat]) stats[cat] = { count: 0, questions: slideCount };
+      else { stats[cat].count++; stats[cat].questions += slideCount; }
+    });
+    return stats;
+  }, [courses, courseCategories]);
+
+  // Filtered courses
+  const filteredCourses = useMemo(() => {
+    if (selectedCategoryFilter === 'All') return courses;
+    return courses.filter((c) => {
+      const cat = courseCategories[c.id] || c.subject;
+      return cat === selectedCategoryFilter;
+    });
+  }, [courses, courseCategories, selectedCategoryFilter]);
+
+  const showViewAll = filteredCourses.length > 3;
+  const displayedCourses = filteredCourses.slice(0, 3);
+  const lastCourse = filteredCourses.length > 0 ? filteredCourses[0] : null;
 
   // Tip slide variants
   const tipVariants = {
@@ -2282,6 +2346,143 @@ export function Dashboard() {
         </div>
       </motion.div>
 
+      {/* Weak Areas - visible when error report exists and quiz results exist */}
+      {weakAreasReport && weakAreasReport.weakAreas && weakAreasReport.weakAreas.length > 0 && quizScore !== null && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3, ease: 'easeOut' }}
+          className="space-y-3"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-lg">Weak Areas</h3>
+              <Badge variant="secondary" className="text-xs">
+                <Brain className="h-3 w-3 mr-1" />
+                AI Insights
+              </Badge>
+            </div>
+          </div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 20, delay: 0.35 }}
+            className="glass card-shadow rounded-xl p-4 space-y-3"
+          >
+            <div className="space-y-2">
+              {weakAreasReport.weakAreas.slice(0, 3).map((wa, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.4 + i * 0.08, type: 'spring', stiffness: 350, damping: 20 }}
+                  className="flex items-center gap-3"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">{wa.concept}</span>
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] shrink-0 ${
+                          wa.masteryEstimate <= 2
+                            ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20'
+                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                        }`}
+                      >
+                        {wa.masteryEstimate <= 2 ? 'high' : 'medium'}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(wa.masteryEstimate / 5) * 100}%` }}
+                          transition={{ duration: 0.8, delay: 0.5 + i * 0.1 }}
+                          className={`h-full rounded-full ${
+                            wa.masteryEstimate <= 2
+                              ? 'bg-gradient-to-r from-red-500 to-orange-500'
+                              : 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                          }`}
+                        />
+                      </div>
+                      <span className="text-[10px] text-muted-foreground shrink-0">{wa.masteryEstimate}/5</span>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full mt-1"
+              onClick={() => {
+                setWeakAreasDialogReport(weakAreasReport as unknown as Record<string, unknown>);
+                setWeakAreasDialogOpen(true);
+              }}
+            >
+              View Full Report
+              <ArrowRight className="h-3.5 w-3.5 ml-2" />
+            </Button>
+          </motion.div>
+
+          {/* Full report dialog */}
+          <Dialog open={weakAreasDialogOpen} onOpenChange={setWeakAreasDialogOpen}>
+            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Brain className="h-5 w-5 text-primary" />
+                  Weakness Analysis Report
+                </DialogTitle>
+                <DialogDescription>
+                  AI-powered analysis of your incorrect answers
+                </DialogDescription>
+              </DialogHeader>
+              {weakAreasDialogReport && (
+                <div className="space-y-4">
+                  {/* Summary */}
+                  <div className="glass rounded-xl p-4">
+                    <h4 className="text-sm font-semibold mb-2">Overall Assessment</h4>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {(weakAreasDialogReport as Record<string, string>).summary || 'No summary available.'}
+                    </p>
+                  </div>
+
+                  {/* Study Priority */}
+                  {Array.isArray((weakAreasDialogReport as Record<string, string[]>).studyPriority) && (
+                    <div className="glass rounded-lg p-3 space-y-2">
+                      <h4 className="text-sm font-semibold">Study Priority</h4>
+                      {(weakAreasDialogReport as Record<string, string[]>).studyPriority!.slice(0, 3).map((topic, i) => (
+                        <div key={i} className="flex items-center gap-3">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold">
+                            {i + 1}
+                          </div>
+                          <span className="text-sm">{topic}</span>
+                          <ArrowRight className="h-3.5 w-3.5 text-primary ml-auto shrink-0" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Encouragement */}
+                  {(weakAreasDialogReport as Record<string, string>).encouragement && (
+                    <div className="text-center pt-2 pb-1">
+                      <p className="text-sm font-medium gradient-text">
+                        {(weakAreasDialogReport as Record<string, string>).encouragement}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setWeakAreasDialogOpen(false)}>Close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </motion.div>
+      )}
+
       <GradientDivider />
 
       {/* My Courses */}
@@ -2307,6 +2508,92 @@ export function Dashboard() {
           </div>
         </div>
 
+        {/* Category Breakdown Bar */}
+        {courses.length > 0 && Object.keys(categoryStats).length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 25 }}
+            className="space-y-2"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground font-medium">Category Breakdown</span>
+              <span className="text-xs text-muted-foreground">{courses.length} courses</span>
+            </div>
+            <div className="relative h-3 w-full rounded-full overflow-hidden bg-muted/30 flex">
+              {Object.entries(categoryStats).map(([cat, data]) => {
+                const config = CATEGORY_CONFIG[cat];
+                const pct = (data.count / courses.length) * 100;
+                if (pct < 1) return null;
+                return (
+                  <motion.div
+                    key={cat}
+                    className="relative h-full first:rounded-l-full last:rounded-r-full"
+                    style={{ width: `${pct}%`, backgroundColor: config?.barColor || 'oklch(0.7 0.015 155)' }}
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: 1 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.15 }}
+                    title={`${cat}: ${data.count} courses, ${data.questions} total questions`}
+                  />
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(categoryStats).map(([cat, data]) => {
+                const config = CATEGORY_CONFIG[cat];
+                const CatIcon = config?.icon || FolderOpen;
+                return (
+                  <span key={cat} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <div className="h-2 w-2 rounded-full" style={{ backgroundColor: config?.barColor || 'oklch(0.7 0.015 155)' }} />
+                    <CatIcon className="h-2.5 w-2.5" />
+                    {cat} ({data.count})
+                  </span>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Category Filter Bar */}
+        {courses.length > 0 && usedCategories.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15, type: 'spring', stiffness: 300, damping: 25 }}
+            className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none"
+          >
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setSelectedCategoryFilter('All')}
+              className={`category-chip shrink-0 ${selectedCategoryFilter === 'All' ? 'active bg-gradient-to-r from-primary to-teal-500 text-primary-foreground' : 'bg-background/60 border-border text-muted-foreground hover:bg-accent'}`}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              All
+              <span className="text-[10px] opacity-70">{courses.length}</span>
+            </motion.button>
+            {usedCategories.map((cat) => {
+              const config = CATEGORY_CONFIG[cat];
+              const CatIcon = config?.icon || FolderOpen;
+              const count = categoryStats[cat]?.count ?? 0;
+              const isActive = selectedCategoryFilter === cat;
+              return (
+                <motion.button
+                  key={cat}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setSelectedCategoryFilter(isActive ? 'All' : cat)}
+                  className={`category-chip shrink-0 ${config?.chipClass || 'category-chip-other'} ${isActive ? 'active' : ''}`}
+                >
+                  <CatIcon className="h-3.5 w-3.5" />
+                  {cat}
+                  <span className="text-[10px] opacity-70">{count}</span>
+                </motion.button>
+              );
+            })}
+          </motion.div>
+        )}
+
         {courses.length === 0 ? (
           <EmptyState
             icon={BookOpen}
@@ -2316,21 +2603,37 @@ export function Dashboard() {
             onAction={() => navigate('upload')}
           />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {displayedCourses.map((course, i) => (
-              <motion.div
-                key={course.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1, duration: 0.4 }}
-              >
-                <EnhancedCourseCard
-                  course={course}
-                  onClick={() => handleCourseClick(course)}
-                />
-              </motion.div>
-            ))}
-          </div>
+          <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <AnimatePresence mode="popLayout">
+              {displayedCourses.map((course, i) => (
+                <motion.div
+                  key={course.id}
+                  layout
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ delay: i * 0.05, type: 'spring', stiffness: 300, damping: 25 }}
+                >
+                  <EnhancedCourseCard
+                    course={course}
+                    onClick={() => handleCourseClick(course)}
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        )}
+        {filteredCourses.length === 0 && selectedCategoryFilter !== 'All' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center py-8"
+          >
+            <p className="text-sm text-muted-foreground">No courses in &quot;{selectedCategoryFilter}&quot; category.</p>
+            <Button variant="link" size="sm" className="mt-1" onClick={() => setSelectedCategoryFilter('All')}>
+              Show all courses
+            </Button>
+          </motion.div>
         )}
       </motion.div>
 
