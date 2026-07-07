@@ -44,6 +44,7 @@ import {
   Target,
   Clock,
   CheckCircle2,
+  Download,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -207,6 +208,30 @@ export function TutorView() {
     setPomodoroRunning(false)
     setPomodoroTimeLeft(currentPomodoroMode.duration)
   }, [currentPomodoroMode.duration])
+
+  const handleExportChat = useCallback(() => {
+    if (messages.length === 0) {
+      toast.error('No messages to export')
+      return
+    }
+    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    let md = `# SynapseLearn Chat Session\nDate: ${dateStr}\n\n`
+    for (const msg of messages) {
+      const time = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString() : ''
+      const role = msg.role === 'user' ? 'User' : 'Assistant'
+      md += `## ${role}${time ? ` - ${time}` : ''}\n${msg.content}\n\n---\n\n`
+    }
+    const blob = new Blob([md], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `synapse-chat-${new Date().toISOString().split('T')[0]}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast.success('Chat exported successfully')
+  }, [messages])
 
   const handlePomodoroSkip = useCallback(() => {
     setPomodoroRunning(false)
@@ -579,7 +604,7 @@ export function TutorView() {
           <div className="relative">
             <button
               onClick={() => setPomodoroExpanded(!pomodoroExpanded)}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-border bg-card/50 hover:bg-accent/50 transition-colors"
+              className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-border glass hover:bg-accent/50 transition-colors"
               aria-label="Toggle Pomodoro timer"
             >
               <svg width="20" height="20" className="-rotate-90">
@@ -780,7 +805,7 @@ export function TutorView() {
             initial={{ width: 0, opacity: 0 }}
             animate={{ width: tutorMode === 'slide' ? '50%' : '40%', opacity: 1 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="border-r bg-card/30 overflow-hidden flex flex-col"
+            className="border-r glass overflow-hidden flex flex-col card-shadow"
           >
             <div className="p-3 border-b">
               <div className="flex items-center justify-between">
@@ -875,7 +900,7 @@ export function TutorView() {
                 transition={{ duration: 0.2, ease: 'easeOut' }}
                 className="overflow-hidden border-b border-border/60"
               >
-                <div className="flex items-center gap-2 px-4 py-2 bg-card/30">
+                <div className="flex items-center gap-2 px-4 py-2 glass">
                   <Search className="w-4 h-4 text-muted-foreground shrink-0" />
                   <input
                     ref={searchInputRef}
@@ -931,7 +956,7 @@ export function TutorView() {
                       className={`rounded-xl p-3 mb-2 border ${
                         msg.role === 'user'
                           ? 'ml-8 bg-primary/5 border-primary/20'
-                          : 'mr-8 bg-card/60 border-border/40'
+                          : 'mr-8 glass border-border/40'
                       }`}
                     >
                       <div className="flex items-center gap-1.5 mb-1.5">
@@ -964,7 +989,7 @@ export function TutorView() {
           </ScrollArea>
 
           {/* Input Area */}
-          <div className="border-t bg-card/50">
+          <div className="border-t glass gradient-border">
             {/* Suggested Prompts Bar */}
             <AnimatePresence>
               {!inputFocused && input.trim() === '' && !isLoading && (
@@ -983,7 +1008,7 @@ export function TutorView() {
                           whileHover={{ scale: 1.03, y: -1 }}
                           whileTap={{ scale: 0.97 }}
                           onClick={() => handleSend(prompt)}
-                          className="px-3 py-1.5 text-xs font-medium rounded-full border border-border/60 bg-background/60 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                          className="px-3 py-1.5 text-xs font-medium rounded-full border border-border/60 glass-hover text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors"
                         >
                           {prompt}
                         </motion.button>
@@ -1143,7 +1168,7 @@ export function TutorView() {
 
         {/* Right Panel */}
         {rightPanelOpen && (
-          <div className="w-72 border-l bg-card/30 overflow-y-auto hidden md:block">
+          <div className="w-72 border-l glass overflow-y-auto hidden md:block card-shadow">
             <div className="p-4 space-y-5">
               {/* Session Phase */}
               <div className="space-y-2">
@@ -1177,14 +1202,28 @@ export function TutorView() {
               <SessionControls />
 
               {/* End Session Button */}
-              <Button
-                variant="outline"
-                className="w-full gap-2 text-sm border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-700 dark:hover:text-red-300 transition-colors"
-                onClick={() => setShowEndSession(true)}
-              >
-                <LogOut className="w-4 h-4" />
-                End Session
-              </Button>
+              <div className="flex gap-2">
+                <motion.div whileTap={{ scale: 0.95 }} className="flex-1">
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2 text-sm border-emerald-200 dark:border-emerald-900/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors glass"
+                    onClick={handleExportChat}
+                  >
+                    <Download className="w-4 h-4" />
+                    Export Chat
+                  </Button>
+                </motion.div>
+                <motion.div whileTap={{ scale: 0.95 }} className="flex-1">
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2 text-sm border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+                    onClick={() => setShowEndSession(true)}
+                  >
+                    <LogOut className="w-4 h-4" />
+                    End Session
+                  </Button>
+                </motion.div>
+              </div>
 
               <Separator />
 
@@ -1272,7 +1311,7 @@ export function TutorView() {
               <div className="px-6 pb-6 space-y-5">
                 {/* Session Stats Grid */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-1">
+                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-1 card-shadow">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <Clock className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Duration</span>
@@ -1281,7 +1320,7 @@ export function TutorView() {
                       {formatTimer(sessionStats.duration)}
                     </p>
                   </div>
-                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-1">
+                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-1 card-shadow">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <MessageCircle className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Messages</span>
@@ -1290,7 +1329,7 @@ export function TutorView() {
                       {sessionStats.messagesExchanged}
                     </p>
                   </div>
-                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-1">
+                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-1 card-shadow">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <BookMarked className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Topics Covered</span>
@@ -1299,7 +1338,7 @@ export function TutorView() {
                       {sessionStats.topicsCovered.length}
                     </p>
                   </div>
-                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-1">
+                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-1 card-shadow">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <Target className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Concepts Explored</span>
@@ -1312,7 +1351,7 @@ export function TutorView() {
 
                 {/* Mastery Progress Bar */}
                 {sessionStats.conceptsExplored > 0 && (
-                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-2">
+                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-2 card-shadow">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 text-muted-foreground">
                         <Sparkles className="w-3.5 h-3.5" />
@@ -1335,7 +1374,7 @@ export function TutorView() {
 
                 {/* Topics List */}
                 {sessionStats.topicsCovered.length > 0 && (
-                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-2">
+                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-2 card-shadow">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <BookOpen className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Topics</span>
@@ -1352,7 +1391,7 @@ export function TutorView() {
 
                 {/* Key Takeaways */}
                 {sessionStats.keyTakeaways.length > 0 && (
-                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-2">
+                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-2 card-shadow">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Key Takeaways</span>

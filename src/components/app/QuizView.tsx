@@ -23,15 +23,19 @@ import {
   Clock,
   Copy,
   Calendar,
+  Bookmark,
+  BookmarkCheck,
+  Brain,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/appStore';
+import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
 import type { Question } from '@/types';
 
-type StudyMode = 'quiz' | 'flashcard' | 'daily';
+type StudyMode = 'quiz' | 'flashcard' | 'daily' | 'review';
 
 // ---------- Typo-tolerance helper ----------
 function levenshteinDistance(a: string, b: string): number {
@@ -675,12 +679,14 @@ function MatchingInput({
 
 // ---------- Main QuizView ----------
 export function QuizView() {
-  const { navigate, currentQuestions, activeCourse } = useAppStore();
+  const { navigate, currentQuestions, activeCourse, updateMastery } = useAppStore();
 
   const allQuestions = currentQuestions.length > 0 ? currentQuestions : MOCK_QUESTIONS;
 
   const [studyMode, setStudyMode] = useState<StudyMode>('quiz');
   const [selectedCourse, setSelectedCourse] = useState<string>('all');
+  const [showBookmarked, setShowBookmarked] = useState(false);
+  const [bookmarkedQuestions, setBookmarkedQuestions] = useState<Set<string>>(new Set());
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [answered, setAnswered] = useState<Record<string, boolean>>({});
@@ -691,6 +697,29 @@ export function QuizView() {
   const [bestStreak, setBestStreak] = useState(0);
   const [showStreakPopup, setShowStreakPopup] = useState(false);
   const animatedScore = useAnimatedCounter(showResults ? score : 0, 1500);
+
+  // Spaced Repetition
+  const { dueItems, reviewItem, overdueCount } = useSpacedRepetition();
+  const [reviewShowResults, setReviewShowResults] = useState(false);
+  const [reviewedCount, setReviewedCount] = useState(0);
+
+  // Review questions: match dueItems to actual questions by concept
+  const reviewQuestions = useMemo<Question[]>(() => {
+    const dueConcepts = new Set(dueItems.map((item) => item.questionId));
+    return allQuestions.filter((q) => q.concept && dueConcepts.has(q.concept));
+  }, [dueItems, allQuestions]);
+
+  const reviewCurrentQ = reviewQuestions[currentIndex];
+  const reviewProgress = reviewQuestions.length > 0
+    ? (reviewedCount / reviewQuestions.length) * 100
+    : 0;
+
+  // Listen for start-spaced-review custom event
+  useEffect(() => {
+    const handler = () => setStudyMode('review');
+    window.addEventListener('start-spaced-review', handler);
+    return () => window.removeEventListener('start-spaced-review', handler);
+  }, []);
 
   // Daily Challenge state
   const [dailyChallenge, setDailyChallenge] = useState<DailyChallengeData | null>(null);
@@ -835,6 +864,36 @@ export function QuizView() {
 
   // Swipe motion values for flashcard (no re-renders)
   const dragXMotion = useMotionValue(0);
+
+  // Bookmark persistence
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('synapse-bookmarked-questions');
+      if (stored) {
+        setBookmarkedQuestions(new Set(JSON.parse(stored) as string[]));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('synapse-bookmarked-questions', JSON.stringify([...bookmarkedQuestions]));
+    } catch { /* ignore */ }
+  }, [bookmarkedQuestions]);
+
+  const toggleBookmark = useCallback((questionId: string) => {
+    setBookmarkedQuestions((prev) => {
+      const next = new Set(prev);
+      if (next.has(questionId)) {
+        next.delete(questionId);
+      } else {
+        next.add(questionId);
+      }
+      return next;
+    });
+  }, []);
+
+  // checkOpacity and crossOpacity use the existing dragXMotion (defined above for flashcard swipe)
   const checkOpacity = useTransform(dragXMotion, [0, 100], [0, 0.7]);
   const crossOpacity = useTransform(dragXMotion, [-100, 0], [0.7, 0]);
   const hasDraggedRef = useRef(false);
@@ -964,13 +1023,18 @@ export function QuizView() {
     setTimerSeconds(0);
     setDailyShowResults(false);
     setDailyShareCopied(false);
+    setReviewShowResults(false);
+    setReviewedCount(0);
   };
 
-  // Filter questions by selected course
+  // Filter questions by selected course and bookmarked
   const questions = useMemo(() => {
-    if (selectedCourse === 'all') return allQuestions;
-    return allQuestions.filter((q) => q.courseId === selectedCourse);
-  }, [allQuestions, selectedCourse]);
+    let filtered = selectedCourse === 'all' ? allQuestions : allQuestions.filter((q) => q.courseId === selectedCourse);
+    if (showBookmarked) {
+      filtered = filtered.filter((q) => bookmarkedQuestions.has(q.id));
+    }
+    return filtered;
+  }, [allQuestions, selectedCourse, showBookmarked, bookmarkedQuestions]);
 
   const currentQ = questions[currentIndex];
   const progress = questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0;
@@ -1020,9 +1084,56 @@ export function QuizView() {
     [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted],
   );
 
+  // Review mode answer handler
+  const handleReviewAnswer = useCallback(
+    (answer: string) => {
+      if (!reviewCurrentQ || answered[reviewCurrentQ.id]) return;
+
+      const newAnswers = { ...answers, [reviewCurrentQ.id]: answer };
+      const newAnswered = { ...answered, [reviewCurrentQ.id]: true };
+      setAnswers(newAnswers);
+      setAnswered(newAnswered);
+      setShowExplanation(true);
+
+      const correct = isCorrect(reviewCurrentQ, answer);
+      const quality = correct ? 5 : 0;
+
+      // Update spaced repetition
+      if (reviewCurrentQ.concept) {
+        reviewItem(reviewCurrentQ.concept, quality);
+      }
+
+      // Update mastery in app store
+      if (reviewCurrentQ.concept) {
+        const newLevel = correct ? 5 : 1;
+        updateMastery(
+          reviewCurrentQ.concept,
+          newLevel,
+          `Spaced review: ${correct ? 'correct' : 'incorrect'}`,
+        );
+      }
+
+      // Show confetti on correct
+      if (correct) {
+        setShowConfetti(true);
+        setTimeout(() => setShowConfetti(false), 1500);
+      }
+
+      // Track reviewed count
+      setReviewedCount((prev) => prev + 1);
+    },
+    [reviewCurrentQ, answered, answers, isCorrect, reviewItem, updateMastery],
+  );
+
   const handleNext = () => {
     setShowExplanation(false);
-    if (currentIndex < questions.length - 1) {
+    if (studyMode === 'review') {
+      if (currentIndex < reviewQuestions.length - 1) {
+        setCurrentIndex(currentIndex + 1);
+      } else {
+        setReviewShowResults(true);
+      }
+    } else if (currentIndex < questions.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
       setShowResults(true);
@@ -1040,6 +1151,7 @@ export function QuizView() {
     setBestStreak(0);
     setTimerStarted(false);
     setTimerSeconds(0);
+    setShowBookmarked(false);
   };
 
   const score = useMemo(() => {
@@ -1053,7 +1165,7 @@ export function QuizView() {
   const difficultyTotal = difficultyCounts.easy + difficultyCounts.medium + difficultyCounts.hard;
 
   // ---------- Empty State ----------
-  if (studyMode !== 'daily' && questions.length === 0 && flashcardQuestions.length === 0) {
+  if (studyMode !== 'daily' && studyMode !== 'review' && questions.length === 0 && flashcardQuestions.length === 0) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -1234,6 +1346,22 @@ export function QuizView() {
               <RotateCcw className="h-4 w-4 mr-2" />
               Try Again
             </Button>
+            {bookmarkedQuestions.size > 0 && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.5 }}
+              >
+                <Button
+                  onClick={() => { setShowResults(false); setShowBookmarked(true); setCurrentIndex(0); setAnswers({}); setAnswered({}); setStreak(0); setBestStreak(0); setTimerStarted(false); setTimerSeconds(0); }}
+                  variant="outline"
+                  className="border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
+                >
+                  <BookmarkCheck className="h-4 w-4 mr-2" />
+                  Review Bookmarked ({bookmarkedQuestions.size})
+                </Button>
+              </motion.div>
+            )}
             <Button onClick={() => navigate('dashboard')}>
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Dashboard
@@ -1375,7 +1503,7 @@ export function QuizView() {
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold gradient-text">{studyMode === 'quiz' ? 'Quiz Practice' : studyMode === 'flashcard' ? 'Flashcard Study' : 'Daily Challenge'}</h1>
+                <h1 className="text-xl font-bold gradient-text">{studyMode === 'quiz' ? 'Quiz Practice' : studyMode === 'flashcard' ? 'Flashcard Study' : studyMode === 'review' ? 'Spaced Review' : 'Daily Challenge'}</h1>
                 {/* Mode toggle */}
                 <div className="flex items-center rounded-lg border border-border bg-background/50 p-0.5">
                   <button
@@ -1411,6 +1539,22 @@ export function QuizView() {
                     <Flame className="w-3.5 h-3.5" />
                     Daily
                   </button>
+                  <button
+                    onClick={() => handleModeChange('review')}
+                    className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                      studyMode === 'review'
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Brain className="w-3.5 h-3.5" />
+                    Review
+                    {overdueCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-white px-1">
+                        {overdueCount}
+                      </span>
+                    )}
+                  </button>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -1444,12 +1588,12 @@ export function QuizView() {
               </div>
             </div>
             {/* Course filter tabs (not shown in daily mode) */}
-            {studyMode !== 'daily' && (
+            {studyMode !== 'daily' && studyMode !== 'review' && (
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
             {COURSE_QUIZ_GROUPS.map((group) => (
               <button
                 key={group.id}
-                onClick={() => handleCourseChange(group.id)}
+                onClick={() => { handleCourseChange(group.id); if (showBookmarked) setShowBookmarked(false); }}
                 className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all ${
                   selectedCourse === group.id
                     ? 'bg-primary text-primary-foreground shadow-sm'
@@ -1465,9 +1609,30 @@ export function QuizView() {
                 </span>
               </button>
             ))}
+            {/* Bookmarked filter chip */}
+            {bookmarkedQuestions.size > 0 && (
+              <motion.button
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => { setShowBookmarked(!showBookmarked); if (showBookmarked) setCurrentIndex(0); else setCurrentIndex(0); }}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all ${
+                  showBookmarked
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 glass shadow-sm'
+                    : 'border border-border text-muted-foreground hover:text-foreground hover:border-emerald-500/30 glass-hover'
+                }`}
+              >
+                <BookmarkCheck className="h-3.5 w-3.5" />
+                Bookmarked
+                <span className={`ml-0.5 text-[10px] ${showBookmarked ? 'bg-emerald-500/20 px-1 rounded' : 'text-muted-foreground'}`}>
+                  {bookmarkedQuestions.size}
+                </span>
+              </motion.button>
+            )}
           </div>
             )}
-          {studyMode !== 'daily' && difficultyTotal > 0 && (
+          {studyMode !== 'daily' && studyMode !== 'review' && difficultyTotal > 0 && (
             <div className="flex items-center gap-3 mt-2">
               <div className="flex-1 flex h-1.5 rounded-full overflow-hidden bg-muted/40">
                 {difficultyCounts.easy > 0 && (
@@ -1517,7 +1682,7 @@ export function QuizView() {
               </div>
             </div>
           )}
-          {studyMode !== 'daily' && (
+          {studyMode !== 'daily' && studyMode !== 'review' && (
           <div className="flex items-center justify-between mb-2 mt-1">
             <span className="text-sm font-medium">
               {studyMode === 'quiz'
@@ -1549,8 +1714,8 @@ export function QuizView() {
             </div>
           </div>
           )}
-          {/* Custom gradient progress bar (not shown in daily mode) */}
-          {studyMode !== 'daily' && (
+          {/* Custom gradient progress bar (not shown in daily/review mode) */}
+          {studyMode !== 'daily' && studyMode !== 'review' && (
           <div className="relative h-2.5 w-full rounded-full bg-muted/50 overflow-hidden">
             <motion.div
               className="absolute inset-y-0 left-0 rounded-full"
@@ -2079,6 +2244,342 @@ export function QuizView() {
           </div>
         )}
 
+        {/* Review Mode Progress Banner */}
+        {studyMode === 'review' && !reviewShowResults && reviewQuestions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center justify-between mb-4 p-3 rounded-lg glass"
+          >
+            <div className="flex items-center gap-2">
+              <Brain className="h-4 w-4 text-emerald-500" />
+              <span className="text-sm font-medium">
+                {reviewedCount}/{reviewQuestions.length} reviews complete
+              </span>
+            </div>
+            <div className="relative h-2 w-32 rounded-full bg-muted/50 overflow-hidden">
+              <motion.div
+                className="absolute inset-y-0 left-0 rounded-full bg-emerald-500"
+                initial={{ width: 0 }}
+                animate={{ width: `${reviewProgress}%` }}
+                transition={{ duration: 0.5, ease: 'easeOut' }}
+              />
+            </div>
+          </motion.div>
+        )}
+
+        {/* Review Mode Empty State */}
+        {studyMode === 'review' && !reviewShowResults && reviewQuestions.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col items-center justify-center min-h-[40vh] gap-4"
+          >
+            <div className="h-16 w-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
+              <Brain className="h-8 w-8 text-emerald-500/60" />
+            </div>
+            <div className="text-center space-y-1">
+              <h2 className="text-lg font-semibold">No reviews due</h2>
+              <p className="text-sm text-muted-foreground">Complete quizzes to unlock spaced repetition reviews</p>
+            </div>
+            <Button variant="outline" onClick={() => handleModeChange('quiz')}>
+              <HelpCircle className="h-4 w-4 mr-2" />
+              Start a Quiz
+            </Button>
+          </motion.div>
+        )}
+
+        {/* Review Mode Question Card */}
+        {studyMode === 'review' && !reviewShowResults && reviewCurrentQ && (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={reviewCurrentQ.id}
+              initial={{ opacity: 0, x: 40, scale: 0.98 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -40, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              className="glass rounded-xl p-6 space-y-6 glow-emerald"
+            >
+              {/* Concept tag */}
+              {reviewCurrentQ.concept && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="text-xs bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/10">
+                    {reviewCurrentQ.concept}
+                  </Badge>
+                </div>
+              )}
+
+              <h2 className="text-lg font-semibold leading-relaxed">{reviewCurrentQ.question}</h2>
+
+              {/* Multiple choice */}
+              {reviewCurrentQ.type === 'multiple_choice' && reviewCurrentQ.options && (
+                <div className="grid gap-2">
+                  {reviewCurrentQ.options.map((opt, i) => {
+                    const letter = String.fromCharCode(65 + i);
+                    const isAns = answered[reviewCurrentQ.id];
+                    const isSel = answers[reviewCurrentQ.id] === opt;
+                    const isCor = opt === reviewCurrentQ.answer;
+                    return (
+                      <motion.button
+                        key={opt}
+                        whileHover={!isAns ? { scale: 1.01, y: -1 } : {}}
+                        whileTap={!isAns ? { scale: 0.99 } : {}}
+                        onClick={() => !isAns && handleReviewAnswer(opt)}
+                        disabled={isAns}
+                        className={`relative flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition-all ${
+                          isAns
+                            ? isCor
+                              ? 'border-emerald-500/60 bg-emerald-500/8 shadow-sm shadow-emerald-500/10'
+                              : isSel
+                                ? 'border-destructive/60 bg-destructive/8'
+                                : 'border-border opacity-60'
+                            : 'border-border hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm hover:shadow-primary/5 cursor-pointer'
+                        }`}
+                      >
+                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-bold transition-colors ${
+                          isAns && isCor ? 'bg-emerald-500 text-white' : isAns && isSel ? 'bg-destructive text-white' : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {isAns && isCor ? <CheckCircle2 className="h-4 w-4" /> : isAns && isSel ? <XCircle className="h-4 w-4" /> : letter}
+                        </span>
+                        <span className={isAns && isCor ? 'text-emerald-700 dark:text-emerald-300' : ''}>{opt}</span>
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* True/False */}
+              {reviewCurrentQ.type === 'true_false' && (
+                <div className="flex gap-3">
+                  {['True', 'False'].map((opt) => {
+                    const isAns = answered[reviewCurrentQ.id];
+                    const isSel = answers[reviewCurrentQ.id] === opt;
+                    const isCor = opt === reviewCurrentQ.answer;
+                    return (
+                      <motion.button
+                        key={opt}
+                        whileHover={!isAns ? { scale: 1.03, y: -2 } : {}}
+                        whileTap={!isAns ? { scale: 0.97 } : {}}
+                        onClick={() => !isAns && handleReviewAnswer(opt)}
+                        disabled={isAns}
+                        className={`flex-1 flex items-center justify-center gap-2 rounded-lg border p-4 text-sm font-medium transition-all ${
+                          isAns
+                            ? isCor ? 'border-emerald-500/60 bg-emerald-500/8' : isSel ? 'border-destructive/60 bg-destructive/8' : 'border-border opacity-60'
+                            : 'border-border hover:border-primary/40 hover:bg-primary/5 cursor-pointer'
+                        }`}
+                      >
+                        {isAns && isCor ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : isAns && isSel ? <XCircle className="h-5 w-5 text-destructive" /> : null}
+                        {opt}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Short answer / Fill blank / Error correction */}
+              {(reviewCurrentQ.type === 'short_answer' || reviewCurrentQ.type === 'fill_blank' || reviewCurrentQ.type === 'error_correction') && (
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder={reviewCurrentQ.type === 'fill_blank' ? 'Type the missing term...' : 'Type your answer...'}
+                      value={answers[reviewCurrentQ.id] || ''}
+                      onChange={(e) => {
+                        if (!answered[reviewCurrentQ.id]) {
+                          setAnswers((prev) => ({ ...prev, [reviewCurrentQ.id]: e.target.value }));
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && answers[reviewCurrentQ.id]?.trim() && !answered[reviewCurrentQ.id]) {
+                          handleReviewAnswer(answers[reviewCurrentQ.id].trim());
+                        }
+                      }}
+                      disabled={answered[reviewCurrentQ.id]}
+                      className="flex-1"
+                    />
+                    {!answered[reviewCurrentQ.id] && (
+                      <Button
+                        onClick={() => answers[reviewCurrentQ.id]?.trim() && handleReviewAnswer(answers[reviewCurrentQ.id].trim())}
+                        disabled={!answers[reviewCurrentQ.id]?.trim()}
+                        size="sm"
+                      >
+                        Submit
+                      </Button>
+                    )}
+                  </div>
+                  {answered[reviewCurrentQ.id] && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`text-sm ${isCorrect(reviewCurrentQ, answers[reviewCurrentQ.id]) ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}
+                    >
+                      {isCorrect(reviewCurrentQ, answers[reviewCurrentQ.id])
+                        ? '✓ Correct!'
+                        : `✗ Incorrect. Answer: ${reviewCurrentQ.answer}`}
+                    </motion.div>
+                  )}
+                </div>
+              )}
+
+              {/* Explanation */}
+              <AnimatePresence>
+                {showExplanation && reviewCurrentQ.explanation && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="rounded-lg bg-emerald-500/5 border border-emerald-500/10 p-4"
+                  >
+                    <p className="text-sm text-emerald-700 dark:text-emerald-300">
+                      <span className="font-semibold">Explanation: </span>
+                      {reviewCurrentQ.explanation}
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Next button */}
+              {answered[reviewCurrentQ.id] && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex justify-end"
+                >
+                  <Button onClick={handleNext} size="sm">
+                    {currentIndex < reviewQuestions.length - 1 ? (
+                      <>Next <ChevronRight className="h-4 w-4 ml-1" /></>
+                    ) : (
+                      <>Finish <Trophy className="h-4 w-4 ml-1" /></>
+                    )}
+                  </Button>
+                </motion.div>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        )}
+
+        {/* Review Mode Results Screen */}
+        {studyMode === 'review' && reviewShowResults && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+            className="flex flex-col items-center justify-center min-h-[50vh] gap-6"
+          >
+            {/* Confetti */}
+            <AnimatePresence>
+              {reviewedCount === reviewQuestions.length && (
+                <div className="fixed inset-0 pointer-events-none z-50">
+                  {Array.from({ length: 40 }).map((_, i) => (
+                    <ConfettiParticle
+                      key={`review-confetti-${i}`}
+                      delay={i * 0.03}
+                      color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
+                    />
+                  ))}
+                </div>
+              )}
+            </AnimatePresence>
+            <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full glow-emerald-strong">
+              <div className="relative inline-flex">
+                <svg width="140" height="140" className="-rotate-90">
+                  <circle cx="70" cy="70" r="54" fill="none" stroke="currentColor" strokeWidth="10" className="text-muted/20" />
+                  <motion.circle
+                    cx="70" cy="70" r="54" fill="none" stroke="oklch(0.627 0.194 149.214)"
+                    strokeWidth="12" strokeLinecap="round"
+                    strokeDasharray={2 * Math.PI * 54}
+                    initial={{ strokeDashoffset: 2 * Math.PI * 54 }}
+                    animate={{ strokeDashoffset: 2 * Math.PI * 54 * (1 - reviewQuestions.length > 0 ? reviewedCount / reviewQuestions.length : 0) }}
+                    transition={{ duration: 1.5, ease: 'easeOut' }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <motion.span
+                    className="text-3xl font-bold gradient-text"
+                    key={reviewedCount}
+                  >
+                    {reviewedCount}<span className="text-base font-normal text-muted-foreground">/{reviewQuestions.length}</span>
+                  </motion.span>
+                  <span className="text-xs text-muted-foreground mt-1">reviews done</span>
+                </div>
+              </div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+              >
+                <h2 className="text-xl font-bold">
+                  {reviewedCount === reviewQuestions.length
+                    ? 'Review Complete!'
+                    : 'Reviews Updated'}
+                </h2>
+                <p className="text-muted-foreground text-sm mt-1">
+                  {reviewedCount === reviewQuestions.length
+                    ? 'All due items have been reviewed. Great work staying on top of your learning!'
+                    : 'Your review schedule has been updated.'}
+                </p>
+              </motion.div>
+
+              {/* Per-question breakdown */}
+              <div className="space-y-2 text-left">
+                <h3 className="text-sm font-semibold">Review Breakdown</h3>
+                <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                  {reviewQuestions.map((q, i) => {
+                    const wasCorrect = answered[q.id] && isCorrect(q, answers[q.id] || '');
+                    return (
+                      <motion.div
+                        key={q.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.05 + 0.3 }}
+                        className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md ${wasCorrect ? 'bg-emerald-500/5' : 'bg-destructive/5'}`}
+                      >
+                        <span className={`flex h-5 w-5 items-center justify-center rounded-full ${wasCorrect ? 'bg-emerald-500 text-white' : 'bg-destructive/20 text-destructive'}`}>
+                          {wasCorrect ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                        </span>
+                        <span className="flex-1 truncate">{q.concept || q.question.slice(0, 50)}</span>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" onClick={() => handleModeChange('quiz')}>
+                  <HelpCircle className="h-4 w-4 mr-2" />
+                  Back to Quiz
+                </Button>
+                <Button onClick={() => { handleModeChange('review'); }}>
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Review Again
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Review mode question navigator dots */}
+        {studyMode === 'review' && !reviewShowResults && reviewQuestions.length > 1 && (
+          <div className="flex items-center justify-center gap-1.5 mt-6 flex-wrap">
+            {reviewQuestions.map((q, i) => (
+              <button
+                key={q.id}
+                onClick={() => setCurrentIndex(i)}
+                className={`h-2.5 rounded-full transition-all ${
+                  i === currentIndex
+                    ? 'bg-emerald-500 w-7 shadow-sm shadow-emerald-500/30'
+                    : answered[q.id]
+                      ? isCorrect(q, answers[q.id] || '')
+                        ? 'bg-emerald-500 w-2.5'
+                        : 'bg-destructive/60 w-2.5'
+                      : 'bg-muted hover:bg-emerald-500/40 w-2.5'
+                }`}
+                aria-label={`Go to review question ${i + 1}`}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Quiz question card */}
         {studyMode === 'quiz' && (
         <AnimatePresence mode="wait">
@@ -2091,18 +2592,53 @@ export function QuizView() {
               transition={{ type: 'spring', stiffness: 300, damping: 25 }}
               className="glass rounded-xl p-6 space-y-6 glow-emerald"
             >
-              {/* Concept tag */}
-              {currentQ.concept && (
-                <motion.div
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="flex items-center gap-2"
+              {/* Concept tag + bookmark */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {currentQ.concept && (
+                    <motion.div
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                    >
+                      <Badge variant="secondary" className="text-xs bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/10">
+                        {currentQ.concept}
+                      </Badge>
+                    </motion.div>
+                  )}
+                </div>
+                <motion.button
+                  whileTap={{ scale: 0.85 }}
+                  onClick={() => toggleBookmark(currentQ.id)}
+                  className="opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-muted/50"
+                  aria-label={bookmarkedQuestions.has(currentQ.id) ? 'Remove bookmark' : 'Bookmark question'}
                 >
-                  <Badge variant="secondary" className="text-xs bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/10">
-                    {currentQ.concept}
-                  </Badge>
-                </motion.div>
-              )}
+                  <AnimatePresence mode="wait">
+                    {bookmarkedQuestions.has(currentQ.id) ? (
+                      <motion.span
+                        key="bookmarked"
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        exit={{ scale: 0 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                        className="flex items-center justify-center"
+                      >
+                        <BookmarkCheck className="h-4.5 w-4.5 text-emerald-500 glow-emerald" />
+                      </motion.span>
+                    ) : (
+                      <motion.span
+                        key="not-bookmarked"
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        exit={{ scale: 0 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                        className="flex items-center justify-center"
+                      >
+                        <Bookmark className="h-4.5 w-4.5 text-muted-foreground" />
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </motion.button>
+              </div>
 
               {/* Question text */}
               <h2 className="text-lg font-semibold leading-relaxed">{currentQ.question}</h2>

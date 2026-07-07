@@ -1,0 +1,814 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useRef, useCallback } from 'react';
+     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→import { Play, Pause, RotateCcw, SkipForward, CloudRain, Trees, Waves, Volume2, VolumeX, ChevronDown, ChevronUp } from 'lucide-react';
+     6→import { toast } from 'sonner';
+     7→import { Slider } from '@/components/ui/slider';
+     8→import { Button } from '@/components/ui/button';
+     9→
+    10→// ─── Types ───────────────────────────────────────────────────────────────────
+    11→
+    12→type TimerMode = 'focus' | 'short-break' | 'long-break' | 'custom';
+    13→
+    14→interface FocusSession {
+    15→  date: string;       // YYYY-MM-DD
+    16→  duration: number;   // seconds
+    17→  completedAt: number; // timestamp
+    18→}
+    19→
+    20→interface AmbientSound {
+    21→  id: string;
+    22→  label: string;
+    23→  icon: typeof CloudRain;
+    24→  volume: number;     // 0-100
+    25→  muted: boolean;
+    26→  playing: boolean;
+    27→}
+    28→
+    29→const FOCUS_QUOTES = [
+    30→  '"The secret of getting ahead is getting started." — Mark Twain',
+    31→  '"It is during our darkest moments that we must focus to see the light." — Aristotle',
+    32→  '"Focus on being productive instead of busy." — Tim Ferriss',
+    33→  '"Where focus goes, energy flows." — Tony Robbins',
+    34→  '"Concentrate all your thoughts upon the work at hand. The sun\'s rays do not burn until brought to a focus." — Alexander Graham Bell',
+    35→  '"The successful warrior is the average man, with laser-like focus." — Bruce Lee',
+    36→  '"Do not dwell in the past, do not dream of the future, concentrate the mind on the present moment." — Buddha',
+    37→  '"Starve your distractions, feed your focus." — Daniel Goleman',
+    38→  '"You can always find a distraction if you\'re looking for one." — Tom Kite',
+    39→  '"The main thing is to keep the main thing the main thing." — Stephen Covey',
+    40→  '"My success, part of it certainly, is that I have focused in on a few things." — Bill Gates',
+    41→  '"When you focus on being a better person, you find that you are capable of extraordinary things." — Unknown',
+    42→];
+    43→
+    44→const STORAGE_KEY = 'synapse-focus-sessions';
+    45→
+    46→const MODE_DURATIONS: Record<string, number> = {
+    47→  focus: 25 * 60,
+    48→  'short-break': 5 * 60,
+    49→  'long-break': 15 * 60,
+    50→  custom: 10 * 60,
+    51→};
+    52→
+    53→const MODE_LABELS: Record<string, string> = {
+    54→  focus: 'Focus',
+    55→  'short-break': 'Short Break',
+    56→  'long-break': 'Long Break',
+    57→  custom: 'Custom',
+    58→};
+    59→
+    60→// ─── Helpers ─────────────────────────────────────────────────────────────────
+    61→
+    62→function getTodayStr(): string {
+    63→  return new Date().toISOString().split('T')[0];
+    64→}
+    65→
+    66→function loadSessions(): FocusSession[] {
+    67→  try {
+    68→    const raw = localStorage.getItem(STORAGE_KEY);
+    69→    return raw ? JSON.parse(raw) : [];
+    70→  } catch {
+    71→    return [];
+    72→  }
+    73→}
+    74→
+    75→function saveSessions(sessions: FocusSession[]) {
+    76→  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    77→}
+    78→
+    79→function getTodayStats() {
+    80→  const sessions = loadSessions();
+    81→  const today = getTodayStr();
+    82→  const todaySessions = sessions.filter((s) => s.date === today);
+    83→  return {
+    84→    completedCount: todaySessions.length,
+    85→    totalMinutes: Math.round(todaySessions.reduce((acc, s) => acc + s.duration, 0) / 60),
+    86→  };
+    87→}
+    88→
+    89→function formatTime(seconds: number): string {
+    90→  const m = Math.floor(seconds / 60);
+    91→  const s = seconds % 60;
+    92→  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    93→}
+    94→
+    95→// ─── Web Audio API Ambient Sounds ───────────────────────────────────────────
+    96→
+    97→class AmbientSoundEngine {
+    98→  private ctx: AudioContext | null = null;
+    99→  private nodes: Map<string, { source: AudioNode; gain: GainNode; cleanup?: () => void }> = new Map();
+   100→
+   101→  private getCtx(): AudioContext {
+   102→    if (!this.ctx) {
+   103→      this.ctx = new AudioContext();
+   104→    }
+   105→    if (this.ctx.state === 'suspended') {
+   106→      this.ctx.resume();
+   107→    }
+   108→    return this.ctx;
+   109→  }
+   110→
+   111→  startRain(volume: number) {
+   112→    this.stop('rain');
+   113→    const ctx = this.getCtx();
+   114→    const bufferSize = 2 * ctx.sampleRate;
+   115→    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+   116→    const data = buffer.getChannelData(0);
+   117→    for (let i = 0; i < bufferSize; i++) {
+   118→      data[i] = Math.random() * 2 - 1;
+   119→    }
+   120→    const source = ctx.createBufferSource();
+   121→    source.buffer = buffer;
+   122→    source.loop = true;
+   123→
+   124→    const lowpass = ctx.createBiquadFilter();
+   125→    lowpass.type = 'lowpass';
+   126→    lowpass.frequency.value = 800;
+   127→    lowpass.Q.value = 0.7;
+   128→
+   129→    const gain = ctx.createGain();
+   130→    gain.gain.value = volume / 100 * 0.5;
+   131→
+   132→    source.connect(lowpass);
+   133→    lowpass.connect(gain);
+   134→    gain.connect(ctx.destination);
+   135→    source.start();
+   136→
+   137→    this.nodes.set('rain', { source, gain });
+   138→  }
+   139→
+   140→  startForest(volume: number) {
+   141→    this.stop('forest');
+   142→    const ctx = this.getCtx();
+   143→    const bufferSize = 4 * ctx.sampleRate;
+   144→    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+   145→    const data = buffer.getChannelData(0);
+   146→    // Brown noise generation
+   147→    let lastOut = 0;
+   148→    for (let i = 0; i < bufferSize; i++) {
+   149→      const white = Math.random() * 2 - 1;
+   150→      data[i] = (lastOut + 0.02 * white) / 1.02;
+   151→      lastOut = data[i];
+   152→      data[i] *= 3.5;
+   153→    }
+   154→    const source = ctx.createBufferSource();
+   155→    source.buffer = buffer;
+   156→    source.loop = true;
+   157→
+   158→    const bandpass = ctx.createBiquadFilter();
+   159→    bandpass.type = 'bandpass';
+   160→    bandpass.frequency.value = 400;
+   161→    bandpass.Q.value = 0.5;
+   162→
+   163→    const gain = ctx.createGain();
+   164→    gain.gain.value = volume / 100 * 0.4;
+   165→
+   166→    source.connect(bandpass);
+   167→    bandpass.connect(gain);
+   168→    gain.connect(ctx.destination);
+   169→    source.start();
+   170→
+   171→    this.nodes.set('forest', { source, gain });
+   172→  }
+   173→
+   174→  startWaves(volume: number) {
+   175→    this.stop('waves');
+   176→    const ctx = this.getCtx();
+   177→    const osc = ctx.createOscillator();
+   178→    osc.type = 'sine';
+   179→    osc.frequency.value = 0.15;
+   180→
+   181→    const lfoGain = ctx.createGain();
+   182→    lfoGain.gain.value = 200;
+   183→
+   184→    const lfo = ctx.createOscillator();
+   185→    lfo.type = 'sine';
+   186→    lfo.frequency.value = 0.08;
+   187→
+   188→    const mainOsc = ctx.createOscillator();
+   189→    mainOsc.type = 'sine';
+   190→    mainOsc.frequency.value = 100;
+   191→
+   192→    const mainGain = ctx.createGain();
+   193→    mainGain.gain.value = volume / 100 * 0.3;
+   194→
+   195→    lfo.connect(lfoGain);
+   196→    lfoGain.connect(mainOsc.frequency);
+   197→    mainOsc.connect(mainGain);
+   198→    mainGain.connect(ctx.destination);
+   199→
+   200→    lfo.start();
+   201→    mainOsc.start();
+   202→
+   203→    this.nodes.set('waves', {
+   204→      source: mainOsc,
+   205→      gain: mainGain,
+   206→      cleanup: () => {
+   207→        try { lfo.stop(); } catch { /* ignore */ }
+   208→      },
+   209→    });
+   210→  }
+   211→
+   212→  setVolume(id: string, volume: number) {
+   213→    const entry = this.nodes.get(id);
+   214→    if (entry) {
+   215→      entry.gain.gain.setTargetAtTime(volume / 100 * 0.5, this.ctx?.currentTime ?? 0, 0.1);
+   216→    }
+   217→  }
+   218→
+   219→  stop(id: string) {
+   220→    const entry = this.nodes.get(id);
+   221→    if (entry) {
+   222→      entry.cleanup?.();
+   223→      try {
+   224→        if (entry.source instanceof AudioBufferSourceNode || entry.source instanceof OscillatorNode) {
+   225→          entry.source.stop();
+   226→        }
+   227→      } catch { /* ignore */ }
+   228→      this.nodes.delete(id);
+   229→    }
+   230→  }
+   231→
+   232→  stopAll() {
+   233→    this.nodes.forEach((_, id) => this.stop(id));
+   234→  }
+   235→
+   236→  dispose() {
+   237→    this.stopAll();
+   238→    if (this.ctx) {
+   239→      this.ctx.close();
+   240→      this.ctx = null;
+   241→    }
+   242→  }
+   243→}
+   244→
+   245→// ─── Component ───────────────────────────────────────────────────────────────
+   246→
+   247→export function FocusTimerView() {
+   248→  // Timer state
+   249→  const [mode, setMode] = useState<TimerMode>('focus');
+   250→  const [customMinutes, setCustomMinutes] = useState(10);
+   251→  const [totalSeconds, setTotalSeconds] = useState(MODE_DURATIONS.focus);
+   252→  const [remainingSeconds, setRemainingSeconds] = useState(MODE_DURATIONS.focus);
+   253→  const [isRunning, setIsRunning] = useState(false);
+   254→  const [sessionCount, setSessionCount] = useState(1);
+   255→  const [quoteIndex, setQuoteIndex] = useState(0);
+   256→  const [stats, setStats] = useState(() => getTodayStats());
+   257→  const [showCustomInput, setShowCustomInput] = useState(false);
+   258→
+   259→  // Ambient sounds state
+   260→  const [sounds, setSounds] = useState<AmbientSound[]>([
+   261→    { id: 'rain', label: 'Rain', icon: CloudRain, volume: 60, muted: false, playing: false },
+   262→    { id: 'forest', label: 'Forest', icon: Trees, volume: 50, muted: false, playing: false },
+   263→    { id: 'waves', label: 'Waves', icon: Waves, volume: 40, muted: false, playing: false },
+   264→  ]);
+   265→
+   266→  const engineRef = useRef<AmbientSoundEngine | null>(null);
+   267→  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+   268→  const startTimestampRef = useRef<number>(0);
+   269→  const initialRemainingRef = useRef<number>(0);
+   270→
+   271→  // Initialize audio engine
+   272→  useEffect(() => {
+   273→    engineRef.current = new AmbientSoundEngine();
+   274→    return () => {
+   275→      engineRef.current?.dispose();
+   276→    };
+   277→  }, []);
+   278→
+   279→  // switchMode must be declared before handleTimerComplete (which calls it)
+   280→  const switchMode = useCallback((newMode: TimerMode) => {
+   281→    setIsRunning(false);
+   282→    setMode(newMode);
+   283→
+   284→    if (newMode === 'custom') {
+   285→      const dur = customMinutes * 60;
+   286→      setTotalSeconds(dur);
+   287→      setRemainingSeconds(dur);
+   288→    } else {
+   289→      const dur = MODE_DURATIONS[newMode];
+   290→      setTotalSeconds(dur);
+   291→      setRemainingSeconds(dur);
+   292→    }
+   293→  }, [customMinutes]);
+   294→
+   295→  // handleTimerComplete must be declared before the useEffect that calls it
+   296→  const handleTimerComplete = useCallback(() => {
+   297→    if (mode === 'focus') {
+   298→      // Record session
+   299→      const sessions = loadSessions();
+   300→      sessions.push({
+   301→        date: getTodayStr(),
+   302→        duration: totalSeconds,
+   303→        completedAt: Date.now(),
+   304→      });
+   305→      saveSessions(sessions);
+   306→      setStats(getTodayStats());
+   307→
+   308→      // Next quote
+   309→      setQuoteIndex((prev) => (prev + 1) % FOCUS_QUOTES.length);
+   310→
+   311→      if (sessionCount >= 4) {
+   312→        toast.success('Great work! You completed 4 focus sessions. Time for a long break!', {
+   313→          duration: 6000,
+   314→        });
+   315→        setSessionCount(1);
+   316→        switchMode('long-break');
+   317→      } else {
+   318→        toast.success('Focus session complete! Take a short break.', {
+   319→          action: {
+   320→            label: 'Start Break',
+   321→            onClick: () => switchMode('short-break'),
+   322→          },
+   323→          duration: 6000,
+   324→        });
+   325→        setSessionCount((prev) => prev + 1);
+   326→      }
+   327→    } else {
+   328→      toast.success('Break is over! Ready for another focus session?', {
+   329→        action: {
+   330→          label: 'Start Focus',
+   331→          onClick: () => switchMode('focus'),
+   332→        },
+   333→        duration: 6000,
+   334→      });
+   335→    }
+   336→  }, [mode, totalSeconds, sessionCount, switchMode]);
+   337→
+   338→  // Keep a ref to handleTimerComplete so the timer tick can call it
+   339→  const handleTimerCompleteRef = useRef(handleTimerComplete);
+   340→
+   341→  // Timer tick
+   342→  useEffect(() => {
+   343→    handleTimerCompleteRef.current = handleTimerComplete;
+   344→
+   345→    if (isRunning) {
+   346→      intervalRef.current = setInterval(() => {
+   347→        setRemainingSeconds((prev) => {
+   348→          if (prev <= 1) {
+   349→            clearInterval(intervalRef.current!);
+   350→            intervalRef.current = null;
+   351→            setIsRunning(false);
+   352→            // Schedule completion handler outside the setState updater
+   353→            setTimeout(() => handleTimerCompleteRef.current(), 0);
+   354→            return 0;
+   355→          }
+   356→          return prev - 1;
+   357→        });
+   358→      }, 1000);
+   359→    } else {
+   360→      if (intervalRef.current) {
+   361→        clearInterval(intervalRef.current);
+   362→        intervalRef.current = null;
+   363→      }
+   364→    }
+   365→    return () => {
+   366→      if (intervalRef.current) {
+   367→        clearInterval(intervalRef.current);
+   368→        intervalRef.current = null;
+   369→      }
+   370→    };
+   371→  }, [isRunning, handleTimerComplete]);
+   372→
+   373→  const handleStartPause = () => {
+   374→    if (isRunning) {
+   375→      setIsRunning(false);
+   376→    } else {
+   377→      if (remainingSeconds <= 0) {
+   378→        // Reset if timer ended
+   379→        if (mode === 'custom') {
+   380→          const dur = customMinutes * 60;
+   381→          setTotalSeconds(dur);
+   382→          setRemainingSeconds(dur);
+   383→        } else {
+   384→          const dur = MODE_DURATIONS[mode];
+   385→          setTotalSeconds(dur);
+   386→          setRemainingSeconds(dur);
+   387→        }
+   388→      }
+   389→      startTimestampRef.current = Date.now();
+   390→      initialRemainingRef.current = remainingSeconds;
+   391→      setIsRunning(true);
+   392→    }
+   393→  };
+   394→
+   395→  const handleReset = () => {
+   396→    setIsRunning(false);
+   397→    if (mode === 'custom') {
+   398→      const dur = customMinutes * 60;
+   399→      setTotalSeconds(dur);
+   400→      setRemainingSeconds(dur);
+   401→    } else {
+   402→      const dur = MODE_DURATIONS[mode];
+   403→      setTotalSeconds(dur);
+   404→      setRemainingSeconds(dur);
+   405→    }
+   406→  };
+   407→
+   408→  const handleSkip = () => {
+   409→    setIsRunning(false);
+   410→    if (mode === 'focus') {
+   411→      if (sessionCount >= 4) {
+   412→        switchMode('long-break');
+   413→        setSessionCount(1);
+   414→      } else {
+   415→        switchMode('short-break');
+   416→      }
+   417→    } else {
+   418→      switchMode('focus');
+   419→    }
+   420→  };
+   421→
+   422→  const toggleSound = (id: string) => {
+   423→    setSounds((prev) => {
+   424→      const next = prev.map((s) => {
+   425→        if (s.id !== id) return s;
+   426→        const willPlay = !s.playing;
+   427→        if (willPlay && engineRef.current) {
+   428→          const effectiveVolume = s.muted ? 0 : s.volume;
+   429→          if (id === 'rain') engineRef.current.startRain(effectiveVolume);
+   430→          if (id === 'forest') engineRef.current.startForest(effectiveVolume);
+   431→          if (id === 'waves') engineRef.current.startWaves(effectiveVolume);
+   432→        } else if (!willPlay && engineRef.current) {
+   433→          engineRef.current.stop(id);
+   434→        }
+   435→        return { ...s, playing: willPlay };
+   436→      });
+   437→      return next;
+   438→    });
+   439→  };
+   440→
+   441→  const setSoundVolume = (id: string, volume: number) => {
+   442→    setSounds((prev) => {
+   443→      const next = prev.map((s) => {
+   444→        if (s.id !== id) return s;
+   445→        if (s.playing && engineRef.current && !s.muted) {
+   446→          if (id === 'rain') engineRef.current.setVolume(id, volume);
+   447→          if (id === 'forest') engineRef.current.setVolume(id, volume);
+   448→          if (id === 'waves') engineRef.current.setVolume(id, volume);
+   449→        }
+   450→        return { ...s, volume };
+   451→      });
+   452→      return next;
+   453→    });
+   454→  };
+   455→
+   456→  const toggleSoundMute = (id: string) => {
+   457→    setSounds((prev) => {
+   458→      const next = prev.map((s) => {
+   459→        if (s.id !== id) return s;
+   460→        const willMute = !s.muted;
+   461→        if (s.playing && engineRef.current) {
+   462→          engineRef.current.setVolume(id, willMute ? 0 : s.volume);
+   463→        }
+   464→        return { ...s, muted: willMute };
+   465→      });
+   466→      return next;
+   467→    });
+   468→  };
+   469→
+   470→  // Progress calculation
+   471→  const progress = totalSeconds > 0 ? ((totalSeconds - remainingSeconds) / totalSeconds) : 0;
+   472→  const circumference = 2 * Math.PI * 90;
+   473→  const strokeDashoffset = circumference * (1 - progress);
+   474→
+   475→  const modeColor = mode === 'focus' || mode === 'custom'
+   476→    ? 'from-emerald-400 to-teal-400'
+   477→    : 'from-sky-400 to-cyan-400';
+   478→
+   479→  return (
+   480→    <div className="flex flex-col items-center gap-6 py-8 px-4 w-full max-w-2xl mx-auto">
+   481→      {/* Title */}
+   482→      <motion.h1
+   483→        initial={{ opacity: 0, y: -10 }}
+   484→        animate={{ opacity: 1, y: 0 }}
+   485→        className="text-2xl font-bold gradient-text-animated sm:text-3xl"
+   486→      >
+   487→        Focus Timer
+   488→      </motion.h1>
+   489→
+   490→      {/* Mode selector tabs */}
+   491→      <motion.div
+   492→        initial={{ opacity: 0, y: -6 }}
+   493→        animate={{ opacity: 1, y: 0 }}
+   494→        transition={{ delay: 0.1 }}
+   495→        className="flex flex-wrap items-center justify-center gap-2"
+   496→      >
+   497→        {(['focus', 'short-break', 'long-break', 'custom'] as TimerMode[]).map((m) => (
+   498→          <button
+   499→            key={m}
+   500→            onClick={() => switchMode(m)}
+   501→            className={`relative rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
+   502→              mode === m
+   503→                ? 'text-primary-foreground'
+   504→                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+   505→            }`}
+   506→          >
+   507→            {mode === m && (
+   508→              <motion.div
+   509→                layoutId="focus-mode-pill"
+   510→                className="absolute inset-0 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500"
+   511→                transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+   512→              />
+   513→            )}
+   514→            <span className="relative z-10">{MODE_LABELS[m]}</span>
+   515→            {m !== 'custom' && (
+   516→              <span className="relative z-10 ml-1 opacity-70">{Math.round(MODE_DURATIONS[m] / 60)}m</span>
+   517→            )}
+   518→          </button>
+   519→        ))}
+   520→      </motion.div>
+   521→
+   522→      {/* Custom minutes input */}
+   523→      <AnimatePresence>
+   524→        {mode === 'custom' && (
+   525→          <motion.div
+   526→            initial={{ opacity: 0, height: 0 }}
+   527→            animate={{ opacity: 1, height: 'auto' }}
+   528→            exit={{ opacity: 0, height: 0 }}
+   529→            className="flex items-center gap-2 overflow-hidden"
+   530→          >
+   531→            <label className="text-sm text-muted-foreground">Minutes:</label>
+   532→            <input
+   533→              type="number"
+   534→              min={1}
+   535→              max={120}
+   536→              value={customMinutes}
+   537→              onChange={(e) => {
+   538→                const val = Math.max(1, Math.min(120, parseInt(e.target.value) || 1));
+   539→                setCustomMinutes(val);
+   540→                if (!isRunning) {
+   541→                  const dur = val * 60;
+   542→                  setTotalSeconds(dur);
+   543→                  setRemainingSeconds(dur);
+   544→                }
+   545→              }}
+   546→              className="w-16 rounded-md border border-border/50 bg-muted/50 px-2 py-1 text-center text-sm outline-none focus:ring-1 focus:ring-primary/50"
+   547→            />
+   548→          </motion.div>
+   549→        )}
+   550→      </AnimatePresence>
+   551→
+   552→      {/* Session counter */}
+   553→      <motion.p
+   554→        initial={{ opacity: 0 }}
+   555→        animate={{ opacity: 1 }}
+   556→        transition={{ delay: 0.15 }}
+   557→        className="text-sm text-muted-foreground font-medium"
+   558→      >
+   559→        Session {sessionCount} of 4
+   560→      </motion.p>
+   561→
+   562→      {/* Circular Timer Ring */}
+   563→      <motion.div
+   564→        initial={{ opacity: 0, scale: 0.85 }}
+   565→        animate={{ opacity: 1, scale: 1 }}
+   566→        transition={{ delay: 0.2, type: 'spring', stiffness: 200, damping: 20 }}
+   567→        className={`relative flex items-center justify-center ${isRunning ? 'breathe' : ''}`}
+   568→      >
+   569→        <svg width="220" height="220" viewBox="0 0 200 200" className="transform -rotate-90">
+   570→          <defs>
+   571→            <linearGradient id="timer-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+   572→              <stop offset="0%" stopColor="#34d399" />
+   573→              <stop offset="100%" stopColor="#2dd4bf" />
+   574→            </linearGradient>
+   575→          </defs>
+   576→          {/* Background track */}
+   577→          <circle
+   578→            cx="100"
+   579→            cy="100"
+   580→            r="90"
+   581→            fill="none"
+   582→            stroke="currentColor"
+   583→            strokeWidth="6"
+   584→            className="text-muted-foreground/10"
+   585→          />
+   586→          {/* Progress arc */}
+   587→          <motion.circle
+   588→            cx="100"
+   589→            cy="100"
+   590→            r="90"
+   591→            fill="none"
+   592→            stroke="url(#timer-gradient)"
+   593→            strokeWidth="6"
+   594→            strokeLinecap="round"
+   595→            strokeDasharray={circumference}
+   596→            animate={{ strokeDashoffset }}
+   597→            transition={{ duration: 0.5, ease: 'easeOut' }}
+   598→          />
+   599→        </svg>
+   600→        {/* Center time display */}
+   601→        <div className="absolute inset-0 flex flex-col items-center justify-center">
+   602→          <span className={`text-5xl sm:text-6xl font-bold tabular-nums tracking-tight gradient-text-animated ${isRunning ? '' : ''}`}>
+   603→            {formatTime(remainingSeconds)}
+   604→          </span>
+   605→          <span className="mt-1 text-xs text-muted-foreground font-medium uppercase tracking-wider">
+   606→            {MODE_LABELS[mode]}
+   607→          </span>
+   608→        </div>
+   609→        {/* Glow ring effect when running */}
+   610→        {isRunning && (
+   611→          <motion.div
+   612→            className="absolute inset-0 rounded-full glow-emerald opacity-30"
+   613→            animate={{ scale: [1, 1.05, 1], opacity: [0.2, 0.4, 0.2] }}
+   614→            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+   615→          />
+   616→        )}
+   617→      </motion.div>
+   618→
+   619→      {/* Controls */}
+   620→      <motion.div
+   621→        initial={{ opacity: 0, y: 10 }}
+   622→        animate={{ opacity: 1, y: 0 }}
+   623→        transition={{ delay: 0.3 }}
+   624→        className="flex items-center gap-3"
+   625→      >
+   626→        <Button
+   627→          variant="outline"
+   628→          size="icon"
+   629→          onClick={handleReset}
+   630→          className="glass rounded-full h-11 w-11 hover:bg-accent/50"
+   631→          aria-label="Reset timer"
+   632→        >
+   633→          <RotateCcw className="h-4 w-4" />
+   634→        </Button>
+   635→
+   636→        <Button
+   637→          onClick={handleStartPause}
+   638→          className={`glass rounded-full h-14 w-14 glow-emerald ${
+   639→            isRunning ? 'glass-inner-glow' : ''
+   640→          }`}
+   641→          aria-label={isRunning ? 'Pause timer' : 'Start timer'}
+   642→        >
+   643→          {isRunning ? (
+   644→            <Pause className="h-5 w-5 text-primary-foreground" />
+   645→          ) : (
+   646→            <Play className="h-5 w-5 text-primary-foreground ml-0.5" />
+   647→          )}
+   648→        </Button>
+   649→
+   650→        <Button
+   651→          variant="outline"
+   652→          size="icon"
+   653→          onClick={handleSkip}
+   654→          className="glass rounded-full h-11 w-11 hover:bg-accent/50"
+   655→          aria-label="Skip to next mode"
+   656→        >
+   657→          <SkipForward className="h-4 w-4" />
+   658→        </Button>
+   659→      </motion.div>
+   660→
+   661→      {/* Motivational Quote */}
+   662→      <motion.div
+   663→        key={quoteIndex}
+   664→        initial={{ opacity: 0, y: 8 }}
+   665→        animate={{ opacity: 1, y: 0 }}
+   666→        transition={{ duration: 0.6 }}
+   667→        className="text-center max-w-md"
+   668→      >
+   669→        <p className="text-sm text-muted-foreground italic leading-relaxed">
+   670→          {FOCUS_QUOTES[quoteIndex]}
+   671→        </p>
+   672→      </motion.div>
+   673→
+   674→      {/* Ambient Sounds */}
+   675→      <motion.div
+   676→        initial={{ opacity: 0, y: 12 }}
+   677→        animate={{ opacity: 1, y: 0 }}
+   678→        transition={{ delay: 0.4 }}
+   679→        className="w-full max-w-md glass-accent-top glass rounded-2xl p-4 space-y-3"
+   680→      >
+   681→        <div className="flex items-center justify-between">
+   682→          <h3 className="text-sm font-semibold text-foreground/80">Ambient Sounds</h3>
+   683→          <Button
+   684→            variant="ghost"
+   685→            size="sm"
+   686→            onClick={() => setShowCustomInput((v) => !v)}
+   687→            className="h-7 px-2 text-xs text-muted-foreground"
+   688→          >
+   689→            {showCustomInput ? <ChevronUp className="h-3.5 w-3.5 mr-1" /> : <ChevronDown className="h-3.5 w-3.5 mr-1" />}
+   690→            {showCustomInput ? 'Collapse' : 'Expand'}
+   691→          </Button>
+   692→        </div>
+   693→
+   694→        <AnimatePresence>
+   695→          {showCustomInput && (
+   696→            <motion.div
+   697→              initial={{ opacity: 0, height: 0 }}
+   698→              animate={{ opacity: 1, height: 'auto' }}
+   699→              exit={{ opacity: 0, height: 0 }}
+   700→              className="space-y-3 overflow-hidden"
+   701→            >
+   702→              {sounds.map((sound) => {
+   703→                const Icon = sound.icon;
+   704→                return (
+   705→                  <div key={sound.id} className="flex items-center gap-3">
+   706→                    <Button
+   707→                      variant={sound.playing ? 'default' : 'outline'}
+   708→                      size="icon"
+   709→                      onClick={() => toggleSound(sound.id)}
+   710→                      className={`h-9 w-9 rounded-lg shrink-0 transition-all duration-200 ${
+   711→                        sound.playing
+   712→                          ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white'
+   713→                          : 'glass hover:bg-accent/50'
+   714→                      }`}
+   715→                      aria-label={`${sound.playing ? 'Stop' : 'Play'} ${sound.label}`}
+   716→                    >
+   717→                      <Icon className="h-4 w-4" />
+   718→                    </Button>
+   719→                    <span className="text-xs font-medium text-foreground/70 w-14 shrink-0">{sound.label}</span>
+   720→                    <Slider
+   721→                      value={[sound.volume]}
+   722→                      onValueChange={([v]) => setSoundVolume(sound.id, v)}
+   723→                      min={0}
+   724→                      max={100}
+   725→                      step={1}
+   726→                      className="flex-1"
+   727→                      disabled={!sound.playing}
+   728→                    />
+   729→                    <span className="text-[10px] text-muted-foreground w-7 text-right tabular-nums">
+   730→                      {sound.muted ? 'M' : `${sound.volume}`}
+   731→                    </span>
+   732→                    <Button
+   733→                      variant="ghost"
+   734→                      size="icon"
+   735→                      onClick={() => toggleSoundMute(sound.id)}
+   736→                      className="h-7 w-7 shrink-0"
+   737→                      aria-label={sound.muted ? 'Unmute' : 'Mute'}
+   738→                      disabled={!sound.playing}
+   739→                    >
+   740→                      {sound.muted ? (
+   741→                        <VolumeX className="h-3.5 w-3.5 text-muted-foreground" />
+   742→                      ) : (
+   743→                        <Volume2 className="h-3.5 w-3.5 text-muted-foreground" />
+   744→                      )}
+   745→                    </Button>
+   746→                  </div>
+   747→                );
+   748→              })}
+   749→            </motion.div>
+   750→          )}
+   751→        </AnimatePresence>
+   752→
+   753→        {/* Quick toggle buttons when collapsed */}
+   754→        {!showCustomInput && (
+   755→          <div className="flex items-center justify-center gap-2 pt-1">
+   756→            {sounds.map((sound) => {
+   757→              const Icon = sound.icon;
+   758→              return (
+   759→                <Button
+   760→                  key={sound.id}
+   761→                  variant={sound.playing ? 'default' : 'outline'}
+   762→                  size="sm"
+   763→                  onClick={() => toggleSound(sound.id)}
+   764→                  className={`rounded-lg text-xs transition-all duration-200 gap-1.5 ${
+   765→                    sound.playing
+   766→                      ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
+   767→                      : 'glass text-muted-foreground hover:text-foreground'
+   768→                  }`}
+   769→                  aria-label={`${sound.playing ? 'Stop' : 'Play'} ${sound.label}`}
+   770→                >
+   771→                  <Icon className="h-3.5 w-3.5" />
+   772→                  {sound.label}
+   773→                </Button>
+   774→              );
+   775→            })}
+   776→          </div>
+   777→        )}
+   778→      </motion.div>
+   779→
+   780→      {/* Stats Bar */}
+   781→      <motion.div
+   782→        initial={{ opacity: 0, y: 12 }}
+   783→        animate={{ opacity: 1, y: 0 }}
+   784→        transition={{ delay: 0.5 }}
+   785→        className="w-full max-w-md glass rounded-xl p-4"
+   786→      >
+   787→        <div className="flex items-center justify-around">
+   788→          <div className="flex flex-col items-center gap-1">
+   789→            <span className="text-2xl font-bold gradient-text">{stats.completedCount}</span>
+   790→            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+   791→              Sessions Today
+   792→            </span>
+   793→          </div>
+   794→          <div className="h-8 w-px bg-border/50" />
+   795→          <div className="flex flex-col items-center gap-1">
+   796→            <span className="text-2xl font-bold gradient-text">{stats.totalMinutes}</span>
+   797→            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+   798→              Focus Minutes
+   799→            </span>
+   800→          </div>
+   801→          <div className="h-8 w-px bg-border/50" />
+   802→          <div className="flex flex-col items-center gap-1">
+   803→            <span className="text-2xl font-bold gradient-text">
+   804→              {stats.completedCount > 0 ? Math.round(stats.totalMinutes / stats.completedCount) : 0}
+   805→            </span>
+   806→            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+   807→              Avg Min/Session
+   808→            </span>
+   809→          </div>
+   810→        </div>
+   811→      </motion.div>
+   812→    </div>
+   813→  );
+   814→}

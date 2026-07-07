@@ -34,6 +34,7 @@ import {
   Timer,
   Sunrise,
   CheckCircle2,
+  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -43,7 +44,8 @@ import { useAppStore } from '@/stores/appStore';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { clearSessionStorage } from '@/hooks/useSessionPersistence';
 import { useStudyStreak, useTotalStudyTime } from '@/hooks/useStudyTracker';
-import { format } from 'date-fns';
+import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
+import { format, formatDistanceToNow } from 'date-fns';
 import type { Achievement } from '@/types';
 
 /* ── Dynamic Icon Map ── */
@@ -121,12 +123,13 @@ const paceLabels: Record<string, { label: string; desc: string; icon: typeof Gau
   fast: { label: 'Fast Track', desc: 'Concise explanations, quick progression', icon: Rocket },
 };
 
-const categoryTabs: Array<{ key: 'all' | Achievement['category']; label: string }> = [
+const categoryTabs: Array<{ key: 'all' | Achievement['category']; label: string; icon?: typeof Users }> = [
   { key: 'all', label: 'All' },
   { key: 'study', label: 'Study' },
   { key: 'quiz', label: 'Quiz' },
   { key: 'streak', label: 'Streak' },
   { key: 'mastery', label: 'Mastery' },
+  { key: 'social', label: 'Social', icon: Users },
 ];
 
 const rarityStyles: Record<Achievement['rarity'], { border: string; bg: string; badgeBg: string; badgeText: string; text: string; glow: string }> = {
@@ -136,28 +139,45 @@ const rarityStyles: Record<Achievement['rarity'], { border: string; bg: string; 
   legendary: { border: 'border-purple-500/30', bg: 'bg-purple-500/10', badgeBg: 'bg-purple-500/10', badgeText: 'text-purple-600 dark:text-purple-400', text: 'text-purple-500', glow: 'hover:shadow-[0_0_25px_rgba(168,85,247,0.2)]' },
 };
 
-const skillBars = [
-  { name: 'Critical Thinking', value: 85 },
-  { name: 'Problem Solving', value: 72 },
-  { name: 'Memory', value: 68 },
-  { name: 'Analysis', value: 90 },
-  { name: 'Creativity', value: 65 },
-];
-
-/* ── Heatmap Generator ── */
-function generateHeatmap(): { opacity: number }[][] {
+/* ── Heatmap Generator (from real study sessions) ── */
+function generateHeatmap(sessions: { date: string }[]): { opacity: number }[][] {
   const weeks = 5;
   const days = 7;
+
+  // Count sessions per date string (YYYY-MM-DD)
+  const dateCounts: Record<string, number> = {};
+  for (const s of sessions) {
+    const d = s.date.startsWith('T') ? s.date.split('T')[0] : s.date;
+    dateCounts[d] = (dateCounts[d] || 0) + 1;
+  }
+
+  // Build a list of the past 35 days (week 0 = this week, week 4 = 4 weeks ago)
+  const today = new Date();
+  // Find the Monday of the current week
+  const dayOfWeek = today.getDay(); // 0=Sun, 1=Mon...
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const thisMonday = new Date(today);
+  thisMonday.setDate(today.getDate() + mondayOffset);
+
+  // grid[weekIdx][dayIdx]: weekIdx 0=4w ago, 4=this week; dayIdx 0=Mon..6=Sun
   const grid: { opacity: number }[][] = [];
-  const seed = [3, 0, 2, 0, 1, 3, 0, 1, 0, 0, 2, 0, 0, 1, 4, 0, 0, 3, 1, 0, 0, 2, 0, 0, 1, 0, 3, 0, 1, 2, 0, 0, 1, 0, 0];
-  let idx = 0;
   for (let w = 0; w < weeks; w++) {
     const week: { opacity: number }[] = [];
     for (let d = 0; d < days; d++) {
-      const level = seed[idx] ?? 0;
-      const opacityMap = [0, 0.1, 0.3, 0.6, 1];
-      week.push({ opacity: opacityMap[level] });
-      idx++;
+      // Date for this cell
+      const cellDate = new Date(thisMonday);
+      cellDate.setDate(thisMonday.getDate() + (w - weeks + 1) * 7 + d);
+      const dateStr = cellDate.toISOString().split('T')[0];
+      const count = dateCounts[dateStr] || 0;
+
+      // Intensity: 0=none, 1=1 session, 2=2-3, 3=4+
+      let intensity = 0;
+      if (count >= 4) intensity = 3;
+      else if (count >= 2) intensity = 2;
+      else if (count >= 1) intensity = 1;
+
+      const opacityMap = [0, 0.25, 0.5, 0.8];
+      week.push({ opacity: opacityMap[intensity] });
     }
     grid.push(week);
   }
@@ -171,7 +191,7 @@ function HeatmapCell({ opacity, weekIdx, dayIdx }: { opacity: number; weekIdx: n
   const [hovered, setHovered] = useState(false);
   const hasActivity = opacity > 0;
   const levelLabel = hasActivity
-    ? opacity === 1 ? 'High' : opacity >= 0.6 ? 'Medium' : opacity >= 0.3 ? 'Low' : 'Minimal'
+    ? opacity >= 0.8 ? 'High' : opacity >= 0.5 ? 'Medium' : 'Low'
     : 'No activity';
 
   return (
@@ -303,9 +323,16 @@ function AchievementCard({ achievement, index }: { achievement: Achievement; ind
 
 /* ── Component ── */
 export function ProfileView() {
-  const { userName, userEmail, learnerProfile, hardSubjects, alwaysConfuses, bestTeachingStyle, navigate, setOnboardingComplete, achievements, studySessions } = useAppStore();
+  const { userName, userEmail, learnerProfile, hardSubjects, alwaysConfuses, bestTeachingStyle, navigate, setOnboardingComplete, achievements, studySessions, masteryMap, quizScore, quizTotal } = useAppStore();
   const { current: currentStreak, best: bestStreak } = useStudyStreak();
   const totalStudyTime = useTotalStudyTime();
+  const { items: srItems, getStudyPlan } = useSpacedRepetition();
+  const calendarPlan = getStudyPlan(14);
+  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const totalTrackedItems = srItems.length;
+  const nextReviewTime = srItems.length > 0
+    ? new Date(Math.min(...srItems.map((item) => item.nextReview)))
+    : null;
 
   const [activeCategory, setActiveCategory] = useState<'all' | Achievement['category']>('all');
 
@@ -318,7 +345,7 @@ export function ProfileView() {
         .slice(0, 2)
     : 'SL';
 
-  const heatmap = useMemo(() => generateHeatmap(), []);
+  const heatmap = useMemo(() => generateHeatmap(studySessions), [studySessions]);
   const weekLabels = ['4w ago', '3w ago', '2w ago', 'Last week', 'This week'];
 
   // Filtered achievements
@@ -345,6 +372,39 @@ export function ProfileView() {
       { label: 'Study Streak', value: currentStreak > 0 ? `${currentStreak} days` : '0 days', icon: Flame, change: bestStreak > 0 ? `Best: ${bestStreak} days` : 'Start studying!' },
     ];
   }, [studySessions, currentStreak, bestStreak, totalStudyTime]);
+
+  // Dynamic skill bars from real data
+  const computedSkillBars = useMemo(() => {
+    const masteryValues = Object.values(masteryMap);
+    const conceptCount = masteryValues.length;
+
+    // Comprehension: average mastery level (0-100, level is 1-5 so multiply by 20)
+    const comprehension = masteryValues.length > 0
+      ? Math.min(100, Math.round(masteryValues.reduce((s, c) => s + c.level, 0) / masteryValues.length * 20))
+      : 0;
+
+    // Problem Solving: quiz performance or fallback to mastery average
+    const problemSolving = quizScore !== null && quizTotal !== null && quizTotal > 0
+      ? Math.min(100, Math.round((quizScore / quizTotal) * 100))
+      : comprehension;
+
+    // Knowledge Base: (concepts learned / 50) * 100
+    const knowledgeBase = Math.min(100, Math.round((conceptCount / 50) * 100));
+
+    // Consistency: based on streak (max streak of 14+ = 100)
+    const consistency = Math.min(100, Math.round((currentStreak / 14) * 100));
+
+    // Engagement: total study sessions / 20 * 100
+    const engagement = Math.min(100, Math.round((studySessions.length / 20) * 100));
+
+    return [
+      { name: 'Comprehension', value: comprehension },
+      { name: 'Problem Solving', value: problemSolving },
+      { name: 'Knowledge Base', value: knowledgeBase },
+      { name: 'Consistency', value: consistency },
+      { name: 'Engagement', value: engagement },
+    ];
+  }, [masteryMap, quizScore, quizTotal, currentStreak, studySessions.length]);
 
   const handleReconfigure = () => {
     setOnboardingComplete(false);
@@ -741,6 +801,12 @@ export function ProfileView() {
         </div>
 
         {/* Heatmap Grid */}
+        {studySessions.length === 0 ? (
+          <div className="text-center py-6">
+            <Activity className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No activity yet. Start a study session to see your heatmap!</p>
+          </div>
+        ) : (
         <div className="overflow-x-auto -mx-2 px-2">
           <div className="min-w-[280px]">
             {/* Day labels */}
@@ -778,7 +844,7 @@ export function ProfileView() {
             {/* Legend */}
             <div className="flex items-center justify-end gap-1.5 mt-3">
               <span className="text-[10px] text-muted-foreground/60 mr-1">Less</span>
-              {[0.1, 0.3, 0.6, 1].map((op) => (
+              {[0.25, 0.5, 0.8].map((op) => (
                 <div
                   key={op}
                   className="h-3 w-3 rounded-sm transition-transform hover:scale-125 cursor-default"
@@ -789,6 +855,7 @@ export function ProfileView() {
             </div>
           </div>
         </div>
+        )}
 
         <p className="text-sm text-muted-foreground">
           <span className="font-semibold text-emerald-600 dark:text-emerald-400">{studySessions.length} session{studySessions.length !== 1 ? 's' : ''}</span>{' '}
@@ -817,7 +884,7 @@ export function ProfileView() {
           <h2 className="text-lg font-semibold gradient-text">Skill Radar</h2>
         </div>
         <div className="space-y-4">
-          {skillBars.map((skill, idx) => (
+          {computedSkillBars.map((skill, idx) => (
             <div key={skill.name} className="space-y-1.5">
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium">{skill.name}</span>
@@ -854,6 +921,105 @@ export function ProfileView() {
               </div>
             </div>
           ))}
+        </div>
+      </motion.div>
+
+      {/* ════════════════════════════════════════════
+          Upcoming Reviews (2-week calendar)
+      ════════════════════════════════════════════ */}
+      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-5 card-shadow">
+        <div className="flex items-center gap-2">
+          <motion.div
+            animate={{ rotate: [0, 5, -5, 0] }}
+            transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <Brain className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          </motion.div>
+          <h2 className="text-lg font-semibold gradient-text">Upcoming Reviews</h2>
+        </div>
+
+        {/* 2-week calendar grid */}
+        <div className="space-y-1">
+          <div className="grid grid-cols-[40px_repeat(14,1fr)] gap-1">
+            {/* Header row with date numbers */}
+            <div /> {/* Empty corner cell */}
+            {calendarPlan.slice(0, 14).map((day, i) => {
+              const date = new Date(day.date);
+              const isToday = i === 0;
+              return (
+                <div key={day.date} className="text-center">
+                  <span className={`text-[9px] font-medium ${isToday ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60'}`}>
+                    {format(date, 'd')}
+                  </span>
+                </div>
+              );
+            })}
+
+            {/* Day label rows (Mon-Sun) — each shows 14 columns across 2 weeks */}
+            {dayLabels.map((label, rowIdx) => (
+              <>
+                <div key={label} className="flex items-center text-[10px] text-muted-foreground/60 font-medium pr-1">
+                  {label}
+                </div>
+                {calendarPlan.slice(0, 14).map((day, colIdx) => {
+                  const date = new Date(day.date);
+                  const dayOfWeek = date.getDay();
+                  // Map rowIdx (0-6) to JS day (0=Sun, 1=Mon, ...)
+                  // We use Mon=0, Tue=1, ..., Sun=6
+                  const mappedDay = (dayOfWeek + 6) % 7;
+                  const isThisRow = mappedDay === rowIdx;
+                  const count = isThisRow ? day.count : -1;
+
+                  return (
+                    <motion.div
+                      key={`${rowIdx}-${colIdx}`}
+                      initial={{ opacity: 0, scale: 0.5 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: rowIdx * 0.04 + colIdx * 0.02 }}
+                      className={`h-6 rounded-sm transition-all ${
+                        count < 0
+                          ? 'bg-transparent'
+                          : count === 0
+                            ? 'bg-muted/30'
+                            : count <= 2
+                              ? 'bg-emerald-500/40'
+                              : 'bg-emerald-500/80'
+                      }`}
+                      title={count >= 0 ? `${count} review${count !== 1 ? 's' : ''}` : ''}
+                    />
+                  );
+                })}
+              </>
+            ))}
+          </div>
+
+          {/* Legend */}
+          <div className="flex items-center gap-3 mt-3">
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-3 rounded-sm bg-muted/30" />
+              <span className="text-[10px] text-muted-foreground">None</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-3 rounded-sm bg-emerald-500/40" />
+              <span className="text-[10px] text-muted-foreground">1-2</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-3 rounded-sm bg-emerald-500/80" />
+              <span className="text-[10px] text-muted-foreground">3+</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Summary stats */}
+        <div className="flex items-center justify-between text-sm border-t border-border/50 pt-3">
+          <span className="text-muted-foreground">
+            Total items tracked: <span className="font-semibold text-foreground">{totalTrackedItems}</span>
+          </span>
+          {nextReviewTime && (
+            <span className="text-muted-foreground">
+              Next review: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatDistanceToNow(nextReviewTime, { addSuffix: true })}</span>
+            </span>
+          )}
         </div>
       </motion.div>
 

@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, RotateCcw, SkipForward, CloudRain, Trees, Waves, Volume2, VolumeX, ChevronDown, ChevronUp } from 'lucide-react';
+import { Play, Pause, RotateCcw, SkipForward, CloudRain, Trees, Waves, Volume2, VolumeX, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
+import { useAppStore } from '@/stores/appStore';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -255,6 +256,10 @@ export function FocusTimerView() {
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [stats, setStats] = useState(() => getTodayStats());
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const [showGoToTutor, setShowGoToTutor] = useState(false);
+
+  // App store
+  const { addStudySession, checkAchievements, studySessions, navigate } = useAppStore();
 
   // Ambient sounds state
   const [sounds, setSounds] = useState<AmbientSound[]>([
@@ -295,7 +300,7 @@ export function FocusTimerView() {
   // handleTimerComplete must be declared before the useEffect that calls it
   const handleTimerComplete = useCallback(() => {
     if (mode === 'focus') {
-      // Record session
+      // Record session to localStorage (existing behavior)
       const sessions = loadSessions();
       sessions.push({
         date: getTodayStr(),
@@ -304,6 +309,19 @@ export function FocusTimerView() {
       });
       saveSessions(sessions);
       setStats(getTodayStats());
+
+      // Sync to app store
+      const focusDurationMinutes = Math.round(totalSeconds / 60);
+      addStudySession({
+        id: crypto.randomUUID(),
+        date: new Date().toISOString().split('T')[0],
+        duration: focusDurationMinutes,
+        topic: 'Focus Session',
+        messagesCount: 0,
+        masteryGained: 0,
+      });
+      checkAchievements();
+      setShowGoToTutor(true);
 
       // Next quote
       setQuoteIndex((prev) => (prev + 1) % FOCUS_QUOTES.length);
@@ -333,7 +351,7 @@ export function FocusTimerView() {
         duration: 6000,
       });
     }
-  }, [mode, totalSeconds, sessionCount, switchMode]);
+  }, [mode, totalSeconds, sessionCount, switchMode, addStudySession, checkAchievements]);
 
   // Keep a ref to handleTimerComplete so the timer tick can call it
   const handleTimerCompleteRef = useRef(handleTimerComplete);
@@ -408,6 +426,21 @@ export function FocusTimerView() {
   const handleSkip = () => {
     setIsRunning(false);
     if (mode === 'focus') {
+      // Record partial focus session to app store
+      const elapsed = totalSeconds - remainingSeconds;
+      if (elapsed > 0) {
+        const focusDurationMinutes = Math.round(elapsed / 60);
+        addStudySession({
+          id: crypto.randomUUID(),
+          date: new Date().toISOString().split('T')[0],
+          duration: focusDurationMinutes,
+          topic: 'Focus Session',
+          messagesCount: 0,
+          masteryGained: 0,
+        });
+        checkAchievements();
+        setShowGoToTutor(true);
+      }
       if (sessionCount >= 4) {
         switchMode('long-break');
         setSessionCount(1);
@@ -793,22 +826,40 @@ export function FocusTimerView() {
           </div>
           <div className="h-8 w-px bg-border/50" />
           <div className="flex flex-col items-center gap-1">
+            <span className="text-2xl font-bold gradient-text">{studySessions.length}</span>
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+              Total Sessions
+            </span>
+          </div>
+          <div className="h-8 w-px bg-border/50" />
+          <div className="flex flex-col items-center gap-1">
             <span className="text-2xl font-bold gradient-text">{stats.totalMinutes}</span>
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
               Focus Minutes
             </span>
           </div>
-          <div className="h-8 w-px bg-border/50" />
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-2xl font-bold gradient-text">
-              {stats.completedCount > 0 ? Math.round(stats.totalMinutes / stats.completedCount) : 0}
-            </span>
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-              Avg Min/Session
-            </span>
-          </div>
         </div>
       </motion.div>
+
+      {/* Go to Tutor button (after focus completion) */}
+      <AnimatePresence>
+        {showGoToTutor && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ duration: 0.3 }}
+          >
+            <Button
+              onClick={() => navigate('tutor')}
+              className="gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-full px-6"
+            >
+              Go to Tutor
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,0 +1,1396 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+     4→     4→import { useAppStore } from '@/stores/appStore'
+     5→     5→import { Badge } from '@/components/ui/badge'
+     6→     6→import { Button } from '@/components/ui/button'
+     7→     7→import { Textarea } from '@/components/ui/textarea'
+     8→     8→import { ScrollArea } from '@/components/ui/scroll-area'
+     9→     9→import { Separator } from '@/components/ui/separator'
+    10→    10→import {
+    11→    11→  DropdownMenu,
+    12→    12→  DropdownMenuContent,
+    13→    13→  DropdownMenuItem,
+    14→    14→  DropdownMenuTrigger,
+    15→    15→} from '@/components/ui/dropdown-menu'
+    16→    16→import {
+    17→    17→  PanelRightOpen,
+    18→    18→  PanelRightClose,
+    19→    19→  Send,
+    20→    20→  Lightbulb,
+    21→    21→  MessageSquareText,
+    22→    22→  ListChecks,
+    23→    23→  MoreHorizontal,
+    24→    24→  BookOpen,
+    25→    25→  MessageCircle,
+    26→    26→  Columns,
+    27→    27→  Play,
+    28→    28→  Pause,
+    29→    29→  RotateCcw,
+    30→    30→  SkipForward,
+    31→    31→  Timer,
+    32→    32→  Coffee,
+    33→    33→  Brain,
+    34→    34→  Mic,
+    35→    35→  Maximize2,
+    36→    36→  ChevronDown,
+    37→    37→  ChevronUp,
+    38→    38→  Search,
+    39→    39→  X,
+    40→    40→  LogOut,
+    41→    41→  Trophy,
+    42→    42→  Sparkles,
+    43→    43→  BookMarked,
+    44→    44→  Target,
+    45→    45→  Clock,
+    46→    46→  CheckCircle2,
+    47→    47→} from 'lucide-react'
+    48→    48→import { toast } from 'sonner'
+    49→    49→import { motion, AnimatePresence } from 'framer-motion'
+    50→    50→
+    51→    51→import { ChatBubble, stopAllTTS } from './ChatBubble'
+    52→    52→import { TypingIndicator } from './TypingIndicator'
+    53→    53→import { MasteryTracker } from './MasteryTracker'
+    54→    54→import { SessionControls } from './SessionControls'
+    55→    55→import { TipInput } from './TipInput'
+    56→    56→import { FeedbackBar } from './FeedbackBar'
+    57→    57→import { CourseContextPanel } from './CourseContextPanel'
+    58→    58→import { PersonaSelector } from './PersonaSelector'
+    59→    59→
+    60→    60→// ---------- Pomodoro Timer ----------
+    61→    61→const POMODORO_MODES = [
+    62→    62→  { id: 'focus' as const, label: 'Focus', duration: 25 * 60, icon: Brain, color: 'text-emerald-600 dark:text-emerald-400' },
+    63→    63→  { id: 'shortBreak' as const, label: 'Short Break', duration: 5 * 60, icon: Coffee, color: 'text-teal-600 dark:text-teal-400' },
+    64→    64→  { id: 'longBreak' as const, label: 'Long Break', duration: 15 * 60, icon: Timer, color: 'text-cyan-600 dark:text-cyan-400' },
+    65→    65→]
+    66→    66→
+    67→    67→function playBeep() {
+    68→    68→  try {
+    69→    69→    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+    70→    70→    const osc = ctx.createOscillator()
+    71→    71→    const gain = ctx.createGain()
+    72→    72→    osc.connect(gain)
+    73→    73→    gain.connect(ctx.destination)
+    74→    74→    osc.frequency.value = 660
+    75→    75→    osc.type = 'sine'
+    76→    76→    gain.gain.value = 0.3
+    77→    77→    osc.start()
+    78→    78→    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+    79→    79→    osc.stop(ctx.currentTime + 0.5)
+    80→    80→    // Second beep
+    81→    81→    setTimeout(() => {
+    82→    82→      const osc2 = ctx.createOscillator()
+    83→    83→      const gain2 = ctx.createGain()
+    84→    84→      osc2.connect(gain2)
+    85→    85→      gain2.connect(ctx.destination)
+    86→    86→      osc2.frequency.value = 880
+    87→    87→      osc2.type = 'sine'
+    88→    88→      gain2.gain.value = 0.3
+    89→    89→      osc2.start()
+    90→    90→      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+    91→    91→      osc2.stop(ctx.currentTime + 0.5)
+    92→    92→    }, 200)
+    93→    93→  } catch {
+    94→    94→    // Audio not available
+    95→    95→  }
+    96→    96→}
+    97→    97→
+    98→    98→const QUICK_TOPICS = ['Cell Biology', 'Data Structures', 'World History', 'Calculus', 'Creative Writing']
+    99→    99→
+   100→   100→const QUICK_ACTIONS = [
+   101→   101→  { label: 'Give hint', icon: Lightbulb, prompt: 'Give me a hint about what we were just discussing.' },
+   102→   102→  { label: 'Explain differently', icon: MessageSquareText, prompt: 'Can you explain that differently?' },
+   103→   103→  { label: 'Show example', icon: ListChecks, prompt: 'Can you show me an example?' },
+   104→   104→  { label: 'Quiz me', icon: ListChecks, prompt: 'Quiz me on what we just covered.' },
+   105→   105→]
+   106→   106→
+   107→   107→const SUGGESTED_PROMPTS = [
+   108→   108→  'Explain this concept',
+   109→   109→  'Give me a quiz',
+   110→   110→  'Show examples',
+   111→   111→  'Summarize key points',
+   112→   112→]
+   113→   113→
+   114→   114→const CONTEXTUAL_SUGGESTIONS = [
+   115→   115→  'Explain in simpler terms',
+   116→   116→  'Give me an example',
+   117→   117→  'Quiz me on this',
+   118→   118→  'Go deeper',
+   119→   119→]
+   120→   120→
+   121→   121→const MAX_INPUT_CHARS = 500
+   122→   122→
+   123→   123→type InputSize = 'small' | 'medium' | 'large'
+   124→   124→
+   125→   125→const INPUT_SIZES: Record<InputSize, { minH: number; maxH: number; rows: number; label: string }> = {
+   126→   126→  small: { minH: 40, maxH: 80, rows: 1, label: 'Small' },
+   127→   127→  medium: { minH: 40, maxH: 150, rows: 1, label: 'Medium' },
+   128→   128→  large: { minH: 80, maxH: 300, rows: 3, label: 'Large' },
+   129→   129→}
+   130→   130→
+   131→   131→const INPUT_SIZE_CYCLE: InputSize[] = ['small', 'medium', 'large']
+   132→   132→
+   133→   133→const TUTOR_MODES = [
+   134→   134→  { id: 'text' as const, label: 'Chat', icon: MessageCircle, desc: 'Text-only conversation' },
+   135→   135→  { id: 'slide' as const, label: 'Slides', icon: BookOpen, desc: 'Slide-focused learning' },
+   136→   136→  { id: 'hybrid' as const, label: 'Hybrid', icon: Columns, desc: 'Chat + slides together' },
+   137→   137→]
+   138→   138→
+   139→   139→function formatTimer(seconds: number): string {
+   140→   140→  const h = Math.floor(seconds / 3600)
+   141→   141→  const m = Math.floor((seconds % 3600) / 60)
+   142→   142→  const s = seconds % 60
+   143→   143→  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+   144→   144→}
+   145→   145→
+   146→   146→function getPhaseColor(phase: string): string {
+   147→   147→  switch (phase) {
+   148→   148→    case 'discovery': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+   149→   149→    case 'starter': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+   150→   150→    case 'teaching': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+   151→   151→    default: return 'bg-muted text-muted-foreground'
+   152→   152→  }
+   153→   153→}
+   154→   154→
+   155→   155→export function TutorView() {
+   156→   156→  const {
+   157→   157→    messages,
+   158→   158→    addMessage,
+   159→   159→    sessionPhase,
+   160→   160→    activeSessionId,
+   161→   161→    activeTopic,
+   162→   162→    setActiveTopic,
+   163→   163→    setActiveSession,
+   164→   164→    setSessionPhase,
+   165→   165→    learnerProfile,
+   166→   166→    masteryMap,
+   167→   167→    userName,
+   168→   168→    setLoading,
+   169→   169→    isLoading,
+   170→   170→    activePersona,
+   171→   171→    tutorMode,
+   172→   172→    setTutorMode,
+   173→   173→    activeSlides,
+   174→   174→    currentSlideIndex,
+   175→   175→    setCurrentSlideIndex,
+   176→   176→    navigate,
+   177→   177→  } = useAppStore()
+   178→   178→
+   179→   179→  const [input, setInput] = useState('')
+   180→   180→  const [inputFocused, setInputFocused] = useState(false)
+   181→   181→  const [inputSize, setInputSize] = useState<InputSize>('medium')
+   182→   182→  const [rightPanelOpen, setRightPanelOpen] = useState(true)
+   183→   183→  const [timerSeconds, setTimerSeconds] = useState(0)
+   184→   184→  const timerStarted = useRef(false)
+   185→   185→  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+   186→   186→  const scrollRef = useRef<HTMLDivElement>(null)
+   187→   187→  const textareaRef = useRef<HTMLTextAreaElement>(null)
+   188→   188→
+   189→   189→  // Pomodoro state
+   190→   190→  const [pomodoroExpanded, setPomodoroExpanded] = useState(false)
+   191→   191→  const [pomodoroRunning, setPomodoroRunning] = useState(false)
+   192→   192→  const [pomodoroModeIndex, setPomodoroModeIndex] = useState(0)
+   193→   193→  const [pomodoroTimeLeft, setPomodoroTimeLeft] = useState(POMODORO_MODES[0].duration)
+   194→   194→  const [pomodoroSessions, setPomodoroSessions] = useState(0)
+   195→   195→  const pomodoroRef = useRef<ReturnType<typeof setInterval> | null>(null)
+   196→   196→
+   197→   197→  const currentPomodoroMode = POMODORO_MODES[pomodoroModeIndex]
+   198→   198→  const pomodoroProgress = 1 - pomodoroTimeLeft / currentPomodoroMode.duration
+   199→   199→  const pomodoroCircumference = 2 * Math.PI * 16
+   200→   200→  const pomodoroStrokeOffset = pomodoroCircumference * (1 - pomodoroProgress)
+   201→   201→
+   202→   202→  const handlePomodoroToggle = useCallback(() => {
+   203→   203→    setPomodoroRunning((prev) => !prev)
+   204→   204→  }, [])
+   205→   205→
+   206→   206→  const handlePomodoroReset = useCallback(() => {
+   207→   207→    setPomodoroRunning(false)
+   208→   208→    setPomodoroTimeLeft(currentPomodoroMode.duration)
+   209→   209→  }, [currentPomodoroMode.duration])
+   210→   210→
+   211→   211→  const handlePomodoroSkip = useCallback(() => {
+   212→   212→    setPomodoroRunning(false)
+   213→   213→    const nextIndex = (pomodoroModeIndex + 1) % POMODORO_MODES.length
+   214→   214→    // Auto-transition: Focus -> Short Break, every 4th Focus -> Long Break
+   215→   215→    if (pomodoroModeIndex === 0) {
+   216→   216→      // Was in focus mode
+   217→   217→      const newSessionCount = pomodoroSessions + 1
+   218→   218→      setPomodoroSessions(newSessionCount)
+   219→   219→      if (newSessionCount % 4 === 0) {
+   220→   220→        // Every 4th: go to long break
+   221→   221→        setPomodoroModeIndex(2)
+   222→   222→        setPomodoroTimeLeft(POMODORO_MODES[2].duration)
+   223→   223→        return
+   224→   224→      }
+   225→   225→    }
+   226→   226→    setPomodoroModeIndex(nextIndex)
+   227→   227→    setPomodoroTimeLeft(POMODORO_MODES[nextIndex].duration)
+   228→   228→  }, [pomodoroModeIndex, pomodoroSessions])
+   229→   229→
+   230→   230→  // Pomodoro tick
+   231→   231→  useEffect(() => {
+   232→   232→    if (pomodoroRunning) {
+   233→   233→      pomodoroRef.current = setInterval(() => {
+   234→   234→        setPomodoroTimeLeft((prev) => {
+   235→   235→          if (prev <= 1) {
+   236→   236→            playBeep()
+   237→   237→            toast.success(`${currentPomodoroMode.label} session complete!`)
+   238→   238→            return 0
+   239→   239→          }
+   240→   240→          return prev - 1
+   241→   241→        })
+   242→   242→      }, 1000)
+   243→   243→    } else if (pomodoroRef.current) {
+   244→   244→      clearInterval(pomodoroRef.current)
+   245→   245→      pomodoroRef.current = null
+   246→   246→    }
+   247→   247→    return () => {
+   248→   248→      if (pomodoroRef.current) clearInterval(pomodoroRef.current)
+   249→   249→    }
+   250→   250→  }, [pomodoroRunning, currentPomodoroMode.label])
+   251→   251→
+   252→   252→  // Auto-stop pomodoro when time reaches 0
+   253→   253→  useEffect(() => {
+   254→   254→    if (pomodoroTimeLeft === 0 && pomodoroRunning) {
+   255→   255→      setPomodoroRunning(false)
+   256→   256→    }
+   257→   257→  }, [pomodoroTimeLeft, pomodoroRunning])
+   258→   258→
+   259→   259→  // ---------- Session Summary & Search State ----------
+   260→   260→  const [showEndSession, setShowEndSession] = useState(false)
+   261→   261→  const [searchOpen, setSearchOpen] = useState(false)
+   262→   262→  const [searchQuery, setSearchQuery] = useState('')
+   263→   263→  const [confettiParticles] = useState(() =>
+   264→   264→    Array.from({ length: 40 }, (_, i) => ({
+   265→   265→      id: i,
+   266→   266→      x: Math.random() * 100,
+   267→   267→      y: Math.random() * -60 - 10,
+   268→   268→      rotation: Math.random() * 360,
+   269→   269→      scale: Math.random() * 0.6 + 0.4,
+   270→   270→      color: ['#10b981', '#14b8a6', '#06b6d4', '#f59e0b', '#ec4899', '#8b5cf6'][Math.floor(Math.random() * 6)],
+   271→   271→      delay: Math.random() * 0.5,
+   272→   272→      drift: (Math.random() - 0.5) * 60,
+   273→   273→    }))
+   274→   274→  )
+   275→   275→
+   276→   276→  const searchInputRef = useRef<HTMLInputElement>(null)
+   277→   277→
+   278→   278→  // Focus search input when opened
+   279→   279→  useEffect(() => {
+   280→   280→    if (searchOpen && searchInputRef.current) {
+   281→   281→      searchInputRef.current.focus()
+   282→   282→    }
+   283→   283→  }, [searchOpen])
+   284→   284→
+   285→   285→  // Close search on Escape
+   286→   286→  useEffect(() => {
+   287→   287→    const handleKeyDown = (e: KeyboardEvent) => {
+   288→   288→      if (e.key === 'Escape' && searchOpen) {
+   289→   289→        setSearchOpen(false)
+   290→   290→        setSearchQuery('')
+   291→   291→      }
+   292→   292→    }
+   293→   293→    window.addEventListener('keydown', handleKeyDown)
+   294→   294→    return () => window.removeEventListener('keydown', handleKeyDown)
+   295→   295→  }, [searchOpen])
+   296→   296→
+   297→   297→  // ---------- Computed Session Stats ----------
+   298→   298→  const sessionStats = useMemo(() => {
+   299→   299→    const userMsgs = messages.filter((m) => m.role === 'user')
+   300→   300→    const assistantMsgs = messages.filter((m) => m.role === 'assistant')
+   301→   301→    const messagesExchanged = userMsgs.length + assistantMsgs.length
+   302→   302→    const conceptsExplored = Object.keys(masteryMap).length
+   303→   303→    const masteryValues = Object.values(masteryMap)
+   304→   304→    const avgMastery = masteryValues.length > 0
+   305→   305→      ? Math.round(masteryValues.reduce((sum, c) => sum + c.level, 0) / masteryValues.length)
+   306→   306→      : 0
+   307→   307→    const topicsCovered = new Set<string>()
+   308→   308→    if (activeTopic) topicsCovered.add(activeTopic)
+   309→   309→    Object.keys(masteryMap).forEach((k) => topicsCovered.add(k))
+   310→   310→    const keyTakeaways = assistantMsgs
+   311→   311→      .filter((m) => m.content.length > 20)
+   312→   312→      .slice(-3)
+   313→   313→      .map((m) => m.content.length > 100 ? m.content.slice(0, 100) + '…' : m.content)
+   314→   314→    return {
+   315→   315→      duration: timerSeconds,
+   316→   316→      messagesExchanged,
+   317→   317→      topicsCovered: Array.from(topicsCovered),
+   318→   318→      conceptsExplored,
+   319→   319→      avgMastery,
+   320→   320→      keyTakeaways,
+   321→   321→      showConfetti: timerSeconds > 600, // > 10 minutes
+   322→   322→    }
+   323→   323→  }, [messages, masteryMap, activeTopic, timerSeconds])
+   324→   324→
+   325→   325→  // ---------- Chat Search ----------
+   326→   326→  const searchMatches = useMemo(() => {
+   327→   327→    if (!searchQuery.trim()) return { filtered: messages, matchCount: 0 }
+   328→   328→    const q = searchQuery.toLowerCase()
+   329→   329→    const matched = messages.filter((m) => m.content.toLowerCase().includes(q))
+   330→   330→    return { filtered: matched, matchCount: matched.length }
+   331→   331→  }, [messages, searchQuery])
+   332→   332→
+   333→   333→  // Highlight text with emerald background
+   334→   334→  const highlightText = useCallback((text: string, query: string) => {
+   335→   335→    if (!query.trim()) return text
+   336→   336→    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+   337→   337→    const parts = text.split(new RegExp(`(${escaped})`, 'gi'))
+   338→   338→    return parts.map((part, i) =>
+   339→   339→      part.toLowerCase() === query.toLowerCase()
+   340→   340→        ? <mark key={i} className="bg-emerald-300/60 dark:bg-emerald-500/40 text-inherit rounded-sm px-0.5">{part}</mark>
+   341→   341→        : part
+   342→   342→    )
+   343→   343→  }, [])
+   344→   344→
+   345→   345→  const showSlidePanel = (tutorMode === 'slide' || tutorMode === 'hybrid') && activeSlides.length > 0
+   346→   346→
+   347→   347→  // Initialize session on mount
+   348→   348→  useEffect(() => {
+   349→   349→    if (!activeSessionId) {
+   350→   350→      const sessionId = crypto.randomUUID()
+   351→   351→      setActiveSession(sessionId)
+   352→   352→      addMessage({
+   353→   353→        id: crypto.randomUUID(),
+   354→   354→        sessionId,
+   355→   355→        role: 'assistant',
+   356→   356→        content: `Welcome${userName ? ', ' + userName : ''}! I'm your AI tutor. What would you like to learn about today? Pick a topic below or type your own!`,
+   357→   357→        createdAt: new Date().toISOString(),
+   358→   358→      })
+   359→   359→    }
+   360→   360→  }, [])
+   361→   361→
+   362→   362→  // Timer
+   363→   363→  useEffect(() => {
+   364→   364→    if (messages.length > 0 && !timerStarted.current) {
+   365→   365→      timerStarted.current = true
+   366→   366→      timerRef.current = setInterval(() => {
+   367→   367→        setTimerSeconds((s) => s + 1)
+   368→   368→      }, 1000)
+   369→   369→    }
+   370→   370→    return () => {
+   371→   371→      if (timerRef.current) clearInterval(timerRef.current)
+   372→   372→    }
+   373→   373→  }, [messages.length])
+   374→   374→
+   375→   375→  // Auto-scroll to bottom & stop TTS on new messages
+   376→   376→  const prevMessagesLen = useRef(messages.length)
+   377→   377→  useEffect(() => {
+   378→   378→    if (scrollRef.current) {
+   379→   379→      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+   380→   380→    }
+   381→   381→    if (messages.length > prevMessagesLen.current) {
+   382→   382→      stopAllTTS()
+   383→   383→    }
+   384→   384→    prevMessagesLen.current = messages.length
+   385→   385→  }, [messages, isLoading])
+   386→   386→
+   387→   387→  // Auto-resize textarea
+   388→   388→  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+   389→   389→    setInput(e.target.value)
+   390→   390→    const el = e.target
+   391→   391→    const size = INPUT_SIZES[inputSize]
+   392→   392→    el.style.height = 'auto'
+   393→   393→    el.style.height = `${Math.min(el.scrollHeight, size.maxH)}px`
+   394→   394→  }, [inputSize])
+   395→   395→
+   396→   396→  const cycleInputSize = useCallback(() => {
+   397→   397→    setInputSize((prev) => {
+   398→   398→      const idx = INPUT_SIZE_CYCLE.indexOf(prev)
+   399→   399→      const next = INPUT_SIZE_CYCLE[(idx + 1) % INPUT_SIZE_CYCLE.length]
+   400→   400→      return next
+   401→   401→    })
+   402→   402→  }, [])
+   403→   403→
+   404→   404→  const charCount = input.length
+   405→   405→  const charColorClass = charCount < 350 ? 'text-emerald-600 dark:text-emerald-400' : charCount < 450 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'
+   406→   406→
+   407→   407→  const handleSend = useCallback(async (text?: string) => {
+   408→   408→    const content = (text || input).trim()
+   409→   409→    if (!content) return
+   410→   410→
+   411→   411→    const sessionId = activeSessionId || crypto.randomUUID()
+   412→   412→    if (!activeSessionId) {
+   413→   413→      setActiveSession(sessionId)
+   414→   414→    }
+   415→   415→
+   416→   416→    const userMsg = {
+   417→   417→      id: crypto.randomUUID(),
+   418→   418→      sessionId,
+   419→   419→      role: 'user' as const,
+   420→   420→      content,
+   421→   421→      createdAt: new Date().toISOString(),
+   422→   422→    }
+   423→   423→    addMessage(userMsg)
+   424→   424→    setInput('')
+   425→   425→
+   426→   426→    if (textareaRef.current) {
+   427→   427→      textareaRef.current.style.height = 'auto'
+   428→   428→    }
+   429→   429→
+   430→   430→    setLoading(true)
+   431→   431→
+   432→   432→    try {
+   433→   433→      const history = messages.map((m) => ({ role: m.role, content: m.content }))
+   434→   434→
+   435→   435→      const res = await fetch('/api/chat', {
+   436→   436→        method: 'POST',
+   437→   437→        headers: { 'Content-Type': 'application/json' },
+   438→   438→        body: JSON.stringify({
+   439→   439→          message: content,
+   440→   440→          phase: sessionPhase,
+   441→   441→          learnerProfile,
+   442→   442→          masteryMap,
+   443→   443→          history,
+   444→   444→          persona: activePersona,
+   445→   445→        }),
+   446→   446→      })
+   447→   447→
+   448→   448→      if (!res.ok) throw new Error('Failed to get response')
+   449→   449→
+   450→   450→      const data = await res.json()
+   451→   451→      const responseText = data.response || data.message || data.content || "I'm sorry, I couldn't generate a response. Please try again."
+   452→   452→
+   453→   453→      addMessage({
+   454→   454→        id: crypto.randomUUID(),
+   455→   455→        sessionId,
+   456→   456→        role: 'assistant',
+   457→   457→        content: responseText,
+   458→   458→        createdAt: new Date().toISOString(),
+   459→   459→      })
+   460→   460→
+   461→   461→      if (sessionPhase === 'discovery' || sessionPhase === 'starter') {
+   462→   462→        setSessionPhase('teaching')
+   463→   463→      }
+   464→   464→    } catch {
+   465→   465→      addMessage({
+   466→   466→        id: crypto.randomUUID(),
+   467→   467→        sessionId,
+   468→   468→        role: 'assistant',
+   469→   469→        content: "Hmm, I ran into an issue. Let me try again — could you repeat your question?",
+   470→   470→        createdAt: new Date().toISOString(),
+   471→   471→      })
+   472→   472→      toast.error('Failed to get a response. Please try again.')
+   473→   473→    } finally {
+   474→   474→      setLoading(false)
+   475→   475→    }
+   476→   476→  }, [input, activeSessionId, messages, sessionPhase, learnerProfile, masteryMap, addMessage, setActiveSession, setLoading, setSessionPhase, activePersona])
+   477→   477→
+   478→   478→  const handleRegenerate = useCallback((messageId: string) => {
+   479→   479→    // Find the user message that preceded this assistant message
+   480→   480→    const msgIndex = messages.findIndex((m) => m.id === messageId)
+   481→   481→    if (msgIndex > 0) {
+   482→   482→      const prevMsg = messages[msgIndex - 1]
+   483→   483→      if (prevMsg.role === 'user') {
+   484→   484→        handleSend(prevMsg.content)
+   485→   485→      }
+   486→   486→    }
+   487→   487→  }, [messages, handleSend])
+   488→   488→
+   489→   489→  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+   490→   490→    if (e.key === 'Enter' && !e.shiftKey) {
+   491→   491→      e.preventDefault()
+   492→   492→      handleSend()
+   493→   493→    }
+   494→   494→  }
+   495→   495→
+   496→   496→  const handleTopicClick = (topic: string) => {
+   497→   497→    setActiveTopic(topic)
+   498→   498→    handleSend(`I'd like to learn about ${topic}`)
+   499→   499→  }
+   500→   500→
+   501→   501→  const handleQuickAction = (prompt: string) => {
+   502→   502→    handleSend(prompt)
+   503→   503→  }
+   504→   504→
+   505→   505→  const handleSaveAndClose = useCallback(() => {
+   506→   506→    navigate('dashboard')
+   507→   507→  }, [navigate])
+   508→   508→
+   509→   509→  return (
+   510→   510→    <div className="h-screen flex flex-col bg-background">
+   511→   511→      {/* Header - Frosted glass */}
+   512→   512→      <header className="glass-header flex items-center justify-between px-4 py-3 z-10">
+   513→   513→        <div className="flex items-center gap-3">
+   514→   514→          {/* AI Active indicator + name */}
+   515→   515→          <div className="flex items-center gap-2">
+   516→   516→            <motion.span
+   517→   517→              className="relative flex h-2.5 w-2.5"
+   518→   518→              animate={{
+   519→   519→                boxShadow: [
+   520→   520→                  '0 0 0 0 rgba(16, 185, 129, 0.5)',
+   521→   521→                  '0 0 0 5px rgba(16, 185, 129, 0)',
+   522→   522→                ],
+   523→   523→              }}
+   524→   524→              transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+   525→   525→            >
+   526→   526→              <span className="absolute inset-0 rounded-full bg-emerald-500" />
+   527→   527→            </motion.span>
+   528→   528→            <h1 className="text-lg font-semibold">
+   529→   529→              {activeTopic || 'AI Tutor'}
+   530→   530→            </h1>
+   531→   531→          </div>
+   532→   532→          <Badge variant="secondary" className={getPhaseColor(sessionPhase)}>
+   533→   533→            {sessionPhase}
+   534→   534→          </Badge>
+   535→   535→          {/* Mode Selector - Pill toggle with sliding indicator */}
+   536→   536→          <div className="hidden sm:flex items-center rounded-lg border border-border bg-background/50 p-0.5 relative">
+   537→   537→            <AnimatePresence>
+   538→   538→              {tutorMode && (
+   539→   539→                <motion.div
+   540→   540→                  layoutId="tutor-mode-indicator"
+   541→   541→                  className="absolute inset-y-0.5 rounded-md bg-primary shadow-sm"
+   542→   542→                  style={{
+   543→   543→                    left: TUTOR_MODES.findIndex((m) => m.id === tutorMode) === 0
+   544→   544→                      ? '2px'
+   545→   545→                      : TUTOR_MODES.findIndex((m) => m.id === tutorMode) === 1
+   546→   546→                        ? `${100 / 3}%`
+   547→   547→                        : `${(200 / 3)}%`,
+   548→   548→                    width: `${100 / 3}%`,
+   549→   549→                  }}
+   550→   550→                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+   551→   551→                />
+   552→   552→              )}
+   553→   553→            </AnimatePresence>
+   554→   554→            {TUTOR_MODES.map((mode) => {
+   555→   555→              const Icon = mode.icon
+   556→   556→              const isActive = tutorMode === mode.id
+   557→   557→              return (
+   558→   558→                <motion.button
+   559→   559→                  key={mode.id}
+   560→   560→                  onClick={() => setTutorMode(mode.id)}
+   561→   561→                  whileHover={{ scale: 1.04 }}
+   562→   562→                  whileTap={{ scale: 0.96 }}
+   563→   563→                  className={`relative z-10 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+   564→   564→                    isActive
+   565→   565→                      ? 'text-primary-foreground'
+   566→   566→                      : 'text-muted-foreground hover:text-foreground'
+   567→   567→                  }`}
+   568→   568→                  title={mode.desc}
+   569→   569→                >
+   570→   570→                  <Icon className="w-3.5 h-3.5" />
+   571→   571→                  {mode.label}
+   572→   572→                </motion.button>
+   573→   573→              )
+   574→   574→            })}
+   575→   575→          </div>
+   576→   576→        </div>
+   577→   577→        <div className="flex items-center gap-3">
+   578→   578→          {/* Collapsible Pomodoro Timer */}
+   579→   579→          <div className="relative">
+   580→   580→            <button
+   581→   581→              onClick={() => setPomodoroExpanded(!pomodoroExpanded)}
+   582→   582→              className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-border bg-card/50 hover:bg-accent/50 transition-colors"
+   583→   583→              aria-label="Toggle Pomodoro timer"
+   584→   584→            >
+   585→   585→              <svg width="20" height="20" className="-rotate-90">
+   586→   586→                <circle
+   587→   587→                  cx="10"
+   588→   588→                  cy="10"
+   589→   589→                  r="8"
+   590→   590→                  fill="none"
+   591→   591→                  stroke="currentColor"
+   592→   592→                  strokeWidth="2"
+   593→   593→                  className="text-muted/30"
+   594→   594→                />
+   595→   595→                <circle
+   596→   596→                  cx="10"
+   597→   597→                  cy="10"
+   598→   598→                  r="8"
+   599→   599→                  fill="none"
+   600→   600→                  stroke="url(#pomoGrad)"
+   601→   601→                  strokeWidth="2"
+   602→   602→                  strokeLinecap="round"
+   603→   603→                  strokeDasharray={pomodoroCircumference}
+   604→   604→                  strokeDashoffset={pomodoroStrokeOffset}
+   605→   605→                  className="transition-all duration-500"
+   606→   606→                />
+   607→   607→                <defs>
+   608→   608→                  <linearGradient id="pomoGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+   609→   609→                    <stop offset="0%" stopColor="#10b981" />
+   610→   610→                    <stop offset="100%" stopColor="#14b8a6" />
+   611→   611→                  </linearGradient>
+   612→   612→                </defs>
+   613→   613→              </svg>
+   614→   614→              <span className={`font-mono text-xs font-medium ${currentPomodoroMode.color}`}>
+   615→   615→                {Math.floor(pomodoroTimeLeft / 60)}:{String(pomodoroTimeLeft % 60).padStart(2, '0')}
+   616→   616→              </span>
+   617→   617→            </button>
+   618→   618→
+   619→   619→            {/* Expanded Pomodoro Panel */}
+   620→   620→            <AnimatePresence>
+   621→   621→              {pomodoroExpanded && (
+   622→   622→                <motion.div
+   623→   623→                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
+   624→   624→                  animate={{ opacity: 1, y: 0, scale: 1 }}
+   625→   625→                  exit={{ opacity: 0, y: -8, scale: 0.95 }}
+   626→   626→                  transition={{ duration: 0.2, ease: 'easeOut' }}
+   627→   627→                  className="absolute top-full right-0 mt-2 z-50 w-64 rounded-xl border bg-card p-4 shadow-lg space-y-3"
+   628→   628→                >
+   629→   629→                  {/* Mode tabs */}
+   630→   630→                  <div className="flex items-center rounded-lg border border-border bg-background/50 p-0.5">
+   631→   631→                    {POMODORO_MODES.map((mode, i) => {
+   632→   632→                      const Icon = mode.icon
+   633→   633→                      return (
+   634→   634→                        <button
+   635→   635→                          key={mode.id}
+   636→   636→                          onClick={() => {
+   637→   637→                            setPomodoroModeIndex(i)
+   638→   638→                            setPomodoroTimeLeft(mode.duration)
+   639→   639→                            setPomodoroRunning(false)
+   640→   640→                          }}
+   641→   641→                          className={`flex-1 flex items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all ${
+   642→   642→                            pomodoroModeIndex === i
+   643→   643→                              ? 'bg-primary text-primary-foreground shadow-sm'
+   644→   644→                              : 'text-muted-foreground hover:text-foreground'
+   645→   645→                          }`}
+   646→   646→                        >
+   647→   647→                          <Icon className="w-3 h-3" />
+   648→   648→                          <span className="hidden sm:inline">{mode.label}</span>
+   649→   649→                        </button>
+   650→   650→                      )
+   651→   651→                    })}
+   652→   652→                  </div>
+   653→   653→
+   654→   654→                  {/* Circular timer */}
+   655→   655→                  <div className="flex justify-center">
+   656→   656→                    <div className="relative">
+   657→   657→                      <svg width="96" height="96" className="-rotate-90">
+   658→   658→                        <circle
+   659→   659→                          cx="48"
+   660→   660→                          cy="48"
+   661→   661→                          r="42"
+   662→   662→                          fill="none"
+   663→   663→                          stroke="currentColor"
+   664→   664→                          strokeWidth="4"
+   665→   665→                          className="text-muted/20"
+   666→   666→                        />
+   667→   667→                        <motion.circle
+   668→   668→                          cx="48"
+   669→   669→                          cy="48"
+   670→   670→                          r="42"
+   671→   671→                          fill="none"
+   672→   672→                          stroke="url(#pomoGradLarge)"
+   673→   673→                          strokeWidth="4"
+   674→   674→                          strokeLinecap="round"
+   675→   675→                          strokeDasharray={2 * Math.PI * 42}
+   676→   676→                          strokeDashoffset={2 * Math.PI * 42 * (1 - pomodoroProgress)}
+   677→   677→                          className="transition-all duration-1000"
+   678→   678→                        />
+   679→   679→                        <defs>
+   680→   680→                          <linearGradient id="pomoGradLarge" x1="0%" y1="0%" x2="100%" y2="0%">
+   681→   681→                            <stop offset="0%" stopColor="#10b981" />
+   682→   682→                            <stop offset="100%" stopColor="#14b8a6" />
+   683→   683→                          </linearGradient>
+   684→   684→                        </defs>
+   685→   685→                      </svg>
+   686→   686→                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+   687→   687→                        <span className={`text-2xl font-bold font-mono ${currentPomodoroMode.color}`}>
+   688→   688→                          {Math.floor(pomodoroTimeLeft / 60)}:{String(pomodoroTimeLeft % 60).padStart(2, '0')}
+   689→   689→                        </span>
+   690→   690→                        <span className="text-[10px] text-muted-foreground mt-0.5">{currentPomodoroMode.label}</span>
+   691→   691→                      </div>
+   692→   692→                    </div>
+   693→   693→                  </div>
+   694→   694→
+   695→   695→                  {/* Session count */}
+   696→   696→                  <div className="text-center">
+   697→   697→                    <span className="text-xs text-muted-foreground">
+   698→   698→                      Session <span className={`font-bold ${currentPomodoroMode.color}`}>{(pomodoroSessions % 4) + 1}</span> / 4
+   699→   699→                    </span>
+   700→   700→                  </div>
+   701→   701→
+   702→   702→                  {/* Controls */}
+   703→   703→                  <div className="flex items-center justify-center gap-2">
+   704→   704→                    <Button
+   705→   705→                      variant="outline"
+   706→   706→                      size="icon"
+   707→   707→                      className="h-8 w-8"
+   708→   708→                      onClick={handlePomodoroReset}
+   709→   709→                      aria-label="Reset timer"
+   710→   710→                    >
+   711→   711→                      <RotateCcw className="w-3.5 h-3.5" />
+   712→   712→                    </Button>
+   713→   713→                    <Button
+   714→   714→                      size="icon"
+   715→   715→                      className="h-9 w-9"
+   716→   716→                      onClick={handlePomodoroToggle}
+   717→   717→                      aria-label={pomodoroRunning ? 'Pause' : 'Start'}
+   718→   718→                    >
+   719→   719→                      {pomodoroRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+   720→   720→                    </Button>
+   721→   721→                    <Button
+   722→   722→                      variant="outline"
+   723→   723→                      size="icon"
+   724→   724→                      className="h-8 w-8"
+   725→   725→                      onClick={handlePomodoroSkip}
+   726→   726→                      aria-label="Skip to next"
+   727→   727→                    >
+   728→   728→                      <SkipForward className="w-3.5 h-3.5" />
+   729→   729→                    </Button>
+   730→   730→                  </div>
+   731→   731→                </motion.div>
+   732→   732→              )}
+   733→   733→            </AnimatePresence>
+   734→   734→          </div>
+   735→   735→
+   736→   736→          {/* Session timer with pulsing emerald ring when running */}
+   737→   737→          <motion.div
+   738→   738→            className="relative"
+   739→   739→            animate={timerSeconds > 0 ? {
+   740→   740→              boxShadow: [
+   741→   741→                '0 0 0 0 rgba(16, 185, 129, 0.2)',
+   742→   742→                '0 0 0 4px rgba(16, 185, 129, 0)',
+   743→   743→              ],
+   744→   744→            } : {}}
+   745→   745→            transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+   746→   746→          >
+   747→   747→            <Badge variant="outline" className="font-mono text-xs rounded-full">
+   748→   748→              <span className={timerSeconds > 0 ? 'text-emerald-600 dark:text-emerald-400' : ''}>
+   749→   749→                {formatTimer(timerSeconds)}
+   750→   750→              </span>
+   751→   751→            </Badge>
+   752→   752→          </motion.div>
+   753→   753→          {/* Word Count Stats Pill */}
+   754→   754→          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 glass text-xs text-muted-foreground">
+   755→   755→            <MessageCircle className="w-3 h-3 text-emerald-500" />
+   756→   756→            <span className="font-mono font-medium tabular-nums">{messages.length}</span>
+   757→   757→            <span className="text-muted-foreground/60">·</span>
+   758→   758→            <Clock className="w-3 h-3 text-emerald-500" />
+   759→   759→            <span className="font-mono font-medium tabular-nums">{formatTimer(timerSeconds)}</span>
+   760→   760→          </div>
+   761→   761→          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
+   762→   762→            <Button
+   763→   763→              variant="ghost"
+   764→   764→              size="icon"
+   765→   765→              onClick={() => setRightPanelOpen(!rightPanelOpen)}
+   766→   766→              className="gradient-border rounded-lg"
+   767→   767→              aria-label={rightPanelOpen ? 'Close side panel' : 'Open side panel'}
+   768→   768→            >
+   769→   769→              {rightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+   770→   770→            </Button>
+   771→   771→          </motion.div>
+   772→   772→        </div>
+   773→   773→      </header>
+   774→   774→
+   775→   775→      {/* Main Content */}
+   776→   776→      <div className="flex-1 flex overflow-hidden">
+   777→   777→        {/* Slide Panel - visible in slide or hybrid mode when slides exist */}
+   778→   778→        {showSlidePanel && (
+   779→   779→          <motion.div
+   780→   780→            initial={{ width: 0, opacity: 0 }}
+   781→   781→            animate={{ width: tutorMode === 'slide' ? '50%' : '40%', opacity: 1 }}
+   782→   782→            transition={{ duration: 0.3, ease: 'easeInOut' }}
+   783→   783→            className="border-r bg-card/30 overflow-hidden flex flex-col"
+   784→   784→          >
+   785→   785→            <div className="p-3 border-b">
+   786→   786→              <div className="flex items-center justify-between">
+   787→   787→                <div className="flex items-center gap-2">
+   788→   788→                  <BookOpen className="w-4 h-4 text-primary" />
+   789→   789→                  <span className="text-sm font-semibold">Course Slides</span>
+   790→   790→                </div>
+   791→   791→                <Badge variant="secondary" className="text-[10px]">
+   792→   792→                  {currentSlideIndex + 1} / {activeSlides.length}
+   793→   793→                </Badge>
+   794→   794→              </div>
+   795→   795→            </div>
+   796→   796→            <ScrollArea className="flex-1">
+   797→   797→              <div className="p-4">
+   798→   798→                {/* Slide navigation dots */}
+   799→   799→                <div className="flex gap-1 mb-3 flex-wrap">
+   800→   800→                  {activeSlides.map((_, idx) => (
+   801→   801→                    <button
+   802→   802→                      key={idx}
+   803→   803→                      onClick={() => setCurrentSlideIndex(idx)}
+   804→   804→                      className={`h-2 rounded-full transition-all ${
+   805→   805→                        idx === currentSlideIndex
+   806→   806→                          ? 'bg-primary w-6'
+   807→   807→                          : 'bg-muted w-2 hover:bg-primary/50'
+   808→   808→                      }`}
+   809→   809→                    />
+   810→   810→                  ))}
+   811→   811→                </div>
+   812→   812→                {activeSlides[currentSlideIndex] && (
+   813→   813→                  <div className="space-y-3">
+   814→   814→                    <h3 className="text-sm font-semibold text-foreground">
+   815→   815→                      {activeSlides[currentSlideIndex].title}
+   816→   816→                    </h3>
+   817→   817→                    <div className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
+   818→   818→                      {activeSlides[currentSlideIndex].content}
+   819→   819→                    </div>
+   820→   820→                    <div className="flex gap-2 pt-2">
+   821→   821→                      <Button
+   822→   822→                        variant="outline"
+   823→   823→                        size="sm"
+   824→   824→                        className="h-7 text-xs"
+   825→   825→                        disabled={currentSlideIndex === 0}
+   826→   826→                        onClick={() => setCurrentSlideIndex(currentSlideIndex - 1)}
+   827→   827→                      >
+   828→   828→                        Previous
+   829→   829→                      </Button>
+   830→   830→                      <Button
+   831→   831→                        variant="outline"
+   832→   832→                        size="sm"
+   833→   833→                        className="h-7 text-xs"
+   834→   834→                        disabled={currentSlideIndex === activeSlides.length - 1}
+   835→   835→                        onClick={() => setCurrentSlideIndex(currentSlideIndex + 1)}
+   836→   836→                      >
+   837→   837→                        Next
+   838→   838→                      </Button>
+   839→   839→                    </div>
+   840→   840→                  </div>
+   841→   841→                )}
+   842→   842→              </div>
+   843→   843→            </ScrollArea>
+   844→   844→          </motion.div>
+   845→   845→        )}
+   846→   846→
+   847→   847→        {/* Chat Panel */}
+   848→   848→        <div className="flex-1 flex flex-col min-w-0">
+   849→   849→          {/* Course Context Panel - fallback when no dedicated slide panel */}
+   850→   850→          {!showSlidePanel && <CourseContextPanel />}
+   851→   851→
+   852→   852→          {/* Chat sub-header with search button */}
+   853→   853→          <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
+   854→   854→            <span className="text-xs text-muted-foreground">
+   855→   855→              {activeTopic ? `Studying: ${activeTopic}` : 'Ready to learn'}
+   856→   856→            </span>
+   857→   857→            <motion.button
+   858→   858→              whileHover={{ scale: 1.08 }}
+   859→   859→              whileTap={{ scale: 0.92 }}
+   860→   860→              onClick={() => { setSearchOpen(!searchOpen); if (searchOpen) setSearchQuery('') }}
+   861→   861→              className={`p-1.5 rounded-lg transition-colors ${searchOpen ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' : 'hover:bg-accent text-muted-foreground hover:text-foreground'}`}
+   862→   862→              aria-label="Search within chat"
+   863→   863→            >
+   864→   864→              <Search className="w-4 h-4" />
+   865→   865→            </motion.button>
+   866→   866→          </div>
+   867→   867→
+   868→   868→          {/* Search Bar - slides down with framer-motion */}
+   869→   869→          <AnimatePresence>
+   870→   870→            {searchOpen && (
+   871→   871→              <motion.div
+   872→   872→                initial={{ height: 0, opacity: 0 }}
+   873→   873→                animate={{ height: 'auto', opacity: 1 }}
+   874→   874→                exit={{ height: 0, opacity: 0 }}
+   875→   875→                transition={{ duration: 0.2, ease: 'easeOut' }}
+   876→   876→                className="overflow-hidden border-b border-border/60"
+   877→   877→              >
+   878→   878→                <div className="flex items-center gap-2 px-4 py-2 bg-card/30">
+   879→   879→                  <Search className="w-4 h-4 text-muted-foreground shrink-0" />
+   880→   880→                  <input
+   881→   881→                    ref={searchInputRef}
+   882→   882→                    type="text"
+   883→   883→                    value={searchQuery}
+   884→   884→                    onChange={(e) => setSearchQuery(e.target.value)}
+   885→   885→                    placeholder="Search within chat..."
+   886→   886→                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+   887→   887→                  />
+   888→   888→                  {searchQuery && (
+   889→   889→                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+   890→   890→                      {searchMatches.matchCount} match{searchMatches.matchCount !== 1 ? 'es' : ''}
+   891→   891→                    </span>
+   892→   892→                  )}
+   893→   893→                  <button
+   894→   894→                    onClick={() => { setSearchOpen(false); setSearchQuery('') }}
+   895→   895→                    className="shrink-0 p-0.5 rounded-md hover:bg-accent transition-colors"
+   896→   896→                    aria-label="Close search"
+   897→   897→                  >
+   898→   898→                    <X className="w-3.5 h-3.5 text-muted-foreground" />
+   899→   899→                  </button>
+   900→   900→                </div>
+   901→   901→              </motion.div>
+   902→   902→            )}
+   903→   903→          </AnimatePresence>
+   904→   904→
+   905→   905→          <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+   906→   906→            {/* Quick topic chips when no topic is set */}
+   907→   907→            {!activeTopic && messages.length <= 1 && (
+   908→   908→              <div className="flex flex-wrap gap-2 mb-4 justify-center">
+   909→   909→                {QUICK_TOPICS.map((topic) => (
+   910→   910→                  <Button
+   911→   911→                    key={topic}
+   912→   912→                    variant="outline"
+   913→   913→                    size="sm"
+   914→   914→                    className="rounded-full text-xs"
+   915→   915→                    onClick={() => handleTopicClick(topic)}
+   916→   916→                  >
+   917→   917→                    {topic}
+   918→   918→                  </Button>
+   919→   919→                ))}
+   920→   920→              </div>
+   921→   921→            )}
+   922→   922→
+   923→   923→            {searchOpen && searchQuery.trim()
+   924→   924→              ? searchMatches.matchCount > 0
+   925→   925→                ? searchMatches.filtered.map((msg) => (
+   926→   926→                    <motion.div
+   927→   927→                      key={msg.id}
+   928→   928→                      initial={{ opacity: 0, y: 4 }}
+   929→   929→                      animate={{ opacity: 1, y: 0 }}
+   930→   930→                      transition={{ duration: 0.15 }}
+   931→   931→                      className={`rounded-xl p-3 mb-2 border ${
+   932→   932→                        msg.role === 'user'
+   933→   933→                          ? 'ml-8 bg-primary/5 border-primary/20'
+   934→   934→                          : 'mr-8 bg-card/60 border-border/40'
+   935→   935→                      }`}
+   936→   936→                    >
+   937→   937→                      <div className="flex items-center gap-1.5 mb-1.5">
+   938→   938→                        <span className={`text-[10px] font-semibold uppercase tracking-wide ${msg.role === 'user' ? 'text-primary' : 'text-emerald-600 dark:text-emerald-400'}`}>
+   939→   939→                          {msg.role === 'user' ? 'You' : 'AI Tutor'}
+   940→   940→                        </span>
+   941→   941→                      </div>
+   942→   942→                      <div className="text-sm leading-relaxed text-foreground/90">
+   943→   943→                        {highlightText(msg.content, searchQuery)}
+   944→   944→                      </div>
+   945→   945→                    </motion.div>
+   946→   946→                  ))
+   947→   947→                : (
+   948→   948→                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+   949→   949→                      <Search className="w-8 h-8 mb-2 opacity-40" />
+   950→   950→                      <p className="text-sm">No messages match "{searchQuery}"</p>
+   951→   951→                    </div>
+   952→   952→                  )
+   953→   953→              : messages.map((msg) => (
+   954→   954→                  <ChatBubble
+   955→   955→                    key={msg.id}
+   956→   956→                    message={msg}
+   957→   957→                    isStreaming={false}
+   958→   958→                    onRegenerate={msg.role === 'assistant' ? handleRegenerate : undefined}
+   959→   959→                  />
+   960→   960→                ))
+   961→   961→            }
+   962→   962→
+   963→   963→            {isLoading && <TypingIndicator />}
+   964→   964→          </ScrollArea>
+   965→   965→
+   966→   966→          {/* Input Area */}
+   967→   967→          <div className="border-t bg-card/50">
+   968→   968→            {/* Suggested Prompts Bar */}
+   969→   969→            <AnimatePresence>
+   970→   970→              {!inputFocused && input.trim() === '' && !isLoading && (
+   971→   971→                <motion.div
+   972→   972→                  initial={{ opacity: 0, height: 0 }}
+   973→   973→                  animate={{ opacity: 1, height: 'auto' }}
+   974→   974→                  exit={{ opacity: 0, height: 0 }}
+   975→   975→                  transition={{ duration: 0.2, ease: 'easeOut' }}
+   976→   976→                  className="overflow-hidden"
+   977→   977→                >
+   978→   978→                  <div className="px-3 pt-2.5 pb-1 max-w-3xl mx-auto">
+   979→   979→                    <div className="flex flex-wrap gap-1.5">
+   980→   980→                      {SUGGESTED_PROMPTS.map((prompt) => (
+   981→   981→                        <motion.button
+   982→   982→                          key={prompt}
+   983→   983→                          whileHover={{ scale: 1.03, y: -1 }}
+   984→   984→                          whileTap={{ scale: 0.97 }}
+   985→   985→                          onClick={() => handleSend(prompt)}
+   986→   986→                          className="px-3 py-1.5 text-xs font-medium rounded-full border border-border/60 bg-background/60 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors"
+   987→   987→                        >
+   988→   988→                          {prompt}
+   989→   989→                        </motion.button>
+   990→   990→                      ))}
+   991→   991→                    </div>
+   992→   992→                  </div>
+   993→   993→                </motion.div>
+   994→   994→              )}
+   995→   995→            </AnimatePresence>
+   996→   996→
+   997→   997→            <div className="px-3 pb-3 pt-1">
+   998→   998→              <div className="max-w-3xl mx-auto">
+   999→   999→                {/* Gradient border glow wrapper */}
+  1000→  1000→                <div className="relative gradient-border rounded-xl">
+  1001→  1001→                  {inputFocused && (
+  1002→  1002→                    <motion.div
+  1003→  1003→                      layoutId="input-glow"
+  1004→  1004→                      className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-emerald-500/30 via-teal-500/30 to-emerald-500/30 blur-sm -z-10"
+  1005→  1005→                      initial={{ opacity: 0 }}
+  1006→  1006→                      animate={{ opacity: 1 }}
+  1007→  1007→                      exit={{ opacity: 0 }}
+  1008→  1008→                      transition={{ duration: 0.3 }}
+  1009→  1009→                    />
+  1010→  1010→                  )}
+  1011→  1011→                  <div className="flex items-end gap-1.5 glass rounded-xl border border-border/60 p-1.5 transition-shadow duration-300">
+  1012→  1012→                    <Textarea
+  1013→  1013→                      ref={textareaRef}
+  1014→  1014→                      placeholder="Ask me anything..."
+  1015→  1015→                      value={input}
+  1016→  1016→                      onChange={handleInputChange}
+  1017→  1017→                      onKeyDown={handleKeyDown}
+  1018→  1018→                      onFocus={() => setInputFocused(true)}
+  1019→  1019→                      onBlur={() => setInputFocused(false)}
+  1020→  1020→                      className="resize-none flex-1 border-0 shadow-none focus-visible:ring-0 p-2 text-sm bg-transparent placeholder:text-muted-foreground"
+  1021→  1021→                      style={{ minHeight: INPUT_SIZES[inputSize].minH, maxHeight: INPUT_SIZES[inputSize].maxH }}
+  1022→  1022→                      rows={INPUT_SIZES[inputSize].rows}
+  1023→  1023→                    />
+  1024→  1024→
+  1025→  1025→                    {/* Character count */}
+  1026→  1026→                    <div className="flex items-center gap-1 pb-1.5 pr-1">
+  1027→  1027→                      {charCount > 0 && (
+  1028→  1028→                        <motion.span
+  1029→  1029→                          initial={{ opacity: 0, x: 4 }}
+  1030→  1030→                          animate={{ opacity: 1, x: 0 }}
+  1031→  1031→                          exit={{ opacity: 0, x: 4 }}
+  1032→  1032→                          className={`text-[10px] font-mono tabular-nums ${charColorClass}`}
+  1033→  1033→                        >
+  1034→  1034→                          {charCount}/{MAX_INPUT_CHARS}
+  1035→  1035→                        </motion.span>
+  1036→  1036→                      )}
+  1037→  1037→
+  1038→  1038→                      {/* Microphone placeholder */}
+  1039→  1039→                      <motion.div
+  1040→  1040→                        whileHover={{ scale: 1.1 }}
+  1041→  1041→                        whileTap={{ scale: 0.95 }}
+  1042→  1042→                        className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground/50 hover:text-muted-foreground cursor-not-allowed"
+  1043→  1043→                        title="Voice input coming soon"
+  1044→  1044→                      >
+  1045→  1045→                        <motion.div
+  1046→  1046→                          animate={{ scale: [1, 1.05, 1] }}
+  1047→  1047→                          transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+  1048→  1048→                        >
+  1049→  1049→                          <Mic className="w-3.5 h-3.5" />
+  1050→  1050→                        </motion.div>
+  1051→  1051→                      </motion.div>
+  1052→  1052→
+  1053→  1053→                      {/* Expand/Collapse button */}
+  1054→  1054→                      <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
+  1055→  1055→                        <Button
+  1056→  1056→                          variant="ghost"
+  1057→  1057→                          size="icon"
+  1058→  1058→                          className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+  1059→  1059→                          onClick={cycleInputSize}
+  1060→  1060→                          aria-label={`Input size: ${INPUT_SIZES[inputSize].label}. Click to change.`}
+  1061→  1061→                        >
+  1062→  1062→                          {inputSize === 'small' ? (
+  1063→  1063→                            <ChevronUp className="w-3.5 h-3.5" />
+  1064→  1064→                          ) : inputSize === 'large' ? (
+  1065→  1065→                            <ChevronDown className="w-3.5 h-3.5" />
+  1066→  1066→                          ) : (
+  1067→  1067→                            <Maximize2 className="w-3.5 h-3.5" />
+  1068→  1068→                          )}
+  1069→  1069→                        </Button>
+  1070→  1070→                      </motion.div>
+  1071→  1071→
+  1072→  1072→                      {/* Quick actions menu */}
+  1073→  1073→                      <DropdownMenu>
+  1074→  1074→                        <DropdownMenuTrigger asChild>
+  1075→  1075→                          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" aria-label="Quick actions">
+  1076→  1076→                            <MoreHorizontal className="w-3.5 h-3.5" />
+  1077→  1077→                          </Button>
+  1078→  1078→                        </DropdownMenuTrigger>
+  1079→  1079→                        <DropdownMenuContent align="end" className="w-48">
+  1080→  1080→                          {QUICK_ACTIONS.map((action) => (
+  1081→  1081→                            <DropdownMenuItem
+  1082→  1082→                              key={action.label}
+  1083→  1083→                              onClick={() => handleQuickAction(action.prompt)}
+  1084→  1084→                              className="gap-2"
+  1085→  1085→                            >
+  1086→  1086→                              <action.icon className="w-4 h-4" />
+  1087→  1087→                              {action.label}
+  1088→  1088→                            </DropdownMenuItem>
+  1089→  1089→                          ))}
+  1090→  1090→                        </DropdownMenuContent>
+  1091→  1091→                      </DropdownMenu>
+  1092→  1092→
+  1093→  1093→                      {/* Send button */}
+  1094→  1094→                      <Button
+  1095→  1095→                        size="icon"
+  1096→  1096→                        className={`shrink-0 h-7 w-7 rounded-lg ${input.trim() ? 'pulse-glow' : ''}`}
+  1097→  1097→                        onClick={() => handleSend()}
+  1098→  1098→                        disabled={!input.trim() || isLoading}
+  1099→  1099→                        aria-label="Send message"
+  1100→  1100→                      >
+  1101→  1101→                        <Send className="w-3.5 h-3.5" />
+  1102→  1102→                      </Button>
+  1103→  1103→                    </div>
+  1104→  1104→                  </div>
+  1105→  1105→                </div>
+  1106→  1106→
+  1107→  1107→                {/* Contextual suggestion chips below input */}
+  1108→  1108→                <AnimatePresence>
+  1109→  1109→                  {!isLoading && (
+  1110→  1110→                    <motion.div
+  1111→  1111→                      initial={{ opacity: 0, y: 6 }}
+  1112→  1112→                      animate={{ opacity: 1, y: 0 }}
+  1113→  1113→                      exit={{ opacity: 0, y: 6 }}
+  1114→  1114→                      transition={{ duration: 0.25, ease: 'easeOut' }}
+  1115→  1115→                      className="flex flex-wrap gap-1.5 mt-2 justify-center"
+  1116→  1116→                    >
+  1117→  1117→                      {CONTEXTUAL_SUGGESTIONS.map((suggestion, index) => (
+  1118→  1118→                        <motion.button
+  1119→  1119→                          key={suggestion}
+  1120→  1120→                          initial={{ opacity: 0, y: 8, scale: 0.95 }}
+  1121→  1121→                          animate={{ opacity: 1, y: 0, scale: 1 }}
+  1122→  1122→                          transition={{
+  1123→  1123→                            type: 'spring',
+  1124→  1124→                            stiffness: 400,
+  1125→  1125→                            damping: 28,
+  1126→  1126→                            delay: index * 0.06,
+  1127→  1127→                          }}
+  1128→  1128→                          whileHover={{ scale: 1.05, y: -1 }}
+  1129→  1129→                          whileTap={{ scale: 0.95 }}
+  1130→  1130→                          onClick={() => handleSend(suggestion)}
+  1131→  1131→                          className="px-3 py-1 text-[11px] font-medium rounded-full border border-border/60 bg-background/40 text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-primary/5 transition-colors"
+  1132→  1132→                        >
+  1133→  1133→                          {suggestion}
+  1134→  1134→                        </motion.button>
+  1135→  1135→                      ))}
+  1136→  1136→                    </motion.div>
+  1137→  1137→                  )}
+  1138→  1138→                </AnimatePresence>
+  1139→  1139→              </div>
+  1140→  1140→            </div>
+  1141→  1141→          </div>
+  1142→  1142→        </div>
+  1143→  1143→
+  1144→  1144→        {/* Right Panel */}
+  1145→  1145→        {rightPanelOpen && (
+  1146→  1146→          <div className="w-72 border-l bg-card/30 overflow-y-auto hidden md:block">
+  1147→  1147→            <div className="p-4 space-y-5">
+  1148→  1148→              {/* Session Phase */}
+  1149→  1149→              <div className="space-y-2">
+  1150→  1150→                <h4 className="text-sm font-semibold text-foreground">Session Phase</h4>
+  1151→  1151→                <Badge className={getPhaseColor(sessionPhase)}>
+  1152→  1152→                  {sessionPhase.charAt(0).toUpperCase() + sessionPhase.slice(1)}
+  1153→  1153→                </Badge>
+  1154→  1154→              </div>
+  1155→  1155→
+  1156→  1156→              <Separator />
+  1157→  1157→
+  1158→  1158→              {/* Learner Profile */}
+  1159→  1159→              {learnerProfile && (
+  1160→  1160→                <div className="space-y-2">
+  1161→  1161→                  <h4 className="text-sm font-semibold text-foreground">Learner Profile</h4>
+  1162→  1162→                  <div className="text-xs text-muted-foreground space-y-1">
+  1163→  1163→                    <p><span className="font-medium text-foreground">Style:</span> {learnerProfile.learningStyle}</p>
+  1164→  1164→                    <p><span className="font-medium text-foreground">Pace:</span> {learnerProfile.pace}</p>
+  1165→  1165→                  </div>
+  1166→  1166→                </div>
+  1167→  1167→              )}
+  1168→  1168→
+  1169→  1169→              <Separator />
+  1170→  1170→
+  1171→  1171→              {/* Mastery Tracker */}
+  1172→  1172→              <MasteryTracker />
+  1173→  1173→
+  1174→  1174→              <Separator />
+  1175→  1175→
+  1176→  1176→              {/* Session Controls */}
+  1177→  1177→              <SessionControls />
+  1178→  1178→
+  1179→  1179→              {/* End Session Button */}
+  1180→  1180→              <Button
+  1181→  1181→                variant="outline"
+  1182→  1182→                className="w-full gap-2 text-sm border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+  1183→  1183→                onClick={() => setShowEndSession(true)}
+  1184→  1184→              >
+  1185→  1185→                <LogOut className="w-4 h-4" />
+  1186→  1186→                End Session
+  1187→  1187→              </Button>
+  1188→  1188→
+  1189→  1189→              <Separator />
+  1190→  1190→
+  1191→  1191→              {/* Tip Input */}
+  1192→  1192→              <TipInput />
+  1193→  1193→
+  1194→  1194→              <Separator />
+  1195→  1195→
+  1196→  1196→              {/* Persona Selector */}
+  1197→  1197→              <PersonaSelector />
+  1198→  1198→
+  1199→  1199→              <Separator />
+  1200→  1200→
+  1201→  1201→              {/* Feedback Bar */}
+  1202→  1202→              <FeedbackBar />
+  1203→  1203→            </div>
+  1204→  1204→          </div>
+  1205→  1205→        )}
+  1206→  1206→      </div>
+  1207→  1207→
+  1208→  1208→      {/* End Session Summary Panel */}
+  1209→  1209→      <AnimatePresence>
+  1210→  1210→        {showEndSession && (
+  1211→  1211→          <motion.div
+  1212→  1212→            className="fixed inset-0 z-50 flex items-end justify-center"
+  1213→  1213→            initial={{ opacity: 0 }}
+  1214→  1214→            animate={{ opacity: 1 }}
+  1215→  1215→            exit={{ opacity: 0 }}
+  1216→  1216→            transition={{ duration: 0.2 }}
+  1217→  1217→          >
+  1218→  1218→            {/* Backdrop */}
+  1219→  1219→            <motion.div
+  1220→  1220→              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+  1221→  1221→              onClick={() => setShowEndSession(false)}
+  1222→  1222→            />
+  1223→  1223→
+  1224→  1224→            {/* Confetti Particles */}
+  1225→  1225→            {sessionStats.showConfetti && (
+  1226→  1226→              <div className="absolute inset-0 pointer-events-none overflow-hidden">
+  1227→  1227→                {confettiParticles.map((p) => (
+  1228→  1228→                  <motion.div
+  1229→  1229→                    key={p.id}
+  1230→  1230→                    className="absolute w-2 h-2 rounded-sm"
+  1231→  1231→                    style={{ backgroundColor: p.color, left: `${p.x}%`, top: `${p.y}%` }}
+  1232→  1232→                    initial={{ y: 0, opacity: 1, rotate: 0, x: 0 }}
+  1233→  1233→                    animate={{
+  1234→  1234→                      y: [0, 200, 400, 600],
+  1235→  1235→                      x: [0, p.drift * 0.3, p.drift * 0.7, p.drift],
+  1236→  1236→                      opacity: [1, 1, 0.8, 0],
+  1237→  1237→                      rotate: [p.rotation, p.rotation + 360],
+  1238→  1238→                    }}
+  1239→  1239→                    transition={{
+  1240→  1240→                      duration: 3,
+  1241→  1241→                      delay: p.delay,
+  1242→  1242→                      ease: 'easeIn',
+  1243→  1243→                    }}
+  1244→  1244→                  />
+  1245→  1245→                ))}
+  1246→  1246→              </div>
+  1247→  1247→            )}
+  1248→  1248→
+  1249→  1249→            {/* Panel */}
+  1250→  1250→            <motion.div
+  1251→  1251→              className="relative z-10 w-full max-w-lg mx-4 mb-4 rounded-2xl glass card-shadow border border-border/50 overflow-hidden"
+  1252→  1252→              initial={{ y: '100%', opacity: 0, scale: 0.95 }}
+  1253→  1253→              animate={{ y: 0, opacity: 1, scale: 1 }}
+  1254→  1254→              exit={{ y: '100%', opacity: 0, scale: 0.95 }}
+  1255→  1255→              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+  1256→  1256→            >
+  1257→  1257→              {/* Panel Header */}
+  1258→  1258→              <div className="flex items-center justify-between px-6 pt-6 pb-4">
+  1259→  1259→                <div className="flex items-center gap-2">
+  1260→  1260→                  {sessionStats.showConfetti && <Trophy className="w-5 h-5 text-amber-500" />}
+  1261→  1261→                  <h2 className="text-lg font-bold gradient-text">Session Summary</h2>
+  1262→  1262→                </div>
+  1263→  1263→                <button
+  1264→  1264→                  onClick={() => setShowEndSession(false)}
+  1265→  1265→                  className="p-1 rounded-lg hover:bg-accent transition-colors"
+  1266→  1266→                  aria-label="Close summary"
+  1267→  1267→                >
+  1268→  1268→                  <X className="w-4 h-4 text-muted-foreground" />
+  1269→  1269→                </button>
+  1270→  1270→              </div>
+  1271→  1271→
+  1272→  1272→              <div className="px-6 pb-6 space-y-5">
+  1273→  1273→                {/* Session Stats Grid */}
+  1274→  1274→                <div className="grid grid-cols-2 gap-3">
+  1275→  1275→                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-1">
+  1276→  1276→                    <div className="flex items-center gap-1.5 text-muted-foreground">
+  1277→  1277→                      <Clock className="w-3.5 h-3.5" />
+  1278→  1278→                      <span className="text-xs font-medium">Duration</span>
+  1279→  1279→                    </div>
+  1280→  1280→                    <p className="text-sm font-bold font-mono tabular-nums text-foreground">
+  1281→  1281→                      {formatTimer(sessionStats.duration)}
+  1282→  1282→                    </p>
+  1283→  1283→                  </div>
+  1284→  1284→                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-1">
+  1285→  1285→                    <div className="flex items-center gap-1.5 text-muted-foreground">
+  1286→  1286→                      <MessageCircle className="w-3.5 h-3.5" />
+  1287→  1287→                      <span className="text-xs font-medium">Messages</span>
+  1288→  1288→                    </div>
+  1289→  1289→                    <p className="text-sm font-bold font-mono tabular-nums text-foreground">
+  1290→  1290→                      {sessionStats.messagesExchanged}
+  1291→  1291→                    </p>
+  1292→  1292→                  </div>
+  1293→  1293→                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-1">
+  1294→  1294→                    <div className="flex items-center gap-1.5 text-muted-foreground">
+  1295→  1295→                      <BookMarked className="w-3.5 h-3.5" />
+  1296→  1296→                      <span className="text-xs font-medium">Topics Covered</span>
+  1297→  1297→                    </div>
+  1298→  1298→                    <p className="text-sm font-bold font-mono tabular-nums text-foreground">
+  1299→  1299→                      {sessionStats.topicsCovered.length}
+  1300→  1300→                    </p>
+  1301→  1301→                  </div>
+  1302→  1302→                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-1">
+  1303→  1303→                    <div className="flex items-center gap-1.5 text-muted-foreground">
+  1304→  1304→                      <Target className="w-3.5 h-3.5" />
+  1305→  1305→                      <span className="text-xs font-medium">Concepts Explored</span>
+  1306→  1306→                    </div>
+  1307→  1307→                    <p className="text-sm font-bold font-mono tabular-nums text-foreground">
+  1308→  1308→                      {sessionStats.conceptsExplored}
+  1309→  1309→                    </p>
+  1310→  1310→                  </div>
+  1311→  1311→                </div>
+  1312→  1312→
+  1313→  1313→                {/* Mastery Progress Bar */}
+  1314→  1314→                {sessionStats.conceptsExplored > 0 && (
+  1315→  1315→                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-2">
+  1316→  1316→                    <div className="flex items-center justify-between">
+  1317→  1317→                      <div className="flex items-center gap-1.5 text-muted-foreground">
+  1318→  1318→                        <Sparkles className="w-3.5 h-3.5" />
+  1319→  1319→                        <span className="text-xs font-medium">Avg Mastery Gained</span>
+  1320→  1320→                      </div>
+  1321→  1321→                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+  1322→  1322→                        {sessionStats.avgMastery}%
+  1323→  1323→                      </span>
+  1324→  1324→                    </div>
+  1325→  1325→                    <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+  1326→  1326→                      <motion.div
+  1327→  1327→                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+  1328→  1328→                        initial={{ width: 0 }}
+  1329→  1329→                        animate={{ width: `${sessionStats.avgMastery}%` }}
+  1330→  1330→                        transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 }}
+  1331→  1331→                      />
+  1332→  1332→                    </div>
+  1333→  1333→                  </div>
+  1334→  1334→                )}
+  1335→  1335→
+  1336→  1336→                {/* Topics List */}
+  1337→  1337→                {sessionStats.topicsCovered.length > 0 && (
+  1338→  1338→                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-2">
+  1339→  1339→                    <div className="flex items-center gap-1.5 text-muted-foreground">
+  1340→  1340→                      <BookOpen className="w-3.5 h-3.5" />
+  1341→  1341→                      <span className="text-xs font-medium">Topics</span>
+  1342→  1342→                    </div>
+  1343→  1343→                    <div className="flex flex-wrap gap-1.5">
+  1344→  1344→                      {sessionStats.topicsCovered.map((topic) => (
+  1345→  1345→                        <Badge key={topic} variant="secondary" className="text-xs">
+  1346→  1346→                          {topic}
+  1347→  1347→                        </Badge>
+  1348→  1348→                      ))}
+  1349→  1349→                    </div>
+  1350→  1350→                  </div>
+  1351→  1351→                )}
+  1352→  1352→
+  1353→  1353→                {/* Key Takeaways */}
+  1354→  1354→                {sessionStats.keyTakeaways.length > 0 && (
+  1355→  1355→                  <div className="rounded-xl bg-background/60 border border-border/40 p-3 space-y-2">
+  1356→  1356→                    <div className="flex items-center gap-1.5 text-muted-foreground">
+  1357→  1357→                      <CheckCircle2 className="w-3.5 h-3.5" />
+  1358→  1358→                      <span className="text-xs font-medium">Key Takeaways</span>
+  1359→  1359→                    </div>
+  1360→  1360→                    <ul className="space-y-1.5">
+  1361→  1361→                      {sessionStats.keyTakeaways.map((takeaway, i) => (
+  1362→  1362→                        <li key={i} className="flex items-start gap-2 text-xs text-foreground/80 leading-relaxed">
+  1363→  1363→                          <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+  1364→  1364→                          {takeaway}
+  1365→  1365→                        </li>
+  1366→  1366→                      ))}
+  1367→  1367→                    </ul>
+  1368→  1368→                  </div>
+  1369→  1369→                )}
+  1370→  1370→
+  1371→  1371→                {/* Actions */}
+  1372→  1372→                <div className="flex gap-3 pt-1">
+  1373→  1373→                  <Button
+  1374→  1374→                    variant="outline"
+  1375→  1375→                    className="flex-1"
+  1376→  1376→                    onClick={() => setShowEndSession(false)}
+  1377→  1377→                  >
+  1378→  1378→                    Continue Studying
+  1379→  1379→                  </Button>
+  1380→  1380→                  <Button
+  1381→  1381→                    className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+  1382→  1382→                    onClick={handleSaveAndClose}
+  1383→  1383→                  >
+  1384→  1384→                    <CheckCircle2 className="w-4 h-4 mr-1.5" />
+  1385→  1385→                    Save & Close
+  1386→  1386→                  </Button>
+  1387→  1387→                </div>
+  1388→  1388→              </div>
+  1389→  1389→            </motion.div>
+  1390→  1390→          </motion.div>
+  1391→  1391→        )}
+  1392→  1392→      </AnimatePresence>
+  1393→  1393→    </div>
+  1394→  1394→  )
+  1395→  1395→}
+  1396→  1396→

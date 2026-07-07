@@ -472,6 +472,7 @@ const shortcutGroups = [
       { keys: ['⌘', '6'], description: 'Profile' },
       { keys: ['⌘', '7'], description: 'Settings' },
       { keys: ['⌘', '8'], description: 'Focus Timer' },
+      { keys: ['⌘', '9'], description: 'Notes' },
     ],
   },
   {
@@ -522,6 +523,7 @@ function KeyboardShortcuts() {
       if ((e.metaKey || e.ctrlKey) && e.key === '6') { e.preventDefault(); navigate('profile'); }
       if ((e.metaKey || e.ctrlKey) && e.key === '7') { e.preventDefault(); navigate('settings'); }
       if ((e.metaKey || e.ctrlKey) && e.key === '8') { e.preventDefault(); navigate('focus-timer'); }
+      if ((e.metaKey || e.ctrlKey) && e.key === '9') { e.preventDefault(); navigate('notes'); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);

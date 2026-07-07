@@ -1,0 +1,2002 @@
+     1→'use client';
+     2→
+     3→import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+     4→import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
+     5→import {
+     6→  CheckCircle2,
+     7→  XCircle,
+     8→  ChevronRight,
+     9→  ChevronLeft,
+    10→  RotateCcw,
+    11→  ArrowLeft,
+    12→  Trophy,
+    13→  Sparkles,
+    14→  AlertTriangle,
+    15→  BookOpen,
+    16→  GripVertical,
+    17→  Flame,
+    18→  Zap,
+    19→  Shuffle,
+    20→  Layers,
+    21→  HelpCircle,
+    22→  Lightbulb,
+    23→  Clock,
+    24→  Copy,
+    25→  Calendar,
+    26→} from 'lucide-react';
+    27→import { Button } from '@/components/ui/button';
+    28→import { Progress } from '@/components/ui/progress';
+    29→import { Input } from '@/components/ui/input';
+    30→import { Badge } from '@/components/ui/badge';
+    31→import { useAppStore } from '@/stores/appStore';
+    32→import type { Question } from '@/types';
+    33→
+    34→type StudyMode = 'quiz' | 'flashcard' | 'daily';
+    35→
+    36→// ---------- Typo-tolerance helper ----------
+    37→function levenshteinDistance(a: string, b: string): number {
+    38→  const matrix: number[][] = [];
+    39→  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    40→  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    41→  for (let i = 1; i <= b.length; i++) {
+    42→    for (let j = 1; j <= a.length; j++) {
+    43→      const cost = b[i - 1] === a[j - 1] ? 0 : 1;
+    44→      matrix[i][j] = Math.min(
+    45→        matrix[i - 1][j] + 1,
+    46→        matrix[i][j - 1] + 1,
+    47→        matrix[i - 1][j - 1] + cost,
+    48→      );
+    49→    }
+    50→  }
+    51→  return matrix[b.length][a.length];
+    52→}
+    53→
+    54→function isFuzzyMatch(userAnswer: string, correctAnswer: string, maxDistance: number = 2): boolean {
+    55→  const ua = userAnswer.trim().toLowerCase();
+    56→  const ca = correctAnswer.trim().toLowerCase();
+    57→  if (ua === ca) return true;
+    58→  if (ua.includes(ca) || ca.includes(ua)) return true;
+    59→  // Levenshtein distance for typo tolerance
+    60→  const dist = levenshteinDistance(ua, ca);
+    61→  // Allow 1 typo for short answers, 2 for longer ones
+    62→  const threshold = maxDistance || (ca.length <= 4 ? 1 : 2);
+    63→  if (dist <= threshold) return true;
+    64→  // Word-level check: all words of correct answer present in user answer (in any order)
+    65→  const correctWords = ca.split(/\s+/);
+    66→  const userWords = ua.split(/\s+/);
+    67→  if (correctWords.every((w) => userWords.some((uw) => uw.includes(w) || w.includes(uw)))) return true;
+    68→  return false;
+    69→}
+    70→
+    71→// ---------- Timer helper ----------
+    72→function formatTimer(seconds: number): string {
+    73→  const m = Math.floor(seconds / 60);
+    74→  const s = seconds % 60;
+    75→  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    76→}
+    77→
+    78→// ---------- Mock questions for all 6 types ----------
+    79→const MOCK_QUESTIONS: Question[] = [
+    80→  {
+    81→    id: 'mc-1',
+    82→    type: 'multiple_choice',
+    83→    question: 'What is the primary function of mitochondria in a cell?',
+    84→    options: ['Protein synthesis', 'Energy production (ATP)', 'Cell division', 'Waste removal'],
+    85→    answer: 'Energy production (ATP)',
+    86→    explanation: 'Mitochondria are known as the "powerhouse of the cell" because they generate most of the cell\'s supply of ATP, used as a source of chemical energy.',
+    87→    difficulty: 'easy',
+    88→    concept: 'Cell Biology',
+    89→    courseId: 'demo-course',
+    90→  },
+    91→  {
+    92→    id: 'tf-1',
+    93→    type: 'true_false',
+    94→    question: 'Photosynthesis occurs in the mitochondria of plant cells.',
+    95→    answer: 'False',
+    96→    explanation: 'Photosynthesis occurs in the chloroplasts, not the mitochondria. Chloroplasts contain chlorophyll and are the site of the light-dependent and light-independent reactions.',
+    97→    difficulty: 'easy',
+    98→    concept: 'Cell Biology',
+    99→    courseId: 'demo-course',
+   100→  },
+   101→  {
+   102→    id: 'sa-1',
+   103→    type: 'short_answer',
+   104→    question: 'What is the chemical equation for cellular respiration?',
+   105→    answer: 'C6H12O6 + 6O2 → 6CO2 + 6H2O + ATP',
+   106→    explanation: 'Cellular respiration converts glucose and oxygen into carbon dioxide, water, and energy in the form of ATP.',
+   107→    difficulty: 'medium',
+   108→    concept: 'Biochemistry',
+   109→    courseId: 'demo-course',
+   110→  },
+   111→  {
+   112→    id: 'fb-1',
+   113→    type: 'fill_blank',
+   114→    question: 'The ____ is the control center of the cell, containing the genetic material DNA.',
+   115→    answer: 'nucleus',
+   116→    explanation: 'The nucleus is a membrane-bound organelle that contains the cell\'s chromosomes and regulates gene expression.',
+   117→    difficulty: 'easy',
+   118→    concept: 'Cell Biology',
+   119→    courseId: 'demo-course',
+   120→  },
+   121→  {
+   122→    id: 'fb-2',
+   123→    type: 'fill_blank',
+   124→    question: '____ is the process by which cells divide to form two identical daughter cells.',
+   125→    answer: 'mitosis',
+   126→    explanation: 'Mitosis ensures that each daughter cell receives an exact copy of the parent cell\'s DNA.',
+   127→    difficulty: 'medium',
+   128→    concept: 'Cell Biology',
+   129→    courseId: 'demo-course',
+   130→  },
+   131→  {
+   132→    id: 'match-1',
+   133→    type: 'matching',
+   134→    question: 'Match each cell organelle to its primary function.',
+   135→    matchingPairs: [
+   136→      { left: 'Ribosome', right: 'Protein synthesis' },
+   137→      { left: 'Golgi apparatus', right: 'Packaging & shipping' },
+   138→      { left: 'Lysosome', right: 'Digestion & recycling' },
+   139→      { left: 'Endoplasmic reticulum', right: 'Lipid synthesis & transport' },
+   140→    ],
+   141→    answer: 'Ribosome-Protein synthesis, Golgi apparatus-Packaging & shipping, Lysosome-Digestion & recycling, Endoplasmic reticulum-Lipid synthesis & transport',
+   142→    explanation: 'Each organelle has a specialized function that contributes to the overall operation of the cell.',
+   143→    difficulty: 'medium',
+   144→    concept: 'Cell Biology',
+   145→    courseId: 'demo-course',
+   146→  },
+   147→  {
+   148→    id: 'ec-1',
+   149→    type: 'error_correction',
+   150→    question: 'Identify and correct the errors in the following statement:',
+   151→    errorText: 'Mitochondria are found only in animal cells. They are responsible for photosynthesis and converting sunlight into glucose. Plant cells do not have mitochondria.',
+   152→    answer: 'Mitochondria are found in both animal and plant cells. They are responsible for cellular respiration and converting glucose into ATP (energy).',
+   153→    explanation: 'The original text had three errors: (1) mitochondria are in both plant and animal cells, (2) they perform cellular respiration not photosynthesis, and (3) plant cells do have mitochondria.',
+   154→    difficulty: 'hard',
+   155→    concept: 'Cell Biology',
+   156→    courseId: 'demo-course',
+   157→  },
+   158→  {
+   159→    id: 'mc-2',
+   160→    type: 'multiple_choice',
+   161→    question: 'Which data structure uses LIFO (Last In, First Out) ordering?',
+   162→    options: ['Queue', 'Stack', 'Linked List', 'Tree'],
+   163→    answer: 'Stack',
+   164→    explanation: 'A Stack follows LIFO ordering — the last element pushed onto the stack is the first one popped off. Think of a stack of plates.',
+   165→    difficulty: 'easy',
+   166→    concept: 'Data Structures',
+   167→    courseId: 'cs-course',
+   168→  },
+   169→  {
+   170→    id: 'sa-2',
+   171→    type: 'short_answer',
+   172→    question: 'What is the time complexity of binary search?',
+   173→    answer: 'O(log n)',
+   174→    explanation: 'Binary search divides the search space in half each step, giving logarithmic time complexity.',
+   175→    difficulty: 'medium',
+   176→    concept: 'Algorithms',
+   177→    courseId: 'cs-course',
+   178→  },
+   179→];
+   180→
+   181→// ---------- Course filter ----------
+   182→interface DailyChallengeData {
+   183→  date: string;
+   184→  completed: boolean;
+   185→  score: number;
+   186→  total: number;
+   187→  questions: string[];
+   188→}
+   189→
+   190→const DAILY_STORAGE_KEY = 'synapse-daily-challenge';
+   191→const DAILY_STREAK_KEY = 'synapse-daily-streak';
+   192→const DAILY_QUESTION_COUNT = 5;
+   193→
+   194→function getTodayStr(): string {
+   195→  return new Date().toISOString().split('T')[0];
+   196→}
+   197→
+   198→function loadDailyChallenge(): DailyChallengeData | null {
+   199→  if (typeof window === 'undefined') return null;
+   200→  try {
+   201→    const raw = localStorage.getItem(DAILY_STORAGE_KEY);
+   202→    return raw ? JSON.parse(raw) : null;
+   203→  } catch {
+   204→    return null;
+   205→  }
+   206→}
+   207→
+   208→function saveDailyChallenge(data: DailyChallengeData): void {
+   209→  if (typeof window === 'undefined') return;
+   210→  try {
+   211→    localStorage.setItem(DAILY_STORAGE_KEY, JSON.stringify(data));
+   212→  } catch {
+   213→    // storage unavailable
+   214→  }
+   215→}
+   216→
+   217→function loadDailyStreak(): { current: number; best: number; lastDate: string } {
+   218→  if (typeof window === 'undefined') return { current: 0, best: 0, lastDate: '' };
+   219→  try {
+   220→    const raw = localStorage.getItem(DAILY_STREAK_KEY);
+   221→    return raw ? JSON.parse(raw) : { current: 0, best: 0, lastDate: '' };
+   222→  } catch {
+   223→    return { current: 0, best: 0, lastDate: '' };
+   224→  }
+   225→}
+   226→
+   227→function saveDailyStreak(data: { current: number; best: number; lastDate: string }): void {
+   228→  if (typeof window === 'undefined') return;
+   229→  try {
+   230→    localStorage.setItem(DAILY_STREAK_KEY, JSON.stringify(data));
+   231→  } catch {
+   232→    // storage unavailable
+   233→  }
+   234→}
+   235→
+   236→function updateDailyStreak(): { current: number; best: number; lastDate: string } {
+   237→  const streak = loadDailyStreak();
+   238→  const today = getTodayStr();
+   239→
+   240→  if (streak.lastDate === today) return streak;
+   241→
+   242→  const yesterday = new Date();
+   243→  yesterday.setDate(yesterday.getDate() - 1);
+   244→  const yesterdayStr = yesterday.toISOString().split('T')[0];
+   245→
+   246→  let newCurrent: number;
+   247→  if (streak.lastDate === yesterdayStr) {
+   248→    newCurrent = streak.current + 1;
+   249→  } else {
+   250→    newCurrent = 1;
+   251→  }
+   252→
+   253→  const newBest = Math.max(streak.best, newCurrent);
+   254→  const updated = { current: newCurrent, best: newBest, lastDate: today };
+   255→  saveDailyStreak(updated);
+   256→  return updated;
+   257→}
+   258→
+   259→function getTimeUntilMidnight(): { hours: number; minutes: number; seconds: number } {
+   260→  const now = new Date();
+   261→  const midnight = new Date(now);
+   262→  midnight.setHours(24, 0, 0, 0);
+   263→  const diff = midnight.getTime() - now.getTime();
+   264→  return {
+   265→    hours: Math.floor(diff / (1000 * 60 * 60)),
+   266→    minutes: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
+   267→    seconds: Math.floor((diff % (1000 * 60)) / 1000),
+   268→  };
+   269→}
+   270→
+   271→function selectDailyQuestions(allQs: Question[]): Question[] {
+   272→  const shuffled = [...allQs].sort(() => Math.random() - 0.5);
+   273→  return shuffled.slice(0, DAILY_QUESTION_COUNT);
+   274→}
+   275→
+   276→const COURSE_QUIZ_GROUPS = [
+   277→  { id: 'all', label: 'All Questions', icon: BookOpen },
+   278→  { id: 'demo-course', label: 'Cell Biology', icon: BookOpen },
+   279→  { id: 'cs-course', label: 'Computer Science', icon: BookOpen },
+   280→];
+   281→
+   282→// ---------- Confetti particle ----------
+   283→function ConfettiParticle({ delay, color }: { delay: number; color: string }) {
+   284→  const x = Math.random() * 300 - 150;
+   285→  const y = -(Math.random() * 200 + 100);
+   286→  const rotation = Math.random() * 720 - 360;
+   287→  const scale = Math.random() * 0.5 + 0.5;
+   288→
+   289→  return (
+   290→    <motion.div
+   291→      initial={{ opacity: 1, x: 0, y: 0, rotate: 0, scale }}
+   292→      animate={{
+   293→        opacity: 0,
+   294→        x,
+   295→        y,
+   296→        rotate: rotation,
+   297→        scale: scale * 0.3,
+   298→      }}
+   299→      transition={{ duration: 1.2, delay, ease: 'easeOut' }}
+   300→      className="absolute h-3 w-3 rounded-sm pointer-events-none"
+   301→      style={{ backgroundColor: color, top: '40%', left: '50%' }}
+   302→    />
+   303→  );
+   304→}
+   305→
+   306→const CONFETTI_COLORS = ['#10b981', '#14b8a6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#f97316', '#22c55e'];
+   307→
+   308→// ---------- Animated counter hook ----------
+   309→function useAnimatedCounter(target: number, duration: number = 1200) {
+   310→  const [count, setCount] = useState(0);
+   311→  const rafRef = useRef<number>(0);
+   312→  useEffect(() => {
+   313→    const start = performance.now();
+   314→    const tick = (now: number) => {
+   315→      const elapsed = now - start;
+   316→      const progress = Math.min(elapsed / duration, 1);
+   317→      const eased = 1 - Math.pow(1 - progress, 3);
+   318→      setCount(Math.round(eased * target));
+   319→      if (progress < 1) rafRef.current = requestAnimationFrame(tick);
+   320→    };
+   321→    rafRef.current = requestAnimationFrame(tick);
+   322→    return () => cancelAnimationFrame(rafRef.current);
+   323→  }, [target, duration]);
+   324→  return count;
+   325→}
+   326→
+   327→// ---------- Type badge gradient map ----------
+   328→const TYPE_BADGE_GRADIENT: Record<string, string> = {
+   329→  multiple_choice: 'bg-gradient-to-r from-emerald-500/15 to-teal-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+   330→  true_false: 'bg-gradient-to-r from-amber-500/15 to-orange-500/15 text-amber-700 dark:text-amber-300 border-amber-500/20',
+   331→  short_answer: 'bg-gradient-to-r from-cyan-500/15 to-sky-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/20',
+   332→  fill_blank: 'bg-gradient-to-r from-violet-500/15 to-purple-500/15 text-violet-700 dark:text-violet-300 border-violet-500/20',
+   333→  matching: 'bg-gradient-to-r from-rose-500/15 to-pink-500/15 text-rose-700 dark:text-rose-300 border-rose-500/20',
+   334→  error_correction: 'bg-gradient-to-r from-red-500/15 to-destructive/15 text-red-700 dark:text-red-300 border-red-500/20',
+   335→};
+   336→
+   337→// ---------- Error correction component ----------
+   338→function ErrorCorrectionInput({
+   339→  errorText,
+   340→  onAnswer,
+   341→}: {
+   342→  errorText: string;
+   343→  onAnswer: (answer: string) => void;
+   344→}) {
+   345→  const [correction, setCorrection] = useState('');
+   346→
+   347→  return (
+   348→    <div className="space-y-4">
+   349→      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+   350→        <div className="flex items-center gap-2 mb-2">
+   351→          <AlertTriangle className="h-4 w-4 text-destructive" />
+   352→          <span className="text-sm font-medium text-destructive">Statement with errors:</span>
+   353→        </div>
+   354→        <p className="text-sm leading-relaxed">{errorText}</p>
+   355→      </div>
+   356→      <div className="space-y-2">
+   357→        <p className="text-sm font-medium">Your corrected version:</p>
+   358→        <textarea
+   359→          value={correction}
+   360→          onChange={(e) => setCorrection(e.target.value)}
+   361→          rows={4}
+   362→          className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+   363→          placeholder="Type the corrected statement here..."
+   364→        />
+   365→        <Button
+   366→          onClick={() => onAnswer(correction)}
+   367→          disabled={!correction.trim()}
+   368→          size="sm"
+   369→          className="mt-2"
+   370→        >
+   371→          Submit Correction
+   372→        </Button>
+   373→      </div>
+   374→    </div>
+   375→  );
+   376→}
+   377→
+   378→// ---------- Matching question component (drag-and-drop with SVG connectors) ----------
+   379→function MatchingInput({
+   380→  pairs,
+   381→  onAnswer,
+   382→}: {
+   383→  pairs: Array<{ left: string; right: string }>;
+   384→  onAnswer: (answer: string) => void;
+   385→}) {
+   386→  const shuffledRight = useMemo(() => {
+   387→    const arr = [...pairs.map((p) => p.right)];
+   388→    for (let i = arr.length - 1; i > 0; i--) {
+   389→      const j = Math.floor(Math.random() * (i + 1));
+   390→      [arr[i], arr[j]] = [arr[j], arr[i]];
+   391→    }
+   392→    return arr;
+   393→  }, [pairs]);
+   394→
+   395→  const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
+   396→  const [matches, setMatches] = useState<Record<string, string>>({});
+   397→  const [dragItem, setDragItem] = useState<string | null>(null);
+   398→  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
+   399→  const [linePositions, setLinePositions] = useState<Array<{ id: string; x1: number; y1: number; x2: number; y2: number }>>([]);
+   400→  const containerRef = useRef<HTMLDivElement>(null);
+   401→
+   402→  // Build index maps for safe DOM queries
+   403→  const leftIdxMap = useMemo(() => {
+   404→    const map: Record<string, number> = {};
+   405→    pairs.forEach((p, i) => { map[p.left] = i; });
+   406→    return map;
+   407→  }, [pairs]);
+   408→
+   409→  const rightIdxMap = useMemo(() => {
+   410→    const map: Record<string, number> = {};
+   411→    shuffledRight.forEach((r, i) => { map[r] = i; });
+   412→    return map;
+   413→  }, [shuffledRight]);
+   414→
+   415→  // Compute SVG connector line positions
+   416→  const updateLinePositions = useCallback(() => {
+   417→    const container = containerRef.current;
+   418→    if (!container) return;
+   419→
+   420→    requestAnimationFrame(() => {
+   421→      if (!container) return;
+   422→      const containerRect = container.getBoundingClientRect();
+   423→      const positions: Array<{ id: string; x1: number; y1: number; x2: number; y2: number }> = [];
+   424→
+   425→      for (const [left, right] of Object.entries(matches)) {
+   426→        const lIdx = leftIdxMap[left];
+   427→        const rIdx = rightIdxMap[right];
+   428→        if (lIdx === undefined || rIdx === undefined) continue;
+   429→
+   430→        const leftEl = container.querySelector(`[data-left-idx="${lIdx}"]`);
+   431→        const rightEl = container.querySelector(`[data-right-idx="${rIdx}"]`);
+   432→
+   433→        if (leftEl && rightEl) {
+   434→          const leftRect = leftEl.getBoundingClientRect();
+   435→          const rightRect = rightEl.getBoundingClientRect();
+   436→
+   437→          positions.push({
+   438→            id: `${left}-${right}`,
+   439→            x1: leftRect.right - containerRect.left,
+   440→            y1: leftRect.top + leftRect.height / 2 - containerRect.top,
+   441→            x2: rightRect.left - containerRect.left,
+   442→            y2: rightRect.top + rightRect.height / 2 - containerRect.top,
+   443→          });
+   444→        }
+   445→      }
+   446→
+   447→      setLinePositions(positions);
+   448→    });
+   449→  }, [matches, leftIdxMap, rightIdxMap]);
+   450→
+   451→  // Recalculate on matches change
+   452→  useEffect(() => {
+   453→    updateLinePositions();
+   454→  }, [updateLinePositions]);
+   455→
+   456→  // Recalculate on resize
+   457→  useEffect(() => {
+   458→    const container = containerRef.current;
+   459→    if (!container) return;
+   460→
+   461→    const observer = new ResizeObserver(updateLinePositions);
+   462→    observer.observe(container);
+   463→
+   464→    return () => observer.disconnect();
+   465→  }, [updateLinePositions]);
+   466→
+   467→  const handleLeftClick = (left: string) => {
+   468→    if (matches[left]) {
+   469→      // Remove match by clicking connected left item
+   470→      setMatches((prev) => {
+   471→        const next = { ...prev };
+   472→        delete next[left];
+   473→        return next;
+   474→      });
+   475→      return;
+   476→    }
+   477→    setSelectedLeft(left);
+   478→  };
+   479→
+   480→  const handleRightClick = (right: string) => {
+   481→    if (!selectedLeft) return;
+   482→    setMatches((prev) => ({ ...prev, [selectedLeft]: right }));
+   483→    setSelectedLeft(null);
+   484→  };
+   485→
+   486→  const handleDragStart = (e: React.DragEvent, left: string) => {
+   487→    setDragItem(left);
+   488→    e.dataTransfer.setData('text/plain', left);
+   489→    e.dataTransfer.effectAllowed = 'link';
+   490→  };
+   491→
+   492→  const handleDragOver = (e: React.DragEvent, right: string) => {
+   493→    e.preventDefault();
+   494→    e.dataTransfer.dropEffect = 'link';
+   495→    const isUsedByOther = Object.entries(matches).some(
+   496→      ([k, v]) => v === right && k !== dragItem,
+   497→    );
+   498→    if (dragItem && !isUsedByOther) {
+   499→      setDragOverTarget(right);
+   500→    }
+   501→  };
+   502→
+   503→  const handleDragLeave = () => {
+   504→    setDragOverTarget(null);
+   505→  };
+   506→
+   507→  const handleDrop = (e: React.DragEvent, right: string) => {
+   508→    e.preventDefault();
+   509→    const left = e.dataTransfer.getData('text/plain') || dragItem;
+   510→    if (left) {
+   511→      // Remove any existing match for this left item first
+   512→      setMatches((prev) => {
+   513→        const next = { ...prev };
+   514→        delete next[left];
+   515→        next[left] = right;
+   516→        return next;
+   517→      });
+   518→    }
+   519→    setDragItem(null);
+   520→    setDragOverTarget(null);
+   521→  };
+   522→
+   523→  const handleDragEnd = () => {
+   524→    setDragItem(null);
+   525→    setDragOverTarget(null);
+   526→  };
+   527→
+   528→  const handleSubmit = () => {
+   529→    const answer = Object.entries(matches)
+   530→      .map(([l, r]) => `${l}-${r}`)
+   531→      .join(', ');
+   532→    onAnswer(answer);
+   533→  };
+   534→
+   535→  const allMatched = pairs.every((p) => matches[p.left]);
+   536→  const usedRights = new Set(Object.values(matches));
+   537→
+   538→  return (
+   539→    <div className="space-y-4">
+   540→      <p className="text-sm text-muted-foreground">
+   541→        Drag left items to their match on the right, or click to select. Click a connected left item to remove it.
+   542→      </p>
+   543→      <div ref={containerRef} className="relative grid grid-cols-2 gap-4">
+   544→        {/* SVG Connector Overlay */}
+   545→        <svg className="absolute inset-0 pointer-events-none z-10" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+   546→          <defs>
+   547→            <linearGradient id="connectorGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+   548→              <stop offset="0%" stopColor="#10b981" />
+   549→              <stop offset="50%" stopColor="#14b8a6" />
+   550→              <stop offset="100%" stopColor="#0d9488" />
+   551→            </linearGradient>
+   552→          </defs>
+   553→          <AnimatePresence>
+   554→            {linePositions.map((pos) => {
+   555→              const midX = (pos.x1 + pos.x2) / 2;
+   556→              return (
+   557→                <motion.path
+   558→                  key={pos.id}
+   559→                  d={`M ${pos.x1} ${pos.y1} C ${midX} ${pos.y1}, ${midX} ${pos.y2}, ${pos.x2} ${pos.y2}`}
+   560→                  fill="none"
+   561→                  stroke="url(#connectorGrad)"
+   562→                  strokeWidth="2.5"
+   563→                  strokeLinecap="round"
+   564→                  initial={{ pathLength: 0, opacity: 0 }}
+   565→                  animate={{ pathLength: 1, opacity: 0.85 }}
+   566→                  exit={{ pathLength: 0, opacity: 0 }}
+   567→                  transition={{ duration: 0.5, ease: 'easeOut' }}
+   568→                />
+   569→              );
+   570→            })}
+   571→          </AnimatePresence>
+   572→        </svg>
+   573→
+   574→        {/* Left column */}
+   575→        <div className="flex flex-col gap-2">
+   576→          {pairs.map((p) => {
+   577→            const isMatched = !!matches[p.left];
+   578→            const isDragging = dragItem === p.left;
+   579→            return (
+   580→              <motion.button
+   581→                key={p.left}
+   582→                data-left-idx={leftIdxMap[p.left]}
+   583→                draggable={!isMatched}
+   584→                whileTap={{ scale: 0.98 }}
+   585→                onClick={() => handleLeftClick(p.left)}
+   586→                onDragStart={(e) => handleDragStart(e, p.left)}
+   587→                onDragEnd={handleDragEnd}
+   588→                className={`rounded-lg border p-3 text-left text-sm font-medium transition-all ${
+   589→                  isDragging
+   590→                    ? 'border-primary/50 bg-primary/5 opacity-50 scale-95'
+   591→                    : selectedLeft === p.left
+   592→                      ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary/30 shadow-sm shadow-primary/10'
+   593→                      : isMatched
+   594→                        ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 shadow-sm shadow-emerald-500/5'
+   595→                        : 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-grab active:cursor-grabbing'
+   596→                }`}
+   597→              >
+   598→                <div className="flex items-center gap-2">
+   599→                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+   600→                  <span className="flex-1">{p.left}</span>
+   601→                  {isMatched && (
+   602→                    <motion.span
+   603→                      initial={{ opacity: 0, x: 10 }}
+   604→                      animate={{ opacity: 1, x: 0 }}
+   605→                      className="text-xs opacity-70 truncate max-w-[120px] text-emerald-600 dark:text-emerald-400"
+   606→                    >
+   607→                      {matches[p.left]}
+   608→                    </motion.span>
+   609→                  )}
+   610→                </div>
+   611→              </motion.button>
+   612→            );
+   613→          })}
+   614→        </div>
+   615→        {/* Right column */}
+   616→        <div className="flex flex-col gap-2">
+   617→          {shuffledRight.map((r) => {
+   618→            const isUsed = usedRights.has(r);
+   619→            const isDragOver = dragOverTarget === r && !isUsed;
+   620→            return (
+   621→              <motion.button
+   622→                key={r}
+   623→                data-right-idx={rightIdxMap[r]}
+   624→                whileTap={{ scale: 0.98 }}
+   625→                onClick={() => !isUsed && handleRightClick(r)}
+   626→                onDragOver={(e) => handleDragOver(e, r)}
+   627→                onDragLeave={handleDragLeave}
+   628→                onDrop={(e) => handleDrop(e, r)}
+   629→                disabled={isUsed}
+   630→                className={`rounded-lg border p-3 text-left text-sm transition-all ${
+   631→                  isDragOver
+   632→                    ? 'border-emerald-500/60 bg-emerald-500/10 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-500/20 scale-[1.02]'
+   633→                    : isUsed
+   634→                      ? 'border-border bg-muted/50 text-muted-foreground line-through opacity-50'
+   635→                      : selectedLeft
+   636→                        ? 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-pointer hover:shadow-sm hover:shadow-primary/5'
+   637→                        : 'border-border opacity-60'
+   638→                }`}
+   639→              >
+   640→                <div className="flex items-center gap-2">
+   641→                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+   642→                  <span className="flex-1">{r}</span>
+   643→                </div>
+   644→              </motion.button>
+   645→            );
+   646→          })}
+   647→        </div>
+   648→      </div>
+   649→      <div className="flex items-center justify-between">
+   650→        <div className="flex items-center gap-2">
+   651→          <div className="relative h-1.5 w-24 rounded-full bg-muted/50 overflow-hidden">
+   652→            <motion.div
+   653→              className="absolute inset-y-0 left-0 rounded-full"
+   654→              style={{ background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))' }}
+   655→              animate={{ width: `${(Object.keys(matches).length / pairs.length) * 100}%` }}
+   656→              transition={{ duration: 0.3 }}
+   657→            />
+   658→          </div>
+   659→          <span className="text-xs text-muted-foreground">
+   660→            {Object.keys(matches).length}/{pairs.length} matched
+   661→          </span>
+   662→        </div>
+   663→        <motion.div
+   664→          whileHover={{ scale: 1.05 }}
+   665→          whileTap={{ scale: 0.95 }}
+   666→        >
+   667→          <Button onClick={handleSubmit} disabled={!allMatched} size="sm" className={allMatched ? 'glow-emerald' : ''}>
+   668→            Submit Matches
+   669→          </Button>
+   670→        </motion.div>
+   671→      </div>
+   672→    </div>
+   673→  );
+   674→}
+   675→
+   676→// ---------- Main QuizView ----------
+   677→export function QuizView() {
+   678→  const { navigate, currentQuestions, activeCourse } = useAppStore();
+   679→
+   680→  const allQuestions = currentQuestions.length > 0 ? currentQuestions : MOCK_QUESTIONS;
+   681→
+   682→  const [studyMode, setStudyMode] = useState<StudyMode>('quiz');
+   683→  const [selectedCourse, setSelectedCourse] = useState<string>('all');
+   684→  const [currentIndex, setCurrentIndex] = useState(0);
+   685→  const [answers, setAnswers] = useState<Record<string, string>>({});
+   686→  const [answered, setAnswered] = useState<Record<string, boolean>>({});
+   687→  const [showExplanation, setShowExplanation] = useState(false);
+   688→  const [showConfetti, setShowConfetti] = useState(false);
+   689→  const [showResults, setShowResults] = useState(false);
+   690→  const [streak, setStreak] = useState(0);
+   691→  const [bestStreak, setBestStreak] = useState(0);
+   692→  const [showStreakPopup, setShowStreakPopup] = useState(false);
+   693→  const animatedScore = useAnimatedCounter(showResults ? score : 0, 1500);
+   694→
+   695→  // Daily Challenge state
+   696→  const [dailyChallenge, setDailyChallenge] = useState<DailyChallengeData | null>(null);
+   697→  const [dailyStreak, setDailyStreak] = useState({ current: 0, best: 0, lastDate: '' });
+   698→  const [dailyTimeLeft, setDailyTimeLeft] = useState({ hours: 0, minutes: 0, seconds: 0 });
+   699→  const [dailyShowResults, setDailyShowResults] = useState(false);
+   700→  const [dailyShareCopied, setDailyShareCopied] = useState(false);
+   701→  const dailyQuestions = useMemo<Question[]>(() => {
+   702→    if (dailyChallenge?.questions) {
+   703→      return dailyChallenge.questions
+   704→        .map((id) => allQuestions.find((q) => q.id === id))
+   705→        .filter((q): q is Question => !!q);
+   706→    }
+   707→    return [];
+   708→  }, [dailyChallenge, allQuestions]);
+   709→  const dailyCurrentQ = dailyQuestions[currentIndex];
+   710→  const dailyProgress = dailyQuestions.length > 0
+   711→    ? ((currentIndex + 1) / dailyQuestions.length) * 100
+   712→    : 0;
+   713→  const dailyScore = useMemo(() => {
+   714→    return dailyQuestions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+   715→  }, [dailyQuestions, answered, answers, isCorrect]);
+   716→  const dailyCircumference = 2 * Math.PI * 62;
+   717→  const dailyScorePercent = dailyQuestions.length > 0 ? dailyScore / dailyQuestions.length : 0;
+   718→  const dailyStrokeDashoffset = dailyCircumference * (1 - dailyScorePercent);
+   719→  const dailyAnimatedScore = useAnimatedCounter(dailyShowResults ? dailyScore : 0, 1500);
+   720→
+   721→  // Load daily challenge data on mount and when mode changes
+   722→  useEffect(() => {
+   723→    if (studyMode !== 'daily') return;
+   724→    const today = getTodayStr();
+   725→    const saved = loadDailyChallenge();
+   726→    const streakData = loadDailyStreak();
+   727→
+   728→    if (saved && saved.date === today) {
+   729→      setDailyChallenge(saved);
+   730→      setDailyStreak(streakData);
+   731→      if (saved.completed) {
+   732→        setDailyShowResults(true);
+   733→      }
+   734→    } else {
+   735→      // New day, new challenge
+   736→      const selected = selectDailyQuestions(allQuestions);
+   737→      const newChallenge: DailyChallengeData = {
+   738→        date: today,
+   739→        completed: false,
+   740→        score: 0,
+   741→        total: DAILY_QUESTION_COUNT,
+   742→        questions: selected.map((q) => q.id),
+   743→      };
+   744→      saveDailyChallenge(newChallenge);
+   745→      setDailyChallenge(newChallenge);
+   746→      setDailyStreak(streakData);
+   747→      setDailyShowResults(false);
+   748→    }
+   749→  }, [studyMode, allQuestions]);
+   750→
+   751→  // Update daily countdown timer
+   752→  useEffect(() => {
+   753→    if (studyMode !== 'daily') return;
+   754→    setDailyTimeLeft(getTimeUntilMidnight());
+   755→    const interval = setInterval(() => {
+   756→      setDailyTimeLeft(getTimeUntilMidnight());
+   757→    }, 1000);
+   758→    return () => clearInterval(interval);
+   759→  }, [studyMode]);
+   760→
+   761→  const handleDailyAnswer = useCallback(
+   762→    (answer: string) => {
+   763→      if (!dailyCurrentQ || answered[dailyCurrentQ.id]) return;
+   764→
+   765→      if (!timerStarted) setTimerStarted(true);
+   766→
+   767→      const newAnswers = { ...answers, [dailyCurrentQ.id]: answer };
+   768→      const newAnswered = { ...answered, [dailyCurrentQ.id]: true };
+   769→      setAnswers(newAnswers);
+   770→      setAnswered(newAnswered);
+   771→      setShowExplanation(true);
+   772→
+   773→      if (isCorrect(dailyCurrentQ, answer)) {
+   774→        setShowConfetti(true);
+   775→        setTimeout(() => setShowConfetti(false), 1500);
+   776→        const newStreak = streak + 1;
+   777→        setStreak(newStreak);
+   778→        if (newStreak > bestStreak) setBestStreak(newStreak);
+   779→        if (newStreak >= 3) {
+   780→          setShowStreakPopup(true);
+   781→          setTimeout(() => setShowStreakPopup(false), 1200);
+   782→        }
+   783→      } else {
+   784→        setStreak(0);
+   785→      }
+   786→    },
+   787→    [answered, answers, dailyCurrentQ, isCorrect, streak, bestStreak, timerStarted],
+   788→  );
+   789→
+   790→  const handleDailyNext = useCallback(() => {
+   791→    setShowExplanation(false);
+   792→    if (currentIndex < dailyQuestions.length - 1) {
+   793→      setCurrentIndex(currentIndex + 1);
+   794→    } else {
+   795→      // Challenge complete — save results
+   796→      const finalScore = dailyQuestions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+   797→      const updatedStreak = updateDailyStreak();
+   798→      setDailyStreak(updatedStreak);
+   799→
+   800→      const completedData: DailyChallengeData = {
+   801→        date: getTodayStr(),
+   802→        completed: true,
+   803→        score: finalScore,
+   804→        total: dailyQuestions.length,
+   805→        questions: dailyQuestions.map((q) => q.id),
+   806→      };
+   807→      saveDailyChallenge(completedData);
+   808→      setDailyChallenge(completedData);
+   809→      setDailyShowResults(true);
+   810→    }
+   811→  }, [currentIndex, dailyQuestions, answered, answers, isCorrect]);
+   812→
+   813→  const handleDailyShare = useCallback(async () => {
+   814→    const text = `SynapseLearn Daily Challenge - ${dailyScore}/${dailyQuestions.length} - ${dailyStreak.current} day streak`;
+   815→    try {
+   816→      await navigator.clipboard.writeText(text);
+   817→      setDailyShareCopied(true);
+   818→      setTimeout(() => setDailyShareCopied(false), 2000);
+   819→    } catch {
+   820→      // fallback
+   821→    }
+   822→  }, [dailyScore, dailyQuestions.length, dailyStreak.current]);
+   823→
+   824→  // Timer state
+   825→  const [timerStarted, setTimerStarted] = useState(false);
+   826→  const [timerSeconds, setTimerSeconds] = useState(0);
+   827→
+   828→  // Flashcard state
+   829→  const [flipped, setFlipped] = useState(false);
+   830→  const [knownCards, setKnownCards] = useState<Set<string>>(new Set());
+   831→  const [stillLearningCards, setStillLearningCards] = useState<Set<string>>(new Set());
+   832→  const [flashcardReviewed, setFlashcardReviewed] = useState<Set<string>>(new Set());
+   833→  const [showFlashcardSummary, setShowFlashcardSummary] = useState(false);
+   834→  const [hasEverFlipped, setHasEverFlipped] = useState(false);
+   835→
+   836→  // Swipe motion values for flashcard (no re-renders)
+   837→  const dragXMotion = useMotionValue(0);
+   838→  const checkOpacity = useTransform(dragXMotion, [0, 100], [0, 0.7]);
+   839→  const crossOpacity = useTransform(dragXMotion, [-100, 0], [0.7, 0]);
+   840→  const hasDraggedRef = useRef(false);
+   841→
+   842→  // Timer effect
+   843→  useEffect(() => {
+   844→    if (!timerStarted || showResults) return;
+   845→    const interval = setInterval(() => {
+   846→      setTimerSeconds((s) => s + 1);
+   847→    }, 1000);
+   848→    return () => clearInterval(interval);
+   849→  }, [timerStarted, showResults]);
+   850→
+   851→  const flashcardQuestions = useMemo(() => {
+   852→    if (selectedCourse === 'all') return allQuestions;
+   853→    return allQuestions.filter((q) => q.courseId === selectedCourse);
+   854→  }, [allQuestions, selectedCourse]);
+   855→
+   856→  const flashcardProgress = flashcardQuestions.length > 0
+   857→    ? (flashcardReviewed.size / flashcardQuestions.length) * 100
+   858→    : 0;
+   859→
+   860→  // Difficulty distribution
+   861→  const difficultyCounts = useMemo(() => {
+   862→    if (studyMode === 'daily') return { easy: 0, medium: 0, hard: 0 };
+   863→    const targetQuestions = studyMode === 'quiz' ? questions : flashcardQuestions;
+   864→    return {
+   865→      easy: targetQuestions.filter((q) => q.difficulty === 'easy').length,
+   866→      medium: targetQuestions.filter((q) => q.difficulty === 'medium').length,
+   867→      hard: targetQuestions.filter((q) => q.difficulty === 'hard').length,
+   868→    };
+   869→  }, [studyMode, questions, flashcardQuestions]);
+   870→
+   871→  const handleShuffle = useCallback(() => {
+   872→    setCurrentIndex(0);
+   873→    setFlipped(false);
+   874→  }, []);
+   875→
+   876→  const handleFlashcardMark = useCallback((type: 'known' | 'learning') => {
+   877→    if (!flashcardQuestions[currentIndex]) return;
+   878→    const id = flashcardQuestions[currentIndex].id;
+   879→    const newReviewed = new Set(flashcardReviewed);
+   880→    newReviewed.add(id);
+   881→    setFlashcardReviewed(newReviewed);
+   882→
+   883→    if (type === 'known') {
+   884→      setKnownCards((prev) => new Set(prev).add(id));
+   885→      setStillLearningCards((prev) => {
+   886→        const next = new Set(prev);
+   887→        next.delete(id);
+   888→        return next;
+   889→      });
+   890→    } else {
+   891→      setStillLearningCards((prev) => new Set(prev).add(id));
+   892→      setKnownCards((prev) => {
+   893→        const next = new Set(prev);
+   894→        next.delete(id);
+   895→        return next;
+   896→      });
+   897→    }
+   898→
+   899→    setFlipped(false);
+   900→    if (currentIndex < flashcardQuestions.length - 1) {
+   901→      setCurrentIndex((prev) => prev + 1);
+   902→    } else {
+   903→      setShowFlashcardSummary(true);
+   904→    }
+   905→  }, [currentIndex, flashcardQuestions, flashcardReviewed]);
+   906→
+   907→  const handleFlashcardPrev = useCallback(() => {
+   908→    setFlipped(false);
+   909→    setCurrentIndex((prev) => Math.max(0, prev - 1));
+   910→  }, []);
+   911→
+   912→  const handleFlashcardNext = useCallback(() => {
+   913→    setFlipped(false);
+   914→    if (currentIndex < flashcardQuestions.length - 1) {
+   915→      setCurrentIndex((prev) => prev + 1);
+   916→    }
+   917→  }, [currentIndex, flashcardQuestions.length]);
+   918→
+   919→  const handleFlashcardReset = useCallback(() => {
+   920→    setCurrentIndex(0);
+   921→    setFlipped(false);
+   922→    setKnownCards(new Set());
+   923→    setStillLearningCards(new Set());
+   924→    setFlashcardReviewed(new Set());
+   925→    setShowFlashcardSummary(false);
+   926→    setHasEverFlipped(false);
+   927→  }, []);
+   928→
+   929→  const handleCourseChange = (courseId: string) => {
+   930→    setSelectedCourse(courseId);
+   931→    setCurrentIndex(0);
+   932→    setAnswers({});
+   933→    setAnswered({});
+   934→    setShowExplanation(false);
+   935→    setShowResults(false);
+   936→    setStreak(0);
+   937→    setBestStreak(0);
+   938→    setFlipped(false);
+   939→    setKnownCards(new Set());
+   940→    setStillLearningCards(new Set());
+   941→    setFlashcardReviewed(new Set());
+   942→    setShowFlashcardSummary(false);
+   943→    setHasEverFlipped(false);
+   944→    setTimerStarted(false);
+   945→    setTimerSeconds(0);
+   946→  };
+   947→
+   948→  const handleModeChange = (mode: StudyMode) => {
+   949→    setStudyMode(mode);
+   950→    setCurrentIndex(0);
+   951→    setAnswers({});
+   952→    setAnswered({});
+   953→    setShowExplanation(false);
+   954→    setShowResults(false);
+   955→    setStreak(0);
+   956→    setBestStreak(0);
+   957→    setFlipped(false);
+   958→    setKnownCards(new Set());
+   959→    setStillLearningCards(new Set());
+   960→    setFlashcardReviewed(new Set());
+   961→    setShowFlashcardSummary(false);
+   962→    setHasEverFlipped(false);
+   963→    setTimerStarted(false);
+   964→    setTimerSeconds(0);
+   965→    setDailyShowResults(false);
+   966→    setDailyShareCopied(false);
+   967→  };
+   968→
+   969→  // Filter questions by selected course
+   970→  const questions = useMemo(() => {
+   971→    if (selectedCourse === 'all') return allQuestions;
+   972→    return allQuestions.filter((q) => q.courseId === selectedCourse);
+   973→  }, [allQuestions, selectedCourse]);
+   974→
+   975→  const currentQ = questions[currentIndex];
+   976→  const progress = questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0;
+   977→
+   978→  const isCorrect = useCallback(
+   979→    (q: Question, userAnswer: string): boolean => {
+   980→      const ua = userAnswer.trim().toLowerCase();
+   981→      const ca = q.answer.trim().toLowerCase();
+   982→      if (q.type === 'short_answer' || q.type === 'error_correction') {
+   983→        return isFuzzyMatch(userAnswer, q.answer, 3);
+   984→      }
+   985→      if (q.type === 'fill_blank') {
+   986→        return isFuzzyMatch(userAnswer, q.answer, 2);
+   987→      }
+   988→      return ua === ca;
+   989→    },
+   990→    [],
+   991→  );
+   992→
+   993→  const handleAnswer = useCallback(
+   994→    (answer: string) => {
+   995→      if (!currentQ || answered[currentQ.id]) return;
+   996→
+   997→      // Start timer on first answer
+   998→      if (!timerStarted) setTimerStarted(true);
+   999→
+  1000→      const newAnswers = { ...answers, [currentQ.id]: answer };
+  1001→      const newAnswered = { ...answered, [currentQ.id]: true };
+  1002→      setAnswers(newAnswers);
+  1003→      setAnswered(newAnswered);
+  1004→      setShowExplanation(true);
+  1005→
+  1006→      if (isCorrect(currentQ, answer)) {
+  1007→        setShowConfetti(true);
+  1008→        setTimeout(() => setShowConfetti(false), 1500);
+  1009→        const newStreak = streak + 1;
+  1010→        setStreak(newStreak);
+  1011→        if (newStreak > bestStreak) setBestStreak(newStreak);
+  1012→        if (newStreak >= 3) {
+  1013→          setShowStreakPopup(true);
+  1014→          setTimeout(() => setShowStreakPopup(false), 1200);
+  1015→        }
+  1016→      } else {
+  1017→        setStreak(0);
+  1018→      }
+  1019→    },
+  1020→    [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted],
+  1021→  );
+  1022→
+  1023→  const handleNext = () => {
+  1024→    setShowExplanation(false);
+  1025→    if (currentIndex < questions.length - 1) {
+  1026→      setCurrentIndex(currentIndex + 1);
+  1027→    } else {
+  1028→      setShowResults(true);
+  1029→    }
+  1030→  };
+  1031→
+  1032→  const handleRetry = () => {
+  1033→    setCurrentIndex(0);
+  1034→    setAnswers({});
+  1035→    setAnswered({});
+  1036→    setShowExplanation(false);
+  1037→    setShowResults(false);
+  1038→    setShowConfetti(false);
+  1039→    setStreak(0);
+  1040→    setBestStreak(0);
+  1041→    setTimerStarted(false);
+  1042→    setTimerSeconds(0);
+  1043→  };
+  1044→
+  1045→  const score = useMemo(() => {
+  1046→    return questions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+  1047→  }, [questions, answered, answers, isCorrect]);
+  1048→
+  1049→  const circumference = 2 * Math.PI * 62;
+  1050→  const scorePercent = questions.length > 0 ? score / questions.length : 0;
+  1051→  const strokeDashoffset = circumference * (1 - scorePercent);
+  1052→
+  1053→  const difficultyTotal = difficultyCounts.easy + difficultyCounts.medium + difficultyCounts.hard;
+  1054→
+  1055→  // ---------- Empty State ----------
+  1056→  if (studyMode !== 'daily' && questions.length === 0 && flashcardQuestions.length === 0) {
+  1057→    return (
+  1058→      <motion.div
+  1059→        initial={{ opacity: 0, y: 20 }}
+  1060→        animate={{ opacity: 1, y: 0 }}
+  1061→        className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
+  1062→      >
+  1063→        <div className="glass rounded-2xl p-8 text-center space-y-4 max-w-md">
+  1064→          <BookOpen className="h-16 w-16 text-primary/30 mx-auto" />
+  1065→          <h2 className="text-xl font-bold">No questions available</h2>
+  1066→          <p className="text-muted-foreground text-sm">
+  1067→            {selectedCourse !== 'all'
+  1068→              ? `No questions found for this course. Try selecting a different category.`
+  1069→              : 'Upload some study materials or generate questions from your courses to start practicing.'}
+  1070→          </p>
+  1071→          <div className="flex justify-center gap-3">
+  1072→            <Button onClick={() => navigate('upload')}>
+  1073→              <BookOpen className="h-4 w-4 mr-2" />
+  1074→              Upload Slides
+  1075→            </Button>
+  1076→            <Button variant="outline" onClick={() => navigate('dashboard')}>
+  1077→              <ArrowLeft className="h-4 w-4 mr-2" />
+  1078→              Back to Dashboard
+  1079→            </Button>
+  1080→          </div>
+  1081→        </div>
+  1082→      </motion.div>
+  1083→    );
+  1084→  }
+  1085→
+  1086→  // ---------- Results Screen ----------
+  1087→  if (showResults) {
+  1088→    return (
+  1089→      <motion.div
+  1090→        initial={{ opacity: 0, scale: 0.9 }}
+  1091→        animate={{ opacity: 1, scale: 1 }}
+  1092→        transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+  1093→        className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
+  1094→      >
+  1095→        {/* Confetti burst for high scores */}
+  1096→        <AnimatePresence>
+  1097→          {scorePercent >= 0.8 && (
+  1098→            <div className="fixed inset-0 pointer-events-none z-50">
+  1099→              {Array.from({ length: 32 }).map((_, i) => (
+  1100→                <ConfettiParticle
+  1101→                  key={`result-${i}`}
+  1102→                  delay={i * 0.04}
+  1103→                  color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
+  1104→                />
+  1105→              ))}
+  1106→            </div>
+  1107→          )}
+  1108→        </AnimatePresence>
+  1109→        <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full glow-emerald-strong">
+  1110→          {/* Animated grade badge */}
+  1111→          <motion.div
+  1112→            initial={{ scale: 0, rotate: -180 }}
+  1113→            animate={{ scale: 1, rotate: 0 }}
+  1114→            transition={{ type: 'spring', stiffness: 180, damping: 12, delay: 0.2 }}
+  1115→            className="mx-auto"
+  1116→          >
+  1117→            <div className={`inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-lg ${
+  1118→              scorePercent >= 0.9
+  1119→                ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-white shadow-amber-400/30'
+  1120→                : scorePercent >= 0.7
+  1121→                  ? 'bg-gradient-to-r from-emerald-400 to-teal-500 text-white shadow-emerald-400/30'
+  1122→                  : scorePercent >= 0.5
+  1123→                    ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-white shadow-cyan-400/30'
+  1124→                    : 'bg-gradient-to-r from-orange-400 to-red-400 text-white shadow-orange-400/30'
+  1125→            }`}>
+  1126→              {scorePercent >= 0.9 ? <Trophy className="h-4 w-4" /> : scorePercent >= 0.7 ? <Zap className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+  1127→              {scorePercent >= 0.9 ? 'Outstanding' : scorePercent >= 0.7 ? 'Well Done' : scorePercent >= 0.5 ? 'Good Try' : 'Keep Going'}
+  1128→            </div>
+  1129→          </motion.div>
+  1130→          <div className="relative inline-flex">
+  1131→            <svg width="160" height="160" className="-rotate-90">
+  1132→              <circle
+  1133→                cx="80"
+  1134→                cy="80"
+  1135→                r="62"
+  1136→                fill="none"
+  1137→                stroke="currentColor"
+  1138→                strokeWidth="10"
+  1139→                className="text-muted/20"
+  1140→              />
+  1141→              <motion.circle
+  1142→                cx="80"
+  1143→                cy="80"
+  1144→                r="62"
+  1145→                fill="none"
+  1146→                stroke="url(#scoreGrad)"
+  1147→                strokeWidth="12"
+  1148→                strokeLinecap="round"
+  1149→                strokeDasharray={circumference}
+  1150→                initial={{ strokeDashoffset: circumference }}
+  1151→                animate={{ strokeDashoffset }}
+  1152→                transition={{ duration: 1.5, ease: 'easeOut' }}
+  1153→              />
+  1154→              <defs>
+  1155→                <linearGradient id="scoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+  1156→                  <stop offset="0%" stopColor="#10b981" />
+  1157→                  <stop offset="50%" stopColor="#14b8a6" />
+  1158→                  <stop offset="100%" stopColor="#06b6d4" />
+  1159→                </linearGradient>
+  1160→              </defs>
+  1161→            </svg>
+  1162→            <div className="absolute inset-0 flex flex-col items-center justify-center">
+  1163→              <motion.span
+  1164→                className="text-4xl font-bold gradient-text"
+  1165→                key={animatedScore}
+  1166→              >
+  1167→                {animatedScore}<span className="text-lg font-normal text-muted-foreground">/{questions.length}</span>
+  1168→              </motion.span>
+  1169→              <span className="text-xs text-muted-foreground mt-1">
+  1170→                {Math.round(scorePercent * 100)}% correct
+  1171→              </span>
+  1172→            </div>
+  1173→          </div>
+  1174→          {/* Best streak */}
+  1175→          {bestStreak >= 2 && (
+  1176→            <motion.div
+  1177→              initial={{ opacity: 0, y: 10 }}
+  1178→              animate={{ opacity: 1, y: 0 }}
+  1179→              transition={{ delay: 0.8 }}
+  1180→              className="flex items-center justify-center gap-1.5 text-sm"
+  1181→            >
+  1182→              <Flame className="h-4 w-4 text-orange-500" />
+  1183→              <span className="text-muted-foreground">Best streak: <span className="font-bold text-foreground">{bestStreak} in a row</span></span>
+  1184→            </motion.div>
+  1185→          )}
+  1186→
+  1187→          <div>
+  1188→            <h2 className="text-2xl font-bold">
+  1189→              {scorePercent >= 0.8
+  1190→                ? 'Excellent!'
+  1191→                : scorePercent >= 0.6
+  1192→                  ? 'Good effort!'
+  1193→                  : 'Keep practicing!'}
+  1194→            </h2>
+  1195→            <p className="text-muted-foreground text-sm mt-1">
+  1196→              You answered {score} out of {questions.length} questions correctly
+  1197→            </p>
+  1198→          </div>
+  1199→
+  1200→          {/* Per-question breakdown */}
+  1201→          <div className="space-y-2 text-left">
+  1202→            <h3 className="text-sm font-semibold">Question Breakdown</h3>
+  1203→            <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+  1204→              {questions.map((q, i) => {
+  1205→                const wasCorrect = answered[q.id] && isCorrect(q, answers[q.id] || '');
+  1206→                return (
+  1207→                  <motion.div
+  1208→                    key={q.id}
+  1209→                    initial={{ opacity: 0, x: -10 }}
+  1210→                    animate={{ opacity: 1, x: 0 }}
+  1211→                    transition={{ delay: i * 0.05 }}
+  1212→                    className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md ${wasCorrect ? 'bg-emerald-500/5' : 'bg-destructive/5'}`}
+  1213→                  >
+  1214→                    <motion.span
+  1215→                      initial={{ scale: 0 }}
+  1216→                      animate={{ scale: 1 }}
+  1217→                      transition={{ type: 'spring', stiffness: 300, delay: i * 0.05 }}
+  1218→                      className={`flex h-5 w-5 items-center justify-center rounded-full ${wasCorrect ? 'bg-emerald-500 text-white' : 'bg-destructive/20 text-destructive'}`}
+  1219→                    >
+  1220→                      {wasCorrect ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+  1221→                    </motion.span>
+  1222→                    <span className="flex-1 truncate">{q.question.slice(0, 60)}{q.question.length > 60 ? '...' : ''}</span>
+  1223→                    <span className={`text-[9px] px-1.5 py-0 rounded-full font-medium border ${TYPE_BADGE_GRADIENT[q.type] || 'bg-muted text-muted-foreground border-border'}`}>
+  1224→                      {q.type.replace('_', ' ')}
+  1225→                    </span>
+  1226→                  </motion.div>
+  1227→                );
+  1228→              })}
+  1229→            </div>
+  1230→          </div>
+  1231→
+  1232→          <div className="flex justify-center gap-3">
+  1233→            <Button onClick={handleRetry} variant="outline">
+  1234→              <RotateCcw className="h-4 w-4 mr-2" />
+  1235→              Try Again
+  1236→            </Button>
+  1237→            <Button onClick={() => navigate('dashboard')}>
+  1238→              <ArrowLeft className="h-4 w-4 mr-2" />
+  1239→              Back to Dashboard
+  1240→            </Button>
+  1241→          </div>
+  1242→        </div>
+  1243→      </motion.div>
+  1244→    );
+  1245→  }
+  1246→
+  1247→  // ---------- Flashcard Summary ----------
+  1248→  if (studyMode === 'flashcard' && showFlashcardSummary) {
+  1249→    const knownCount = knownCards.size;
+  1250→    const learningCount = stillLearningCards.size;
+  1251→    return (
+  1252→      <motion.div
+  1253→        initial={{ opacity: 0, scale: 0.9 }}
+  1254→        animate={{ opacity: 1, scale: 1 }}
+  1255→        transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+  1256→        className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
+  1257→      >
+  1258→        <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full">
+  1259→          <motion.div
+  1260→            initial={{ scale: 0, rotate: -180 }}
+  1261→            animate={{ scale: 1, rotate: 0 }}
+  1262→            transition={{ type: 'spring', stiffness: 180, damping: 12, delay: 0.2 }}
+  1263→            className="mx-auto"
+  1264→          >
+  1265→            <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-lg bg-gradient-to-r from-emerald-400 to-teal-500 text-white shadow-emerald-400/30">
+  1266→              <Layers className="h-4 w-4" />
+  1267→              Study Complete
+  1268→            </div>
+  1269→          </motion.div>
+  1270→
+  1271→          <div>
+  1272→            <h2 className="text-2xl font-bold">
+  1273→              {knownCount === flashcardQuestions.length
+  1274→                ? 'Perfect recall!'
+  1275→                : knownCount >= flashcardQuestions.length * 0.7
+  1276→                  ? 'Great progress!'
+  1277→                  : 'Keep practicing!'}
+  1278→            </h2>
+  1279→            <p className="text-muted-foreground text-sm mt-1">
+  1280→              You knew <span className="font-bold text-emerald-600 dark:text-emerald-400">{knownCount}</span> out of <span className="font-bold">{flashcardQuestions.length}</span> cards
+  1281→            </p>
+  1282→          </div>
+  1283→
+  1284→          <div className="flex items-center justify-center gap-6">
+  1285→            <div className="text-center">
+  1286→              <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{knownCount}</div>
+  1287→              <div className="text-xs text-muted-foreground mt-1">Known</div>
+  1288→            </div>
+  1289→            <div className="h-10 w-px bg-border" />
+  1290→            <div className="text-center">
+  1291→              <div className="text-3xl font-bold text-amber-600 dark:text-amber-400">{learningCount}</div>
+  1292→              <div className="text-xs text-muted-foreground mt-1">Still Learning</div>
+  1293→            </div>
+  1294→          </div>
+  1295→
+  1296→          {learningCount > 0 && (
+  1297→            <div className="text-left space-y-2">
+  1298→              <h3 className="text-sm font-semibold">Cards to review</h3>
+  1299→              <div className="max-h-32 overflow-y-auto space-y-1">
+  1300→                {flashcardQuestions
+  1301→                  .filter((q) => stillLearningCards.has(q.id))
+  1302→                  .map((q) => (
+  1303→                    <div key={q.id} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-md bg-amber-500/5 border border-amber-500/10">
+  1304→                      <Lightbulb className="h-3 w-3 text-amber-500 shrink-0" />
+  1305→                      <span className="flex-1 truncate">{q.question.slice(0, 60)}{q.question.length > 60 ? '...' : ''}</span>
+  1306→                    </div>
+  1307→                  ))}
+  1308→              </div>
+  1309→            </div>
+  1310→          )}
+  1311→
+  1312→          <div className="flex justify-center gap-3">
+  1313→            <Button onClick={handleFlashcardReset} variant="outline">
+  1314→              <RotateCcw className="h-4 w-4 mr-2" />
+  1315→              Study Again
+  1316→            </Button>
+  1317→            <Button onClick={() => navigate('dashboard')}>
+  1318→              <ArrowLeft className="h-4 w-4 mr-2" />
+  1319→              Back to Dashboard
+  1320→            </Button>
+  1321→          </div>
+  1322→        </div>
+  1323→      </motion.div>
+  1324→    );
+  1325→  }
+  1326→
+  1327→  // ---------- Question Screen ----------
+  1328→  return (
+  1329→    <div className="pl-14 lg:pl-0">
+  1330→      <div className="relative">
+  1331→        {/* Streak popup */}
+  1332→        <AnimatePresence>
+  1333→          {showStreakPopup && (
+  1334→            <motion.div
+  1335→              initial={{ opacity: 0, y: 20, scale: 0.8 }}
+  1336→              animate={{ opacity: 1, y: 0, scale: 1 }}
+  1337→              exit={{ opacity: 0, y: -20, scale: 0.8 }}
+  1338→              transition={{ type: 'spring', stiffness: 300, damping: 15 }}
+  1339→              className="fixed top-1/4 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+  1340→            >
+  1341→              <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold text-sm shadow-lg shadow-orange-500/30">
+  1342→                <motion.span
+  1343→                  animate={{ scale: [1, 1.3, 1] }}
+  1344→                  transition={{ duration: 0.4, repeat: 2 }}
+  1345→                >
+  1346→                  <Flame className="h-5 w-5" />
+  1347→                </motion.span>
+  1348→                {streak} in a row!
+  1349→              </div>
+  1350→            </motion.div>
+  1351→          )}
+  1352→        </AnimatePresence>
+  1353→
+  1354→        {/* Confetti */}
+  1355→        <AnimatePresence>
+  1356→          {showConfetti && (
+  1357→            <div className="fixed inset-0 pointer-events-none z-50">
+  1358→              {Array.from({ length: 16 }).map((_, i) => (
+  1359→                <ConfettiParticle
+  1360→                  key={i}
+  1361→                  delay={i * 0.03}
+  1362→                  color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
+  1363→                />
+  1364→              ))}
+  1365→            </div>
+  1366→          )}
+  1367→        </AnimatePresence>
+  1368→
+  1369→        {/* Animated header */}
+  1370→        <motion.div
+  1371→          initial={{ opacity: 0, y: -10 }}
+  1372→          animate={{ opacity: 1, y: 0 }}
+  1373→          className="mb-6 rounded-xl p-5 mesh-gradient gradient-border relative overflow-hidden"
+  1374→        >
+  1375→          <div className="relative z-10">
+  1376→            <div className="flex items-center justify-between mb-3">
+  1377→              <div className="flex items-center gap-3">
+  1378→                <h1 className="text-xl font-bold gradient-text">{studyMode === 'quiz' ? 'Quiz Practice' : studyMode === 'flashcard' ? 'Flashcard Study' : 'Daily Challenge'}</h1>
+  1379→                {/* Mode toggle */}
+  1380→                <div className="flex items-center rounded-lg border border-border bg-background/50 p-0.5">
+  1381→                  <button
+  1382→                    onClick={() => handleModeChange('quiz')}
+  1383→                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+  1384→                      studyMode === 'quiz'
+  1385→                        ? 'bg-primary text-primary-foreground shadow-sm'
+  1386→                        : 'text-muted-foreground hover:text-foreground'
+  1387→                    }`}
+  1388→                  >
+  1389→                    <HelpCircle className="w-3.5 h-3.5" />
+  1390→                    Quiz
+  1391→                  </button>
+  1392→                  <button
+  1393→                    onClick={() => handleModeChange('flashcard')}
+  1394→                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+  1395→                      studyMode === 'flashcard'
+  1396→                        ? 'bg-primary text-primary-foreground shadow-sm'
+  1397→                        : 'text-muted-foreground hover:text-foreground'
+  1398→                    }`}
+  1399→                  >
+  1400→                    <Layers className="w-3.5 h-3.5" />
+  1401→                    Flashcard
+  1402→                  </button>
+  1403→                  <button
+  1404→                    onClick={() => handleModeChange('daily')}
+  1405→                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+  1406→                      studyMode === 'daily'
+  1407→                        ? 'bg-primary text-primary-foreground shadow-sm'
+  1408→                        : 'text-muted-foreground hover:text-foreground'
+  1409→                    }`}
+  1410→                  >
+  1411→                    <Flame className="w-3.5 h-3.5" />
+  1412→                    Daily
+  1413→                  </button>
+  1414→                </div>
+  1415→              </div>
+  1416→              <div className="flex items-center gap-2">
+  1417→                {/* Timer display (quiz mode only) */}
+  1418→                {studyMode === 'quiz' && timerStarted && (
+  1419→                  <motion.div
+  1420→                    initial={{ opacity: 0, scale: 0.8 }}
+  1421→                    animate={{ opacity: 1, scale: 1 }}
+  1422→                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-background/60 border border-border text-xs font-mono text-muted-foreground"
+  1423→                  >
+  1424→                    <motion.div
+  1425→                      animate={showResults ? {} : { opacity: [1, 0.5, 1] }}
+  1426→                      transition={showResults ? {} : { duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+  1427→                    >
+  1428→                      <Clock className="h-3.5 w-3.5 text-primary/60" />
+  1429→                    </motion.div>
+  1430→                    <span>{formatTimer(timerSeconds)}</span>
+  1431→                  </motion.div>
+  1432→                )}
+  1433→                {studyMode === 'quiz' && streak >= 2 && (
+  1434→                  <motion.div
+  1435→                    key={streak}
+  1436→                    initial={{ scale: 0.8, opacity: 0 }}
+  1437→                    animate={{ scale: 1, opacity: 1 }}
+  1438→                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20"
+  1439→                  >
+  1440→                    <Flame className="h-4 w-4 text-orange-500" />
+  1441→                    <span className="text-xs font-bold text-orange-600 dark:text-orange-400">{streak} streak</span>
+  1442→                  </motion.div>
+  1443→                )}
+  1444→              </div>
+  1445→            </div>
+  1446→            {/* Course filter tabs (not shown in daily mode) */}
+  1447→            {studyMode !== 'daily' && (
+  1448→            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+  1449→            {COURSE_QUIZ_GROUPS.map((group) => (
+  1450→              <button
+  1451→                key={group.id}
+  1452→                onClick={() => handleCourseChange(group.id)}
+  1453→                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all ${
+  1454→                  selectedCourse === group.id
+  1455→                    ? 'bg-primary text-primary-foreground shadow-sm'
+  1456→                    : 'border border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
+  1457→                }`}
+  1458→              >
+  1459→                <group.icon className="h-3.5 w-3.5" />
+  1460→                {group.label}
+  1461→                <span className={`ml-0.5 text-[10px] ${selectedCourse === group.id ? 'bg-white/20 px-1 rounded' : 'text-muted-foreground'}`}>
+  1462→                  {group.id === 'all'
+  1463→                    ? allQuestions.length
+  1464→                    : allQuestions.filter((q) => q.courseId === group.id).length}
+  1465→                </span>
+  1466→              </button>
+  1467→            ))}
+  1468→          </div>
+  1469→            )}
+  1470→          {studyMode !== 'daily' && difficultyTotal > 0 && (
+  1471→            <div className="flex items-center gap-3 mt-2">
+  1472→              <div className="flex-1 flex h-1.5 rounded-full overflow-hidden bg-muted/40">
+  1473→                {difficultyCounts.easy > 0 && (
+  1474→                  <motion.div
+  1475→                    className="bg-emerald-500"
+  1476→                    initial={{ width: 0 }}
+  1477→                    animate={{ width: `${(difficultyCounts.easy / difficultyTotal) * 100}%` }}
+  1478→                    transition={{ duration: 0.5, ease: 'easeOut' }}
+  1479→                  />
+  1480→                )}
+  1481→                {difficultyCounts.medium > 0 && (
+  1482→                  <motion.div
+  1483→                    className="bg-amber-500"
+  1484→                    initial={{ width: 0 }}
+  1485→                    animate={{ width: `${(difficultyCounts.medium / difficultyTotal) * 100}%` }}
+  1486→                    transition={{ duration: 0.5, ease: 'easeOut', delay: 0.1 }}
+  1487→                  />
+  1488→                )}
+  1489→                {difficultyCounts.hard > 0 && (
+  1490→                  <motion.div
+  1491→                    className="bg-rose-500"
+  1492→                    initial={{ width: 0 }}
+  1493→                    animate={{ width: `${(difficultyCounts.hard / difficultyTotal) * 100}%` }}
+  1494→                    transition={{ duration: 0.5, ease: 'easeOut', delay: 0.2 }}
+  1495→                  />
+  1496→                )}
+  1497→              </div>
+  1498→              <div className="flex items-center gap-2 text-[10px] text-muted-foreground shrink-0">
+  1499→                {difficultyCounts.easy > 0 && (
+  1500→                  <span className="flex items-center gap-1">
+  1501→                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block" />
+  1502→                    {difficultyCounts.easy} Easy
+  1503→                  </span>
+  1504→                )}
+  1505→                {difficultyCounts.medium > 0 && (
+  1506→                  <span className="flex items-center gap-1">
+  1507→                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500 inline-block" />
+  1508→                    {difficultyCounts.medium} Med
+  1509→                  </span>
+  1510→                )}
+  1511→                {difficultyCounts.hard > 0 && (
+  1512→                  <span className="flex items-center gap-1">
+  1513→                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500 inline-block" />
+  1514→                    {difficultyCounts.hard} Hard
+  1515→                  </span>
+  1516→                )}
+  1517→              </div>
+  1518→            </div>
+  1519→          )}
+  1520→          {studyMode !== 'daily' && (
+  1521→          <div className="flex items-center justify-between mb-2 mt-1">
+  1522→            <span className="text-sm font-medium">
+  1523→              {studyMode === 'quiz'
+  1524→                ? `Question ${currentIndex + 1} of ${questions.length}`
+  1525→                : `Card ${currentIndex + 1} of ${flashcardQuestions.length}`}
+  1526→            </span>
+  1527→            <div className="flex items-center gap-2">
+  1528→              {studyMode === 'quiz' && (
+  1529→                <>
+  1530→                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${
+  1531→                    currentQ?.difficulty === 'easy'
+  1532→                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+  1533→                      : currentQ?.difficulty === 'medium'
+  1534→                        ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
+  1535→                        : 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20'
+  1536→                  }`}>
+  1537→                    {currentQ?.difficulty}
+  1538→                  </span>
+  1539→                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${TYPE_BADGE_GRADIENT[currentQ?.type || ''] || 'bg-muted text-muted-foreground border-border'}`}>
+  1540→                    {currentQ?.type.replace('_', ' ')}
+  1541→                  </span>
+  1542→                </>
+  1543→              )}
+  1544→              {studyMode === 'flashcard' && (
+  1545→                <span className="text-xs text-muted-foreground">
+  1546→                  {flashcardReviewed.size} of {flashcardQuestions.length} reviewed
+  1547→                </span>
+  1548→              )}
+  1549→            </div>
+  1550→          </div>
+  1551→          )}
+  1552→          {/* Custom gradient progress bar (not shown in daily mode) */}
+  1553→          {studyMode !== 'daily' && (
+  1554→          <div className="relative h-2.5 w-full rounded-full bg-muted/50 overflow-hidden">
+  1555→            <motion.div
+  1556→              className="absolute inset-y-0 left-0 rounded-full"
+  1557→              style={{
+  1558→                background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214) 0%, oklch(0.687 0.159 177.89) 50%, oklch(0.565 0.194 149.214) 100%)',
+  1559→              }}
+  1560→              initial={{ width: 0 }}
+  1561→              animate={{ width: `${studyMode === 'quiz' ? progress : flashcardProgress}%` }}
+  1562→              transition={{ duration: 0.5, ease: 'easeOut' }}
+  1563→            />
+  1564→            <motion.div
+  1565→              className="absolute top-1/2 -translate-y-1/2 text-[9px] font-bold text-white drop-shadow-sm"
+  1566→              animate={{ left: `${Math.max(studyMode === 'quiz' ? progress : flashcardProgress, 5)}%` }}
+  1567→              transition={{ duration: 0.5, ease: 'easeOut' }}
+  1568→            >
+  1569→              {Math.round(studyMode === 'quiz' ? progress : flashcardProgress)}%
+  1570→            </motion.div>
+  1571→          </div>
+  1572→          )}
+  1573→          </div>
+  1574→        </motion.div>
+  1575→
+  1576→        {/* Daily Challenge Hero Banner */}
+  1577→        {studyMode === 'daily' && (
+  1578→          <motion.div
+  1579→            initial={{ opacity: 0, y: 10 }}
+  1580→            animate={{ opacity: 1, y: 0 }}
+  1581→            className="mb-6"
+  1582→          >
+  1583→            <div className="glass-accent-top rounded-2xl p-6 animated-border relative overflow-hidden">
+  1584→              <div className="relative z-10">
+  1585→                <div className="flex items-center justify-between">
+  1586→                  <div className="space-y-2">
+  1587→                    <h2 className="text-2xl font-bold gradient-text-animated">Daily Challenge</h2>
+  1588→                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+  1589→                      <div className="flex items-center gap-1.5">
+  1590→                        <Calendar className="h-4 w-4" />
+  1591→                        <span>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
+  1592→                      </div>
+  1593→                      {dailyStreak.current > 0 && (
+  1594→                        <motion.div
+  1595→                          initial={{ scale: 0.9 }}
+  1596→                          animate={{ scale: 1 }}
+  1597→                          className="flex items-center gap-1.5 text-orange-600 dark:text-orange-400 font-semibold"
+  1598→                        >
+  1599→                          <Flame className="h-4 w-4" />
+  1600→                          <span>{dailyStreak.current} day streak!</span>
+  1601→                        </motion.div>
+  1602→                      )}
+  1603→                    </div>
+  1604→                  </div>
+  1605→                  <div className="text-right space-y-1">
+  1606→                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+  1607→                      <Clock className="h-3.5 w-3.5" />
+  1608→                      <span>Resets in</span>
+  1609→                    </div>
+  1610→                    <div className="font-mono text-lg font-bold tabular-nums">
+  1611→                      {String(dailyTimeLeft.hours).padStart(2, '0')}:{String(dailyTimeLeft.minutes).padStart(2, '0')}:{String(dailyTimeLeft.seconds).padStart(2, '0')}
+  1612→                    </div>
+  1613→                  </div>
+  1614→                </div>
+  1615→                {/* Daily progress bar */}
+  1616→                {!dailyShowResults && (
+  1617→                  <div className="mt-4">
+  1618→                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+  1619→                      <span>Question {Math.min(currentIndex + 1, dailyQuestions.length)} of {dailyQuestions.length}</span>
+  1620→                      <span>{dailyScore} correct</span>
+  1621→                    </div>
+  1622→                    <div className="relative h-2 w-full rounded-full bg-muted/50 overflow-hidden">
+  1623→                      <motion.div
+  1624→                        className="absolute inset-y-0 left-0 rounded-full"
+  1625→                        style={{
+  1626→                          background: 'linear-gradient(90deg, #f59e0b 0%, #ef4444 50%, #ec4899 100%)',
+  1627→                        }}
+  1628→                        initial={{ width: 0 }}
+  1629→                        animate={{ width: `${dailyProgress}%` }}
+  1630→                        transition={{ duration: 0.5, ease: 'easeOut' }}
+  1631→                      />
+  1632→                    </div>
+  1633→                  </div>
+  1634→                )}
+  1635→              </div>
+  1636→            </div>
+  1637→          </motion.div>
+  1638→        )}
+  1639→
+  1640→        {/* Daily Challenge Results Screen */}
+  1641→        {studyMode === 'daily' && dailyShowResults && dailyChallenge?.completed && (
+  1642→          <motion.div
+  1643→            initial={{ opacity: 0, scale: 0.9 }}
+  1644→            animate={{ opacity: 1, scale: 1 }}
+  1645→            transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+  1646→            className="flex flex-col items-center justify-center min-h-[50vh] gap-6"
+  1647→          >
+  1648→            {/* Confetti for perfect score */}
+  1649→            <AnimatePresence>
+  1650→              {dailyChallenge.score === dailyChallenge.total && (
+  1651→                <div className="fixed inset-0 pointer-events-none z-50">
+  1652→                  {Array.from({ length: 40 }).map((_, i) => (
+  1653→                    <ConfettiParticle
+  1654→                      key={`daily-confetti-${i}`}
+  1655→                      delay={i * 0.03}
+  1656→                      color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
+  1657→                    />
+  1658→                  ))}
+  1659→                </div>
+  1660→              )}
+  1661→            </AnimatePresence>
+  1662→            <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full glow-emerald-strong">
+  1663→              {/* Animated circular progress */}
+  1664→              <div className="relative inline-flex">
+  1665→                <svg width="160" height="160" className="-rotate-90">
+  1666→                  <circle
+  1667→                    cx="80"
+  1668→                    cy="80"
+  1669→                    r="62"
+  1670→                    fill="none"
+  1671→                    stroke="currentColor"
+  1672→                    strokeWidth="10"
+  1673→                    className="text-muted/20"
+  1674→                  />
+  1675→                  <motion.circle
+  1676→                    cx="80"
+  1677→                    cy="80"
+  1678→                    r="62"
+  1679→                    fill="none"
+  1680→                    stroke="url(#dailyScoreGrad)"
+  1681→                    strokeWidth="12"
+  1682→                    strokeLinecap="round"
+  1683→                    strokeDasharray={dailyCircumference}
+  1684→                    initial={{ strokeDashoffset: dailyCircumference }}
+  1685→                    animate={{ strokeDashoffset: dailyStrokeDashoffset }}
+  1686→                    transition={{ duration: 1.5, ease: 'easeOut' }}
+  1687→                  />
+  1688→                  <defs>
+  1689→                    <linearGradient id="dailyScoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+  1690→                      <stop offset="0%" stopColor="#f59e0b" />
+  1691→                      <stop offset="50%" stopColor="#ef4444" />
+  1692→                      <stop offset="100%" stopColor="#ec4899" />
+  1693→                    </linearGradient>
+  1694→                  </defs>
+  1695→                </svg>
+  1696→                <div className="absolute inset-0 flex flex-col items-center justify-center">
+  1697→                  <motion.span
+  1698→                    className="text-4xl font-bold gradient-text"
+  1699→                    key={dailyAnimatedScore}
+  1700→                  >
+  1701→                    {dailyAnimatedScore}<span className="text-lg font-normal text-muted-foreground">/{dailyChallenge.total}</span>
+  1702→                  </motion.span>
+  1703→                  <span className="text-xs text-muted-foreground mt-1">
+  1704→                    {Math.round(dailyScorePercent * 100)}% correct
+  1705→                  </span>
+  1706→                </div>
+  1707→              </div>
+  1708→
+  1709→              {/* Streak display */}
+  1710→              <motion.div
+  1711→                initial={{ opacity: 0, y: 10 }}
+  1712→                animate={{ opacity: 1, y: 0 }}
+  1713→                transition={{ delay: 0.6 }}
+  1714→                className="flex items-center justify-center gap-2"
+  1715→              >
+  1716→                <div className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-orange-500/10 border border-orange-500/20">
+  1717→                  <Flame className="h-5 w-5 text-orange-500" />
+  1718→                  <span className="font-bold text-orange-600 dark:text-orange-400">{dailyStreak.current} day streak</span>
+  1719→                </div>
+  1720→              </motion.div>
+  1721→
+  1722→              {dailyStreak.best > 1 && (
+  1723→                <motion.p
+  1724→                  initial={{ opacity: 0 }}
+  1725→                  animate={{ opacity: 1 }}
+  1726→                  transition={{ delay: 0.8 }}
+  1727→                  className="text-xs text-muted-foreground"
+  1728→                >
+  1729→                  Best streak: {dailyStreak.best} days
+  1730→                </motion.p>
+  1731→              )}
+  1732→
+  1733→              {/* Come back tomorrow message */}
+  1734→              <motion.div
+  1735→                initial={{ opacity: 0, y: 5 }}
+  1736→                animate={{ opacity: 1, y: 0 }}
+  1737→                transition={{ delay: 1 }}
+  1738→                className="text-center"
+  1739→              >
+  1740→                <h2 className="text-xl font-bold">
+  1741→                  {dailyChallenge.score === dailyChallenge.total
+  1742→                    ? 'Perfect Score!'
+  1743→                    : dailyChallenge.score >= dailyChallenge.total * 0.6
+  1744→                      ? 'Great work!'
+  1745→                      : 'Keep practicing!'}
+  1746→                </h2>
+  1747→                <p className="text-muted-foreground text-sm mt-1">
+  1748→                  Come back tomorrow for a new challenge!
+  1749→                </p>
+  1750→              </motion.div>
+  1751→
+  1752→              {/* Per-question breakdown */}
+  1753→              <div className="space-y-2 text-left">
+  1754→                <h3 className="text-sm font-semibold">Question Breakdown</h3>
+  1755→                <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+  1756→                  {dailyQuestions.map((q, i) => {
+  1757→                    const wasCorrect = answered[q.id] && isCorrect(q, answers[q.id] || '');
+  1758→                    return (
+  1759→                      <motion.div
+  1760→                        key={q.id}
+  1761→                        initial={{ opacity: 0, x: -10 }}
+  1762→                        animate={{ opacity: 1, x: 0 }}
+  1763→                        transition={{ delay: i * 0.05 + 0.3 }}
+  1764→                        className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md ${wasCorrect ? 'bg-emerald-500/5' : 'bg-destructive/5'}`}
+  1765→                      >
+  1766→                        <motion.span
+  1767→                          initial={{ scale: 0 }}
+  1768→                          animate={{ scale: 1 }}
+  1769→                          transition={{ type: 'spring', stiffness: 300, delay: i * 0.05 + 0.3 }}
+  1770→                          className={`flex h-5 w-5 items-center justify-center rounded-full ${wasCorrect ? 'bg-emerald-500 text-white' : 'bg-destructive/20 text-destructive'}`}
+  1771→                        >
+  1772→                          {wasCorrect ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+  1773→                        </motion.span>
+  1774→                        <span className="flex-1 truncate">{q.question.slice(0, 60)}{q.question.length > 60 ? '...' : ''}</span>
+  1775→                        <span className={`text-[9px] px-1.5 py-0 rounded-full font-medium border ${TYPE_BADGE_GRADIENT[q.type] || 'bg-muted text-muted-foreground border-border'}`}>
+  1776→                          {q.type.replace('_', ' ')}
+  1777→                        </span>
+  1778→                      </motion.div>
+  1779→                    );
+  1780→                  })}
+  1781→                </div>
+  1782→              </div>
+  1783→
+  1784→              <div className="flex flex-col sm:flex-row justify-center gap-3">
+  1785→                <Button onClick={handleDailyShare} variant="outline">
+  1786→                  <Copy className="h-4 w-4 mr-2" />
+  1787→                  {dailyShareCopied ? 'Copied!' : 'Share Results'}
+  1788→                </Button>
+  1789→                <Button onClick={() => navigate('dashboard')}>
+  1790→                  <ArrowLeft className="h-4 w-4 mr-2" />
+  1791→                  Back to Dashboard
+  1792→                </Button>
+  1793→              </div>
+  1794→            </div>
+  1795→          </motion.div>
+  1796→        )}
+  1797→
+  1798→        {/* Daily Challenge Question Card */}
+  1799→        {studyMode === 'daily' && !dailyShowResults && dailyCurrentQ && (
+  1800→        <AnimatePresence mode="wait">
+  1801→          {dailyCurrentQ && (
+  1802→            <motion.div
+  1803→              key={dailyCurrentQ.id}
+  1804→              initial={{ opacity: 0, x: 40, scale: 0.98 }}
+  1805→              animate={{ opacity: 1, x: 0, scale: 1 }}
+  1806→              exit={{ opacity: 0, x: -40, scale: 0.98 }}
+  1807→              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+  1808→              className="glass rounded-xl p-6 space-y-6 glow-emerald"
+  1809→            >
+  1810→              {/* Concept tag */}
+  1811→              {dailyCurrentQ.concept && (
+  1812→                <motion.div
+  1813→                  initial={{ opacity: 0, x: -10 }}
+  1814→                  animate={{ opacity: 1, x: 0 }}
+  1815→                  className="flex items-center gap-2"
+  1816→                >
+  1817→                  <Badge variant="secondary" className="text-xs bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/10">
+  1818→                    {dailyCurrentQ.concept}
+  1819→                  </Badge>
+  1820→                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${
+  1821→                    dailyCurrentQ.difficulty === 'easy'
+  1822→                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+  1823→                      : dailyCurrentQ.difficulty === 'medium'
+  1824→                        ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
+  1825→                        : 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20'
+  1826→                  }`}>
+  1827→                    {dailyCurrentQ.difficulty}
+  1828→                  </span>
+  1829→                </motion.div>
+  1830→              )}
+  1831→
+  1832→              {/* Question text */}
+  1833→              <h2 className="text-lg font-semibold leading-relaxed">{dailyCurrentQ.question}</h2>
+  1834→
+  1835→              {/* Question type renderers — reuse the same pattern as quiz mode */}
+  1836→              {dailyCurrentQ.type === 'multiple_choice' && dailyCurrentQ.options && (
+  1837→                <div className="grid gap-2">
+  1838→                  {dailyCurrentQ.options.map((opt, i) => {
+  1839→                    const letter = String.fromCharCode(65 + i);
+  1840→                    const isAnswered = answered[dailyCurrentQ.id];
+  1841→                    const isSelected = answers[dailyCurrentQ.id] === opt;
+  1842→                    const isCorrectOpt = opt === dailyCurrentQ.answer;
+  1843→
+  1844→                    return (
+  1845→                      <motion.button
+  1846→                        key={opt}
+  1847→                        whileHover={!isAnswered ? { scale: 1.01, y: -1 } : {}}
+  1848→                        whileTap={!isAnswered ? { scale: 0.99 } : {}}
+  1849→                        onClick={() => !isAnswered && handleDailyAnswer(opt)}
+  1850→                        disabled={isAnswered}
+  1851→                        className={`relative flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition-all ${
+  1852→                          isAnswered
+  1853→                            ? isCorrectOpt
+  1854→                              ? 'border-emerald-500/60 bg-emerald-500/8 shadow-sm shadow-emerald-500/10'
+  1855→                              : isSelected
+  1856→                                ? 'border-destructive/60 bg-destructive/8'
+  1857→                                : 'border-border opacity-60'
+  1858→                            : 'border-border hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm hover:shadow-primary/5 cursor-pointer'
+  1859→                        }`}
+  1860→                      >
+  1861→                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-bold transition-colors ${
+  1862→                          isAnswered && isCorrectOpt
+  1863→                            ? 'bg-emerald-500 text-white'
+  1864→                            : isAnswered && isSelected
+  1865→                              ? 'bg-destructive text-white'
+  1866→                              : 'bg-muted text-muted-foreground'
+  1867→                        }`}>
+  1868→                          {isAnswered && isCorrectOpt ? (
+  1869→                            <CheckCircle2 className="h-4 w-4" />
+  1870→                          ) : isAnswered && isSelected ? (
+  1871→                            <XCircle className="h-4 w-4" />
+  1872→                          ) : (
+  1873→                            letter
+  1874→                          )}
+  1875→                        </span>
+  1876→                        <span className={isAnswered && isCorrectOpt ? 'text-emerald-700 dark:text-emerald-300' : ''}>{opt}</span>
+  1877→                      </motion.button>
+  1878→                    );
+  1879→                  })}
+  1880→                </div>
+  1881→              )}
+  1882→
+  1883→              {dailyCurrentQ.type === 'true_false' && (
+  1884→                <div className="flex gap-3">
+  1885→                  {['True', 'False'].map((opt) => {
+  1886→                    const isAnswered = answered[dailyCurrentQ.id];
+  1887→                    const isSelected = answers[dailyCurrentQ.id] === opt;
+  1888→                    const isCorrectOpt = opt === dailyCurrentQ.answer;
+  1889→
+  1890→                    return (
+  1891→                      <motion.button
+  1892→                        key={opt}
+  1893→                        whileHover={!isAnswered ? { scale: 1.03, y: -2 } : {}}
+  1894→                        whileTap={!isAnswered ? { scale: 0.97 } : {}}
+  1895→                        onClick={() => !isAnswered && handleDailyAnswer(opt)}
+  1896→                        disabled={isAnswered}
+  1897→                        className={`flex-1 rounded-lg border p-4 text-center font-semibold transition-all ${
+  1898→                          isAnswered
+  1899→                            ? isCorrectOpt
+  1900→                              ? 'border-emerald-500/60 bg-emerald-500/8 text-emerald-700 dark:text-emerald-400 shadow-sm shadow-emerald-500/10'
+  1901→                              : isSelected
+  1902→                                ? 'border-destructive/60 bg-destructive/8 text-destructive'
+  1903→                                : 'border-border opacity-60'
+  1904→                            : 'border-border hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm hover:shadow-primary/5 cursor-pointer'
+  1905→                        }`}
+  1906→                      >
+  1907→                        {isAnswered && isCorrectOpt && <CheckCircle2 className="h-5 w-5 inline mr-1.5" />}
+  1908→                        {isAnswered && isSelected && !isCorrectOpt && <XCircle className="h-5 w-5 inline mr-1.5" />}
+  1909→                        {opt}
+  1910→                      </motion.button>
+  1911→                    );
+  1912→                  })}
+  1913→                </div>
+  1914→              )}
+  1915→
+  1916→              {dailyCurrentQ.type === 'short_answer' && !answered[dailyCurrentQ.id] && (
+  1917→                <div className="flex gap-2">
+  1918→                  <Input
+  1919→                    placeholder="Type your answer..."
+  1920→                    onKeyDown={(e) => {
+  1921→                      if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+  1922→                        handleDailyAnswer((e.target as HTMLInputElement).value);
+  1923→                      }
+  1924→                    }}
+  1925→                    id="daily-short-answer-input"
+  1926→                  />
+  1927→                  <Button
+  1928→                    onClick={() => {
+  1929→                      const input = document.getElementById('daily-short-answer-input') as HTMLInputElement;
+  1930→                      if (input?.value.trim()) handleDailyAnswer(input.value);
+  1931→                    }}
+  1932→                  >
+  1933→                    Submit
+  1934→                  </Button>
+  1935→                </div>
+  1936→              )}
+  1937→
+  1938→              {dailyCurrentQ.type === 'short_answer' && answered[dailyCurrentQ.id] && (
+  1939→                <div className="rounded-lg border p-4 text-sm space-y-1">
+  1940→                  <p className="text-muted-foreground">Your answer:</p>
+  1941→                  <p className="font-medium">{answers[dailyCurrentQ.id]}</p>
+  1942→                </div>
+  1943→              )}
+  1944→
+  1945→              {dailyCurrentQ.type === 'fill_blank' && !answered[dailyCurrentQ.id] && (
+  1946→                <div className="flex gap-2 items-center">
+  1947→                  <Input
+  1948→                    placeholder="Fill in the blank..."
+  1949→                    onKeyDown={(e) => {
+  1950→                      if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+  1951→                        handleDailyAnswer((e.target as HTMLInputElement).value);
+  1952→                      }
+  1953→                    }}
+  1954→                    id="daily-fill-blank-input"
+  1955→                  />
+  1956→                  <Button
+  1957→                    onClick={() => {
+  1958→                      const input = document.getElementById('daily-fill-blank-input') as HTMLInputElement;
+  1959→                      if (input?.value.trim()) handleDailyAnswer(input.value);
+  1960→                    }}
+  1961→                  >
+  1962→                    Submit
+  1963→                  </Button>
+  1964→                </div>
+  1965→              )}
+  1966→
+  1967→              {dailyCurrentQ.type === 'fill_blank' && answered[dailyCurrentQ.id] && (
+  1968→                <div className="rounded-lg border p-4 text-sm space-y-1">
+  1969→                  <p className="text-muted-foreground">Your answer:</p>
+  1970→                  <p className="font-medium">{answers[dailyCurrentQ.id]}</p>
+  1971→                </div>
+  1972→              )}
+  1973→
+  1974→              {dailyCurrentQ.type === 'matching' && dailyCurrentQ.matchingPairs && !answered[dailyCurrentQ.id] && (
+  1975→                <MatchingInput
+  1976→                  pairs={dailyCurrentQ.matchingPairs}
+  1977→                  onAnswer={(answer) => handleDailyAnswer(answer)}
+  1978→                />
+  1979→              )}
+  1980→
+  1981→              {dailyCurrentQ.type === 'error_correction' && dailyCurrentQ.errorText && !answered[dailyCurrentQ.id] && (
+  1982→                <ErrorCorrectionInput
+  1983→                  errorText={dailyCurrentQ.errorText}
+  1984→                  onAnswer={(answer) => handleDailyAnswer(answer)}
+  1985→                />
+  1986→              )}
+  1987→
+  1988→              {dailyCurrentQ.type === 'error_correction' && answered[dailyCurrentQ.id] && (
+  1989→                <div className="rounded-lg border p-4 text-sm space-y-1">
+  1990→                  <p className="text-muted-foreground">Your correction:</p>
+  1991→                  <p className="font-medium">{answers[dailyCurrentQ.id] || '(empty)'}</p>
+  1992→                </div>
+  1993→              )}
+  1994→
+  1995→              {/* Explanation */}
+  1996→              <AnimatePresence>
+  1997→                {showExplanation && dailyCurrentQ.explanation && (
+  1998→                  <motion.div
+  1999→                    initial={{ opacity: 0, y: 10, height: 0 }}
+  2000→                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+
+[showing lines 1-2000 of 2662; use offset=2001 with limit to continue reading]

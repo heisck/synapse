@@ -27,6 +27,7 @@ import {
   ChevronDown,
   Trash2,
   Download,
+  Brain,
 } from 'lucide-react';
 import {
   BarChart,
@@ -50,6 +51,7 @@ import { StatsCard } from './StatsCard';
 import { CourseCard } from './CourseCard';
 import { EmptyState } from './EmptyState';
 import { useStudyStreak, useTotalStudyTime } from '@/hooks/useStudyTracker';
+import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
 
 const topicChips = ['Cell Biology', 'Organic Chemistry', 'Data Structures', 'Physics'];
 
@@ -246,6 +248,8 @@ export function Dashboard() {
 
   const { current: currentStreak, best: bestStreak } = useStudyStreak();
   const totalStudyTimeMinutes = useTotalStudyTime();
+  const { overdueCount, getStudyPlan } = useSpacedRepetition();
+  const studyPlan = getStudyPlan(7);
 
   const [progressValue, setProgressValue] = useState(0);
   const [activeTipIndex, setActiveTipIndex] = useState(() => Math.floor(Math.random() * studyTips.length));
@@ -749,6 +753,101 @@ export function Dashboard() {
           </div>
         </motion.div>
       )}
+
+      {/* Spaced Review Card */}
+      <motion.div
+        variants={fadeUp}
+        initial="initial"
+        animate="animate"
+        transition={{ delay: 0.2 }}
+      >
+        <div className="glass mesh-gradient gradient-border rounded-xl p-6 card-shadow relative overflow-hidden">
+          <div className="relative z-10 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <motion.div
+                  animate={{ rotate: [0, 5, -5, 0] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                >
+                  <Brain className="h-5 w-5 text-primary" />
+                </motion.div>
+                <h3 className="font-semibold text-sm">Spaced Review</h3>
+              </div>
+              {overdueCount > 0 && (
+                <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-xs">
+                  {overdueCount} due
+                </Badge>
+              )}
+            </div>
+
+            {overdueCount === 0 ? (
+              <div className="flex items-center gap-3 py-2">
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/15 glow-emerald-strong"
+                >
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                </motion.div>
+                <div>
+                  <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">All caught up! 🎉</p>
+                  <p className="text-xs text-muted-foreground">No reviews due right now</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-semibold text-foreground">{overdueCount} concept{overdueCount !== 1 ? 's' : ''}</span> due for review
+                </p>
+                <Button
+                  size="sm"
+                  className="pulse-glow"
+                  onClick={() => {
+                    navigate('quiz');
+                    window.dispatchEvent(new CustomEvent('start-spaced-review'));
+                  }}
+                >
+                  <Brain className="h-4 w-4 mr-1.5" />
+                  Start Review
+                  <ArrowRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            )}
+
+            {/* Mini 7-day study plan */}
+            <div className="space-y-2 pt-1">
+              <p className="text-xs text-muted-foreground font-medium">7-Day Plan</p>
+              <div className="flex items-center gap-1.5">
+                {studyPlan.map((day, i) => {
+                  const maxCount = Math.max(...studyPlan.map((d) => d.count), 1);
+                  const opacity = day.count > 0 ? Math.max(0.3, day.count / maxCount) : 0;
+                  const dayLabel = ['M', 'T', 'W', 'T', 'F', 'S', 'S'][i];
+                  return (
+                    <div key={day.date} className="flex flex-col items-center gap-1">
+                      <div
+                        className={`h-8 w-8 rounded-md flex items-center justify-center text-xs font-semibold transition-all ${
+                          day.count === 0
+                            ? 'bg-muted/30 text-muted-foreground/50'
+                            : 'text-white'
+                        }`}
+                        style={
+                          day.count > 0
+                            ? { backgroundColor: `oklch(0.627 0.194 149.214 / ${opacity})` }
+                            : undefined
+                        }
+                      >
+                        {day.count > 0 ? day.count : ''}
+                      </div>
+                      <span className="text-[10px] text-muted-foreground/60">{dayLabel}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </motion.div>
 
       {/* Topic Chips */}
       <motion.div variants={fadeUp} className="space-y-3">

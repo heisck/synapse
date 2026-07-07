@@ -43,7 +43,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', view: 'dashboard', shortcut: '\u23181' },
   { icon: FileUp, label: 'Upload Slides', view: 'upload', shortcut: '\u23183' },
-  { icon: BookOpen, label: 'My Courses', view: 'dashboard', shortcut: '' },
+  { icon: BookOpen, label: 'My Courses', view: 'upload', shortcut: '' },
   { icon: MessageSquare, label: 'Tutor', view: 'tutor', shortcut: '\u23182' },
   { icon: ClipboardCheck, label: 'Quiz Mode', view: 'quiz', shortcut: '\u23184' },
   { icon: BookMarked, label: 'Notes', view: 'notes', shortcut: '\u23185' },
