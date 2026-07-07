@@ -274,6 +274,8 @@ export function TutorView() {
     tutorMode,
     setTutorMode,
     activeSlides,
+    setActiveSlides,
+    setActiveCourse,
     currentSlideIndex,
     setCurrentSlideIndex,
     activeSlideContent,
@@ -550,11 +552,25 @@ export function TutorView() {
     }
   }, [messages.length])
 
-  // Auto-scroll to bottom & stop TTS on new messages
+  // Auto-scroll on new messages & stop TTS. The ScrollArea ref is the Radix
+  // root — the element that actually scrolls is the viewport inside it.
   const prevMessagesLen = useRef(messages.length)
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    const viewport = scrollRef.current?.querySelector<HTMLElement>('[data-radix-scroll-area-viewport]')
+    if (viewport) {
+      // Scroll so a fresh AI response is read from its start; anything else
+      // (user message, typing indicator) just pins to the bottom.
+      const last = messages[messages.length - 1]
+      requestAnimationFrame(() => {
+        if (last?.role === 'assistant' && !isLoading) {
+          const el = viewport.querySelector<HTMLElement>(`[data-message-id="${last.id}"]`)
+          if (el) {
+            viewport.scrollTo({ top: el.offsetTop - 12, behavior: 'smooth' })
+            return
+          }
+        }
+        viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
+      })
     }
     if (messages.length > prevMessagesLen.current) {
       stopAllTTS()
@@ -840,8 +856,33 @@ export function TutorView() {
     }
   }
 
+  // When a suggested topic matches one of the user's courses, pull that
+  // course's slides straight into the slide panel — no trip to Courses needed.
+  const loadCourseSlidesByTitle = useCallback(async (title: string) => {
+    const course = courses.find((c) => c.title === title)
+    if (!course) return
+    setActiveCourse(course)
+    setCurrentSlideIndex(0)
+    if (course.slides && course.slides.length > 0) {
+      setActiveSlides(course.slides)
+      return
+    }
+    try {
+      const res = await fetch(`/api/courses/${course.id}`)
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.course?.slides?.length) {
+        setActiveCourse(data.course)
+        setActiveSlides(data.course.slides)
+      }
+    } catch {
+      // Slides are a bonus here — the chat continues without them
+    }
+  }, [courses, setActiveCourse, setActiveSlides, setCurrentSlideIndex])
+
   const handleTopicClick = (topic: string) => {
     setActiveTopic(topic)
+    loadCourseSlidesByTitle(topic)
     handleSend(`I'd like to learn about ${topic}`)
   }
 
@@ -1229,11 +1270,42 @@ export function TutorView() {
           {/* Course Context Panel - fallback when no dedicated slide panel */}
           {!showSlidePanel && <CourseContextPanel />}
 
-          {/* Chat sub-header with search button */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
-            <span className="text-xs text-muted-foreground">
+          {/* Chat sub-header with slide navigation + search button */}
+          <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-border/40">
+            <span className="text-xs text-muted-foreground truncate shrink min-w-0">
               {activeTopic ? `Studying: ${activeTopic}` : 'Ready to learn'}
             </span>
+            {/* Slide controls: advance slides without leaving the chat */}
+            {activeSlides.length > 0 && (
+              <div className="flex items-center gap-1 min-w-0 shrink-0 max-w-[55%]">
+                <button
+                  onClick={() => setCurrentSlideIndex(Math.max(0, currentSlideIndex - 1))}
+                  disabled={currentSlideIndex === 0}
+                  className="p-1 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                  aria-label="Previous slide"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums shrink-0">
+                  {currentSlideIndex + 1}/{activeSlides.length}
+                </Badge>
+                <span
+                  className="text-xs text-muted-foreground truncate min-w-0 hidden sm:inline"
+                  title={activeSlides[currentSlideIndex]?.title}
+                >
+                  {activeSlides[currentSlideIndex]?.title}
+                </span>
+                <button
+                  onClick={() => setCurrentSlideIndex(Math.min(activeSlides.length - 1, currentSlideIndex + 1))}
+                  disabled={currentSlideIndex === activeSlides.length - 1}
+                  className="flex items-center gap-0.5 px-1.5 py-1 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors text-[11px] font-medium"
+                  aria-label="Next slide"
+                >
+                  Next
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
             <motion.button
               whileHover={{ scale: 1.08 }}
               whileTap={{ scale: 0.92 }}
@@ -1346,7 +1418,7 @@ export function TutorView() {
                   /* Cards-first mode: the deck is the teaching surface; text the AI below */
                   <div className="mx-auto max-w-xl py-4 space-y-4">
                     {latestQuiz ? (
-                      <InteractiveQuizCard key={latestQuiz.messageId} payload={latestQuiz.payload} />
+                      <InteractiveQuizCard key={latestQuiz.messageId} payload={latestQuiz.payload} messageId={latestQuiz.messageId} />
                     ) : (
                       <div className="flex flex-col items-center gap-3 py-12 text-center">
                         <Layers className="h-8 w-8 text-primary/60" />
@@ -1674,7 +1746,7 @@ export function TutorView() {
                     <ClipboardCheck className="h-3.5 w-3.5" />
                     Practice
                   </div>
-                  <InteractiveQuizCard key={latestQuiz.messageId} payload={latestQuiz.payload} />
+                  <InteractiveQuizCard key={latestQuiz.messageId} payload={latestQuiz.payload} messageId={latestQuiz.messageId} />
                   <Separator className="mt-3" />
                 </div>
               )}

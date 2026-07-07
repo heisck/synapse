@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { db } from '@/lib/db';
+import { db, createPrismaClient } from '@/lib/db';
 
 // Self-heal: the dev server may hold a Prisma client instantiated before the
 // Presence model existed (cached on globalThis across hot reloads). If so,
@@ -8,7 +8,7 @@ import { db } from '@/lib/db';
 let healedClient: PrismaClient | null = null;
 function presenceDb(): PrismaClient {
   if ((db as PrismaClient).presence) return db as PrismaClient;
-  if (!healedClient) healedClient = new PrismaClient();
+  if (!healedClient) healedClient = createPrismaClient();
   return healedClient;
 }
 

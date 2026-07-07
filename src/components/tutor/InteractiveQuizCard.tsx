@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, XCircle, ChevronRight, RotateCcw, Trophy, Layers, ClipboardCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -55,17 +55,23 @@ export function parseQuizPayload(content: string): { payload: QuizPayload; befor
  * Interactive in-chat quiz / flashcard deck. The learner selects an answer,
  * the card validates it, and every answer is recorded as a real
  * AdaptiveResult so mastery tracking learns from it.
+ *
+ * Progress lives in the app store keyed by the assistant message id, so the
+ * same deck rendered in two places (in-chat and side panel) shares one state:
+ * a question answered in one view is answered in both.
  */
-export function InteractiveQuizCard({ payload }: { payload: QuizPayload }) {
+export function InteractiveQuizCard({ payload, messageId }: { payload: QuizPayload; messageId: string }) {
   const addAdaptiveResult = useAppStore((s) => s.addAdaptiveResult)
   const updateMastery = useAppStore((s) => s.updateMastery)
   const activeTopic = useAppStore((s) => s.activeTopic)
   const masteryMap = useAppStore((s) => s.masteryMap)
+  const setQuizCardProgress = useAppStore((s) => s.setQuizCardProgress)
+  const progress = useAppStore((s) => s.quizProgress[messageId])
 
-  const [index, setIndex] = useState(0)
-  const [selected, setSelected] = useState<number | null>(null)
-  const [correctCount, setCorrectCount] = useState(0)
-  const [finished, setFinished] = useState(false)
+  const index = progress?.index ?? 0
+  const selected = progress?.selected ?? null
+  const correctCount = progress?.correctCount ?? 0
+  const finished = progress?.finished ?? false
 
   const isFlashcards = payload.mode === 'flashcards'
   const question = payload.questions[index]
@@ -74,9 +80,13 @@ export function InteractiveQuizCard({ payload }: { payload: QuizPayload }) {
 
   const handleSelect = useCallback((optIdx: number) => {
     if (selected !== null) return
-    setSelected(optIdx)
     const correct = optIdx === question.answerIndex
-    if (correct) setCorrectCount((c) => c + 1)
+    setQuizCardProgress(messageId, {
+      index,
+      selected: optIdx,
+      correctCount: correct ? correctCount + 1 : correctCount,
+      finished,
+    })
 
     const concept = question.concept || payload.title || activeTopic || 'General'
     addAdaptiveResult({ concept, correct, difficulty: 'medium', timestamp: Date.now() })
@@ -84,23 +94,19 @@ export function InteractiveQuizCard({ payload }: { payload: QuizPayload }) {
     const prev = masteryMap[concept]?.level ?? 40
     const next = Math.max(0, Math.min(100, correct ? prev + 8 : prev - 5))
     updateMastery(concept, next, correct ? `Answered "${question.question.slice(0, 60)}" correctly` : `Missed "${question.question.slice(0, 60)}"`)
-  }, [selected, question, payload.title, activeTopic, addAdaptiveResult, updateMastery, masteryMap])
+  }, [selected, question, payload.title, activeTopic, addAdaptiveResult, updateMastery, masteryMap, messageId, index, correctCount, finished, setQuizCardProgress])
 
   const handleNext = useCallback(() => {
     if (index + 1 >= total) {
-      setFinished(true)
+      setQuizCardProgress(messageId, { index, selected, correctCount, finished: true })
     } else {
-      setIndex((i) => i + 1)
-      setSelected(null)
+      setQuizCardProgress(messageId, { index: index + 1, selected: null, correctCount, finished: false })
     }
-  }, [index, total])
+  }, [index, total, selected, correctCount, messageId, setQuizCardProgress])
 
   const handleRestart = useCallback(() => {
-    setIndex(0)
-    setSelected(null)
-    setCorrectCount(0)
-    setFinished(false)
-  }, [])
+    setQuizCardProgress(messageId, { index: 0, selected: null, correctCount: 0, finished: false })
+  }, [messageId, setQuizCardProgress])
 
   if (finished) {
     const pct = Math.round((correctCount / total) * 100)
@@ -180,13 +186,11 @@ export function InteractiveQuizCard({ payload }: { payload: QuizPayload }) {
                 else style = 'border-border opacity-50'
               }
               return (
-                <motion.button
+                <button
                   key={i}
-                  whileHover={!answered ? { scale: 1.01, x: 2 } : undefined}
-                  whileTap={!answered ? { scale: 0.98 } : undefined}
                   onClick={() => handleSelect(i)}
                   disabled={answered}
-                  className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-[13px] transition-colors ${style}`}
+                  className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-[13px] transition-colors cursor-pointer disabled:cursor-default ${style}`}
                 >
                   <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${
                     answered && isCorrectOpt ? 'border-emerald-500 bg-emerald-500 text-white'
@@ -196,7 +200,7 @@ export function InteractiveQuizCard({ payload }: { payload: QuizPayload }) {
                     {answered && isCorrectOpt ? <CheckCircle2 className="h-3 w-3" /> : answered && isChosen ? <XCircle className="h-3 w-3" /> : String.fromCharCode(65 + i)}
                   </span>
                   <span className="flex-1">{opt}</span>
-                </motion.button>
+                </button>
               )
             })}
           </div>
@@ -217,14 +221,18 @@ export function InteractiveQuizCard({ payload }: { payload: QuizPayload }) {
             )}
           </AnimatePresence>
 
-          {answered && (
-            <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end">
-              <Button size="sm" onClick={handleNext} className="gap-1 h-8 bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90">
-                {index + 1 >= total ? 'See results' : 'Next'}
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-            </motion.div>
-          )}
+          {/* Footer row always occupies its height so the card doesn't jump
+              when the Next button appears after answering */}
+          <div className="flex h-8 justify-end">
+            {answered && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <Button size="sm" onClick={handleNext} className="gap-1 h-8 bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90">
+                  {index + 1 >= total ? 'See results' : 'Next'}
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </motion.div>
+            )}
+          </div>
         </motion.div>
       </AnimatePresence>
     </div>

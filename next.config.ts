@@ -31,7 +31,12 @@ import type { NextConfig } from "next";
  */
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ['better-sqlite3'],
+  serverExternalPackages: ['better-sqlite3', '@prisma/adapter-libsql', '@libsql/client'],
+  // Multiple lockfiles exist above this directory; pin the workspace root so
+  // Next.js/Turbopack stops inferring the wrong one.
+  turbopack: {
+    root: __dirname,
+  },
   typescript: {
     ignoreBuildErrors: true,
   },

@@ -6,12 +6,39 @@ interface ChatResult {
 }
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
+// Free-tier models are frequently rate-limited upstream, so we keep a
+// rotation: try each in order, skipping any that recently failed.
+// Override with OPENROUTER_MODELS (comma-separated) or OPENROUTER_MODEL.
+// Ordering below is by measured latency (2026-07): nemotron-super answered in
+// ~0.4s while the popular llama/gpt-oss free slots were 429ing upstream.
+const OPENROUTER_MODELS = (
+  process.env.OPENROUTER_MODELS ||
+  process.env.OPENROUTER_MODEL ||
+  [
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'google/gemma-4-26b-a4b-it:free',
+    'tencent/hy3:free',
+    'openai/gpt-oss-120b:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
+  ].join(',')
+)
+  .split(',')
+  .map((m) => m.trim())
+  .filter(Boolean);
+
+const APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
 const POLLINATIONS_URL = 'https://text.pollinations.ai/openai';
 const POLLINATIONS_MODEL = process.env.POLLINATIONS_MODEL || 'openai';
 
-async function chatViaOpenRouter(messages: ChatMessage[]): Promise<ChatResult> {
+// Per-model circuit breaker: a model that just returned 429/5xx is skipped
+// for a cooldown instead of paying a failed round-trip on every message.
+const modelDownUntil = new Map<string, number>();
+const MODEL_COOLDOWN_MS = 5 * 60 * 1000;
+
+async function chatViaOpenRouterModel(model: string, messages: ChatMessage[]): Promise<ChatResult> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY is not set');
@@ -22,14 +49,16 @@ async function chatViaOpenRouter(messages: ChatMessage[]): Promise<ChatResult> {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
-      'HTTP-Referer': 'http://localhost:3000',
+      'HTTP-Referer': APP_URL,
       'X-Title': 'SynapseLearn',
     },
     body: JSON.stringify({
-      model: OPENROUTER_MODEL,
+      model,
       messages,
       temperature: 0.7,
       max_tokens: 2048,
+      // Route to the fastest provider currently serving this model
+      provider: { sort: 'throughput' },
     }),
   });
 
@@ -42,7 +71,27 @@ async function chatViaOpenRouter(messages: ChatMessage[]): Promise<ChatResult> {
   if (!data?.choices?.[0]?.message?.content) {
     throw new Error('OpenRouter returned no content');
   }
-  return { choices: data.choices, model: data.model || OPENROUTER_MODEL };
+  return { choices: data.choices, model: data.model || model };
+}
+
+async function chatViaOpenRouter(messages: ChatMessage[]): Promise<ChatResult> {
+  const now = Date.now();
+  const available = OPENROUTER_MODELS.filter((m) => now >= (modelDownUntil.get(m) || 0));
+  if (available.length === 0) {
+    throw new Error('All OpenRouter models are cooling down after recent failures');
+  }
+
+  let lastError: unknown;
+  for (const model of available) {
+    try {
+      return await chatViaOpenRouterModel(model, messages);
+    } catch (err) {
+      modelDownUntil.set(model, Date.now() + MODEL_COOLDOWN_MS);
+      console.warn(`[LLM.chat] OpenRouter model ${model} failed (cooling down 5 min):`, err);
+      lastError = err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('All OpenRouter models failed');
 }
 
 async function chatViaPollinations(messages: ChatMessage[]): Promise<ChatResult> {
@@ -109,23 +158,15 @@ ISSUE: <one short sentence on what's wrong and what should be addressed instead>
   }
 }
 
-// Circuit breaker: the free OpenRouter model is frequently rate-limited
-// upstream; once it fails, skip it for a cooldown instead of paying a failed
-// round-trip on every message.
-let openRouterDownUntil = 0;
-const OPENROUTER_COOLDOWN_MS = 5 * 60 * 1000;
-
 export const LLM = {
   // Free, key-optional providers: OpenRouter (needs OPENROUTER_API_KEY) first,
-  // falling back to Pollinations (no key required) if OpenRouter is unavailable.
+  // rotating through several free models, falling back to Pollinations
+  // (no key required) if all of them are unavailable.
   async chat({ messages }: { messages: ChatMessage[]; model?: string }): Promise<ChatResult | null> {
-    if (Date.now() >= openRouterDownUntil) {
-      try {
-        return await chatViaOpenRouter(messages);
-      } catch (openRouterError) {
-        openRouterDownUntil = Date.now() + OPENROUTER_COOLDOWN_MS;
-        console.error('[LLM.chat] OpenRouter failed (cooling down 5 min), falling back to Pollinations:', openRouterError);
-      }
+    try {
+      return await chatViaOpenRouter(messages);
+    } catch (openRouterError) {
+      console.error('[LLM.chat] OpenRouter unavailable, falling back to Pollinations:', openRouterError);
     }
     try {
       return await chatViaPollinations(messages);
@@ -151,12 +192,16 @@ export const LLM = {
     const result = await this.chat({ messages });
     if (!result) return null;
 
+    // Speed: the reviewer pass adds 1–2 extra LLM round-trips per message,
+    // which is most of the perceived latency. Off unless explicitly enabled.
+    if (process.env.AI_REVIEW !== '1') return result;
+
     const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
     const assistantText = result.choices[0]?.message?.content || '';
     if (!lastUserMessage || !assistantText) return result;
 
-    // Speed: the reviewer pass doubles latency, so only run it early in a
-    // conversation (where going off-track matters most) — never mid-session.
+    // Even when enabled, only review early in a conversation (where going
+    // off-track matters most) — never mid-session.
     const exchangeCount = messages.filter((m) => m.role === 'user').length;
     if (exchangeCount > 2) return result;
 

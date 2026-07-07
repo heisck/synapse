@@ -2,6 +2,14 @@ import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings, Achievement, StudySession, StudyGoal, StudyNotification, AdaptiveResult, StudyBuddy, StarredMessage } from '@/types';
 
+/** Progress through one in-chat quiz/flashcard deck. */
+export interface QuizCardProgress {
+  index: number;
+  selected: number | null;
+  correctCount: number;
+  finished: boolean;
+}
+
 interface AppState {
   // Navigation
   currentView: AppView;
@@ -60,6 +68,13 @@ interface AppState {
   setCurrentSlideIndex: (i: number) => void;
   activeSlideContent: string | null;
   setActiveSlideContent: (content: string | null) => void;
+
+  // In-chat quiz/flashcard progress, keyed by the assistant message id that
+  // produced the deck. Shared so the in-chat card and the side-panel card are
+  // one deck: answering in either place marks it answered in both, and an
+  // already-solved deck can't be solved again from the other view.
+  quizProgress: Record<string, QuizCardProgress>;
+  setQuizCardProgress: (messageId: string, progress: QuizCardProgress) => void;
 
   // Questions
   currentQuestions: Question[];
@@ -295,6 +310,9 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get) =
   setCurrentSlideIndex: (i) => set({ currentSlideIndex: i }),
   activeSlideContent: null,
   setActiveSlideContent: (content) => set({ activeSlideContent: content }),
+  quizProgress: {},
+  setQuizCardProgress: (messageId, progress) =>
+    set((s) => ({ quizProgress: { ...s.quizProgress, [messageId]: progress } })),
   currentQuestions: [],
   setCurrentQuestions: (q) => set({ currentQuestions: q }),
   quizScore: null,

@@ -694,7 +694,7 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
             ) : quizData ? (
               <>
                 {quizData.before && <MarkdownContent content={quizData.before} />}
-                <InteractiveQuizCard payload={quizData.payload} />
+                <InteractiveQuizCard payload={quizData.payload} messageId={message.id} />
                 {quizData.after && <MarkdownContent content={quizData.after} />}
               </>
             ) : (
