@@ -1,0 +1,710 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useState, useCallback, useRef, useEffect } from 'react';
+     4→     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→     5→import {
+     6→     6→  Upload,
+     7→     7→  FileText,
+     8→     8→  CheckCircle2,
+     9→     9→  AlertCircle,
+    10→    10→  Loader2,
+    11→    11→  X,
+    12→    12→  Sparkles,
+    13→    13→  ClipboardCheck,
+    14→    14→  BookOpen,
+    15→    15→  ChevronDown,
+    16→    16→  ChevronRight,
+    17→    17→  Hash,
+    18→    18→} from 'lucide-react';
+    19→    19→import { Button } from '@/components/ui/button';
+    20→    20→import { Progress } from '@/components/ui/progress';
+    21→    21→import { Input } from '@/components/ui/input';
+    22→    22→import { Label } from '@/components/ui/label';
+    23→    23→import { Checkbox } from '@/components/ui/checkbox';
+    24→    24→import {
+    25→    25→  Select,
+    26→    26→  SelectContent,
+    27→    27→  SelectItem,
+    28→    28→  SelectTrigger,
+    29→    29→  SelectValue,
+    30→    30→} from '@/components/ui/select';
+    31→    31→import {
+    32→    32→  Collapsible,
+    33→    33→  CollapsibleContent,
+    34→    34→  CollapsibleTrigger,
+    35→    35→} from '@/components/ui/collapsible';
+    36→    36→import { useAppStore } from '@/stores/appStore';
+    37→    37→import { toast } from 'sonner';
+    38→    38→
+    39→    39→type FileStatus = 'pending' | 'uploading' | 'processing' | 'done' | 'error';
+    40→    40→
+    41→    41→interface UploadFile {
+    42→    42→  id: string;
+    43→    43→  file: File;
+    44→    44→  status: FileStatus;
+    45→    45→  progress: number;
+    46→    46→  error?: string;
+    47→    47→}
+    48→    48→
+    49→    49→const ACCEPTED_TYPES = [
+    50→    50→  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    51→    51→  'application/vnd.ms-powerpoint',
+    52→    52→  'application/pdf',
+    53→    53→  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    54→    54→];
+    55→    55→
+    56→    56→const ACCEPTED_EXTENSIONS = ['.pptx', '.ppt', '.pdf', '.docx'];
+    57→    57→const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+    58→    58→
+    59→    59→const COURSE_CATEGORIES = [
+    60→    60→  'Science',
+    61→    61→  'Mathematics',
+    62→    62→  'Computer Science',
+    63→    63→  'Languages',
+    64→    64→  'History',
+    65→    65→  'Business',
+    66→    66→  'Other',
+    67→    67→];
+    68→    68→
+    69→    69→interface ExtractedSlide {
+    70→    70→  id: string;
+    71→    71→  order: number;
+    72→    72→  title: string;
+    73→    73→  content: string;
+    74→    74→  wordCount: number;
+    75→    75→}
+    76→    76→
+    77→    77→const stagger = {
+    78→    78→  animate: { transition: { staggerChildren: 0.06 } },
+    79→    79→};
+    80→    80→const fadeUp = {
+    81→    81→  initial: { opacity: 0, y: 20 },
+    82→    82→  animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
+    83→    83→};
+    84→    84→
+    85→    85→export function UploadView() {
+    86→    86→  const { navigate, setActiveCourse, setActiveSlides, setCurrentQuestions, setQuizScore } = useAppStore();
+    87→    87→  const [files, setFiles] = useState<UploadFile[]>([]);
+    88→    88→  const [isDragOver, setIsDragOver] = useState(false);
+    89→    89→  const [isGenerating, setIsGenerating] = useState(false);
+    90→    90→  const [generatedCount, setGeneratedCount] = useState<number | null>(null);
+    91→    91→  const [selectedCategory, setSelectedCategory] = useState<string>('');
+    92→    92→  const [customCategory, setCustomCategory] = useState<string>('');
+    93→    93→  const [showCustomCategory, setShowCustomCategory] = useState(false);
+    94→    94→  const [courseTitle, setCourseTitle] = useState<string>('');
+    95→    95→  const [titleTouched, setTitleTouched] = useState(false);
+    96→    96→  const [extractedSlides, setExtractedSlides] = useState<ExtractedSlide[]>([]);
+    97→    97→  const [selectedSlideIds, setSelectedSlideIds] = useState<Set<string>>(new Set());
+    98→    98→  const [slidesOpen, setSlidesOpen] = useState(false);
+    99→    99→  const [uploadedCourseId, setUploadedCourseId] = useState<string | null>(null);
+   100→   100→  const inputRef = useRef<HTMLInputElement>(null);
+   101→   101→
+   102→   102→  // Default course title from first file
+   103→   103→  useEffect(() => {
+   104→   104→    if (files.length > 0 && !courseTitle) {
+   105→   105→      const firstName = files[0].file.name.replace(/\.[^.]+$/, '');
+   106→   106→      setCourseTitle(firstName);
+   107→   107→    }
+   108→   108→  }, [files, courseTitle]);
+   109→   109→
+   110→   110→  // Select all slides by default after extraction
+   111→   111→  useEffect(() => {
+   112→   112→    if (extractedSlides.length > 0) {
+   113→   113→      setSelectedSlideIds(new Set(extractedSlides.map((s) => s.id)));
+   114→   114→    }
+   115→   115→  }, [extractedSlides]);
+   116→   116→
+   117→   117→  const effectiveCategory = showCustomCategory && customCategory.trim()
+   118→   118→    ? customCategory.trim()
+   119→   119→    : selectedCategory;
+   120→   120→
+   121→   121→  const titleError = titleTouched && !courseTitle.trim() ? 'Course title is required' : null;
+   122→   122→
+   123→   123→  const validateFile = (file: File): string | null => {
+   124→   124→    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+   125→   125→    if (!ACCEPTED_EXTENSIONS.includes(ext) && !ACCEPTED_TYPES.includes(file.type)) {
+   126→   126→      return `Unsupported file type: ${ext}. Accepted: ${ACCEPTED_EXTENSIONS.join(', ')}`;
+   127→   127→    }
+   128→   128→    if (file.size > MAX_SIZE) {
+   129→   129→      return `File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max: 50MB`;
+   130→   130→    }
+   131→   131→    return null;
+   132→   132→  };
+   133→   133→
+   134→   134→  const addFiles = useCallback((newFiles: FileList | File[]) => {
+   135→   135→    const arr = Array.from(newFiles);
+   136→   136→    const uploads: UploadFile[] = arr.map((file) => ({
+   137→   137→      id: `${file.name}-${Date.now()}-${Math.random()}`,
+   138→   138→      file,
+   139→   139→      status: 'pending' as FileStatus,
+   140→   140→      progress: 0,
+   141→   141→    }));
+   142→   142→
+   143→   143→    let hasError = false;
+   144→   144→    const validated = uploads.map((u) => {
+   145→   145→      const err = validateFile(u.file);
+   146→   146→      if (err) {
+   147→   147→        hasError = true;
+   148→   148→        return { ...u, status: 'error' as FileStatus, error: err };
+   149→   149→      }
+   150→   150→      return u;
+   151→   151→    });
+   152→   152→
+   153→   153→    setFiles((prev) => [...prev, ...validated]);
+   154→   154→    if (hasError) {
+   155→   155→      toast.error('Some files were rejected. Check the list for details.');
+   156→   156→    } else {
+   157→   157→      toast.success(`${arr.length} file${arr.length !== 1 ? 's' : ''} added.`);
+   158→   158→    }
+   159→   159→  }, []);
+   160→   160→
+   161→   161→  const handleDrop = useCallback(
+   162→   162→    (e: React.DragEvent) => {
+   163→   163→      e.preventDefault();
+   164→   164→      setIsDragOver(false);
+   165→   165→      if (e.dataTransfer.files.length > 0) {
+   166→   166→        addFiles(e.dataTransfer.files);
+   167→   167→      }
+   168→   168→    },
+   169→   169→    [addFiles],
+   170→   170→  );
+   171→   171→
+   172→   172→  const simulateUpload = async () => {
+   173→   173→    // Validate course title
+   174→   174→    setTitleTouched(true);
+   175→   175→    if (!courseTitle.trim()) {
+   176→   176→      toast.error('Please enter a course title before uploading.');
+   177→   177→      return;
+   178→   178→    }
+   179→   179→
+   180→   180→    if (!effectiveCategory) {
+   181→   181→      toast.error('Please select or create a course category.');
+   182→   182→      return;
+   183→   183→    }
+   184→   184→
+   185→   185→    const pendingFiles = files.filter((f) => f.status === 'pending' || f.status === 'error');
+   186→   186→    if (pendingFiles.length === 0) {
+   187→   187→      toast.error('No valid files to upload.');
+   188→   188→      return;
+   189→   189→    }
+   190→   190→
+   191→   191→    setGeneratedCount(null);
+   192→   192→    setExtractedSlides([]);
+   193→   193→    setUploadedCourseId(null);
+   194→   194→
+   195→   195→    const allExtractedSlides: ExtractedSlide[] = [];
+   196→   196→    let courseId = '';
+   197→   197→
+   198→   198→    for (let i = 0; i < pendingFiles.length; i++) {
+   199→   199→      const file = pendingFiles[i];
+   200→   200→      const id = file.id;
+   201→   201→
+   202→   202→      setFiles((prev) =>
+   203→   203→        prev.map((f) => (f.id === id ? { ...f, status: 'uploading' as FileStatus, progress: 0, error: undefined } : f)),
+   204→   204→      );
+   205→   205→
+   206→   206→      try {
+   207→   207→        const formData = new FormData();
+   208→   208→        formData.append('file', file.file);
+   209→   209→        formData.append('category', effectiveCategory);
+   210→   210→        formData.append('courseTitle', courseTitle.trim());
+   211→   211→
+   212→   212→        // Simulate progress during real upload
+   213→   213→        const progressInterval = setInterval(() => {
+   214→   214→          setFiles((prev) =>
+   215→   215→            prev.map((f) => {
+   216→   216→              if (f.id === id && f.status === 'uploading') {
+   217→   217→                return { ...f, progress: Math.min(f.progress + 5, 90) };
+   218→   218→              }
+   219→   219→              return f;
+   220→   220→            }),
+   221→   221→          );
+   222→   222→        }, 100);
+   223→   223→
+   224→   224→        const res = await fetch('/api/upload', {
+   225→   225→          method: 'POST',
+   226→   226→          body: formData,
+   227→   227→        });
+   228→   228→
+   229→   229→        clearInterval(progressInterval);
+   230→   230→
+   231→   231→        if (!res.ok) {
+   232→   232→          const errData = await res.json().catch(() => ({ error: 'Upload failed' }));
+   233→   233→          throw new Error(errData.error || 'Upload failed');
+   234→   234→        }
+   235→   235→
+   236→   236→        setFiles((prev) =>
+   237→   237→          prev.map((f) => (f.id === id ? { ...f, progress: 95 } : f)),
+   238→   238→        );
+   239→   239→
+   240→   240→        // Mark as processing
+   241→   241→        setFiles((prev) =>
+   242→   242→          prev.map((f) => (f.id === id ? { ...f, status: 'processing' as FileStatus, progress: 100 } : f)),
+   243→   243→        );
+   244→   244→
+   245→   245→        const data = await res.json();
+   246→   246→        courseId = data.courseId || courseId;
+   247→   247→
+   248→   248→        // Extract slides from response
+   249→   249→        if (data.slides && Array.isArray(data.slides)) {
+   250→   250→          const slides: ExtractedSlide[] = data.slides.map(
+   251→   251→            (s: { id?: string; title: string; content: string; order: number }, idx: number) => ({
+   252→   252→              id: s.id || `slide-${Date.now()}-${idx}`,
+   253→   253→              order: s.order || idx + 1,
+   254→   254→              title: s.title,
+   255→   255→              content: s.content,
+   256→   256→              wordCount: s.content.split(/\s+/).filter(Boolean).length,
+   257→   257→            }),
+   258→   258→          );
+   259→   259→          allExtractedSlides.push(...slides);
+   260→   260→        }
+   261→   261→
+   262→   262→        // Done
+   263→   263→        setFiles((prev) =>
+   264→   264→          prev.map((f) => (f.id === id ? { ...f, status: 'done' as FileStatus } : f)),
+   265→   265→        );
+   266→   266→      } catch (err) {
+   267→   267→        setFiles((prev) =>
+   268→   268→          prev.map((f) =>
+   269→   269→            f.id === id
+   270→   270→              ? { ...f, status: 'error' as FileStatus, error: err instanceof Error ? err.message : 'Upload failed' }
+   271→   271→              : f,
+   272→   272→          ),
+   273→   273→        );
+   274→   274→      }
+   275→   275→    }
+   276→   276→
+   277→   277→    if (allExtractedSlides.length > 0) {
+   278→   278→      setExtractedSlides(allExtractedSlides);
+   279→   279→      setSlidesOpen(true);
+   280→   280→      setUploadedCourseId(courseId);
+   281→   281→      toast.success(`Uploaded! ${allExtractedSlides.length} slides extracted.`);
+   282→   282→    } else {
+   283→   283→      toast.success('All files uploaded successfully!');
+   284→   284→    }
+   285→   285→  };
+   286→   286→
+   287→   287→  const simulateGenerate = async (forSelected = false) => {
+   288→   288→    const doneFiles = files.filter((f) => f.status === 'done');
+   289→   289→    if (doneFiles.length === 0) {
+   290→   290→      toast.error('Upload files first.');
+   291→   291→      return;
+   292→   292→    }
+   293→   293→
+   294→   294→    if (forSelected && selectedSlideIds.size === 0) {
+   295→   295→      toast.error('Select at least one slide to generate questions.');
+   296→   296→      return;
+   297→   297→    }
+   298→   298→
+   299→   299→    setIsGenerating(true);
+   300→   300→    await new Promise((r) => setTimeout(r, 2000));
+   301→   301→    const baseCount = forSelected ? selectedSlideIds.size : extractedSlides.length || doneFiles.length;
+   302→   302→    const count = Math.max(Math.floor(Math.random() * 3) + 2, Math.floor(baseCount * 1.5));
+   303→   303→    setGeneratedCount(count);
+   304→   304→    setIsGenerating(false);
+   305→   305→    toast.success(`Generated ${count} questions from ${forSelected ? selectedSlideIds.size : 'all'} slides!`);
+   306→   306→  };
+   307→   307→
+   308→   308→  const toggleSlideSelection = (slideId: string) => {
+   309→   309→    setSelectedSlideIds((prev) => {
+   310→   310→      const next = new Set(prev);
+   311→   311→      if (next.has(slideId)) {
+   312→   312→        next.delete(slideId);
+   313→   313→      } else {
+   314→   314→        next.add(slideId);
+   315→   315→      }
+   316→   316→      return next;
+   317→   317→    });
+   318→   318→  };
+   319→   319→
+   320→   320→  const toggleAllSlides = () => {
+   321→   321→    if (selectedSlideIds.size === extractedSlides.length) {
+   322→   322→      setSelectedSlideIds(new Set());
+   323→   323→    } else {
+   324→   324→      setSelectedSlideIds(new Set(extractedSlides.map((s) => s.id)));
+   325→   325→    }
+   326→   326→  };
+   327→   327→
+   328→   328→  const removeFile = (id: string) => {
+   329→   329→    setFiles((prev) => prev.filter((f) => f.id !== id));
+   330→   330→  };
+   331→   331→
+   332→   332→  const statusIcon = (status: FileStatus) => {
+   333→   333→    switch (status) {
+   334→   334→      case 'pending':
+   335→   335→        return <FileText className="h-4 w-4 text-muted-foreground" />;
+   336→   336→      case 'uploading':
+   337→   337→        return <Loader2 className="h-4 w-4 text-primary animate-spin" />;
+   338→   338→      case 'processing':
+   339→   339→        return <Loader2 className="h-4 w-4 text-amber-500 animate-spin" />;
+   340→   340→      case 'done':
+   341→   341→        return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
+   342→   342→      case 'error':
+   343→   343→        return <AlertCircle className="h-4 w-4 text-destructive" />;
+   344→   344→    }
+   345→   345→  };
+   346→   346→
+   347→   347→  return (
+   348→   348→    <motion.div
+   349→   349→      variants={stagger}
+   350→   350→      initial="initial"
+   351→   351→      animate="animate"
+   352→   352→      className="space-y-6 pt-2 lg:pt-4 pl-14 lg:pl-0"
+   353→   353→    >
+   354→   354→      <motion.div variants={fadeUp}>
+   355→   355→        <h1 className="text-2xl font-bold">Upload Slides</h1>
+   356→   356→        <p className="text-muted-foreground text-sm mt-1">
+   357→   357→          Upload your study materials and we&apos;ll generate questions automatically.
+   358→   358→        </p>
+   359→   359→      </motion.div>
+   360→   360→
+   361→   361→      {/* Course Category & Title */}
+   362→   362→      <motion.div variants={fadeUp} className="space-y-4">
+   363→   363→        <div className="grid gap-4 sm:grid-cols-2">
+   364→   364→          <div className="space-y-2">
+   365→   365→            <Label htmlFor="category-select" className="text-sm font-medium">
+   366→   366→              Course Category
+   367→   367→            </Label>
+   368→   368→            <Select
+   369→   369→              value={showCustomCategory ? '__custom__' : selectedCategory}
+   370→   370→              onValueChange={(val) => {
+   371→   371→                if (val === '__custom__') {
+   372→   372→                  setShowCustomCategory(true);
+   373→   373→                } else {
+   374→   374→                  setShowCustomCategory(false);
+   375→   375→                  setSelectedCategory(val);
+   376→   376→                }
+   377→   377→              }}
+   378→   378→            >
+   379→   379→              <SelectTrigger id="category-select" className="w-full">
+   380→   380→                <SelectValue placeholder="Select Course Category" />
+   381→   381→              </SelectTrigger>
+   382→   382→              <SelectContent>
+   383→   383→                {COURSE_CATEGORIES.map((cat) => (
+   384→   384→                  <SelectItem key={cat} value={cat}>
+   385→   385→                    {cat}
+   386→   386→                  </SelectItem>
+   387→   387→                ))}
+   388→   388→                <SelectItem value="__custom__">Or create new...</SelectItem>
+   389→   389→              </SelectContent>
+   390→   390→            </Select>
+   391→   391→            <AnimatePresence>
+   392→   392→              {showCustomCategory && (
+   393→   393→                <motion.div
+   394→   394→                  initial={{ opacity: 0, height: 0 }}
+   395→   395→                  animate={{ opacity: 1, height: 'auto' }}
+   396→   396→                  exit={{ opacity: 0, height: 0 }}
+   397→   397→                  transition={{ duration: 0.2 }}
+   398→   398→                >
+   399→   399→                  <Input
+   400→   400→                    placeholder="Enter custom category name..."
+   401→   401→                    value={customCategory}
+   402→   402→                    onChange={(e) => setCustomCategory(e.target.value)}
+   403→   403→                    className="mt-2"
+   404→   404→                  />
+   405→   405→                </motion.div>
+   406→   406→              )}
+   407→   407→            </AnimatePresence>
+   408→   408→          </div>
+   409→   409→
+   410→   410→          <div className="space-y-2">
+   411→   411→            <Label htmlFor="course-title" className="text-sm font-medium">
+   412→   412→              Course Title <span className="text-destructive">*</span>
+   413→   413→            </Label>
+   414→   414→            <Input
+   415→   415→              id="course-title"
+   416→   416→              placeholder="Enter course title..."
+   417→   417→              value={courseTitle}
+   418→   418→              onChange={(e) => setCourseTitle(e.target.value)}
+   419→   419→              onBlur={() => setTitleTouched(true)}
+   420→   420→              className={titleError ? 'border-destructive focus-visible:ring-destructive/50' : ''}
+   421→   421→            />\n            <AnimatePresence>
+   422→   422→              {titleError && (
+   423→   423→                <motion.p
+   424→   424→                  initial={{ opacity: 0, y: -4 }}
+   425→   425→                  animate={{ opacity: 1, y: 0 }}
+   426→   426→                  exit={{ opacity: 0, y: -4 }}
+   427→   427→                  className="text-xs text-destructive"
+   428→   428→                >
+   429→   429→                  {titleError}
+   430→   430→                </motion.p>
+   431→   431→              )}
+   432→   432→            </AnimatePresence>
+   433→   433→          </div>
+   434→   434→        </div>
+   435→   435→      </motion.div>
+   436→   436→
+   437→   437→      {/* Drop Zone */}
+   438→   438→      <motion.div variants={fadeUp}>
+   439→   439→        <div
+   440→   440→          onDragOver={(e) => {
+   441→   441→            e.preventDefault();
+   442→   442→            setIsDragOver(true);
+   443→   443→          }}
+   444→   444→          onDragLeave={() => setIsDragOver(false)}
+   445→   445→          onDrop={handleDrop}
+   446→   446→          onClick={() => inputRef.current?.click()}
+   447→   447→          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all
+   448→   448→            ${isDragOver
+   449→   449→              ? 'border-primary bg-primary/5 scale-[1.01]'
+   450→   450→              : 'border-border hover:border-primary/50 hover:bg-accent/30'
+   451→   451→            }`}
+   452→   452→        >
+   453→   453→          <input
+   454→   454→            ref={inputRef}
+   455→   455→            type="file"
+   456→   456→            multiple
+   457→   457→            accept={ACCEPTED_EXTENSIONS.join(',')}
+   458→   458→            className="hidden"
+   459→   459→            onChange={(e) => e.target.files && addFiles(e.target.files)}
+   460→   460→          />
+   461→   461→          <div className="flex flex-col items-center gap-3">
+   462→   462→            <div className={`h-14 w-14 rounded-2xl flex items-center justify-center transition-colors ${isDragOver ? 'bg-primary/20' : 'bg-primary/10'}`}>
+   463→   463→              <Upload className={`h-7 w-7 ${isDragOver ? 'text-primary' : 'text-primary/60'}`} />
+   464→   464→            </div>
+   465→   465→            <div>
+   466→   466→              <p className="font-medium">
+   467→   467→                {isDragOver ? 'Drop files here' : 'Drag & drop files here, or click to browse'}
+   468→   468→              </p>
+   469→   469→              <p className="text-xs text-muted-foreground mt-1">
+   470→   470→                Supports {ACCEPTED_EXTENSIONS.join(', ')} — Max 50MB per file
+   471→   471→              </p>
+   472→   472→            </div>
+   473→   473→          </div>
+   474→   474→        </div>
+   475→   475→      </motion.div>
+   476→   476→
+   477→   477→      {/* File List */}
+   478→   478→      <AnimatePresence>
+   479→   479→        {files.length > 0 && (
+   480→   480→          <motion.div
+   481→   481→            initial={{ opacity: 0, height: 0 }}
+   482→   482→            animate={{ opacity: 1, height: 'auto' }}
+   483→   483→            exit={{ opacity: 0, height: 0 }}
+   484→   484→            className="space-y-2 max-h-96 overflow-y-auto"
+   485→   485→          >
+   486→   486→            {files.map((f) => (
+   487→   487→              <motion.div
+   488→   488→                key={f.id}
+   489→   489→                initial={{ opacity: 0, x: -20 }}
+   490→   490→                animate={{ opacity: 1, x: 0 }}
+   491→   491→                exit={{ opacity: 0, x: 20 }}
+   492→   492→                className="glass rounded-lg p-3 flex items-center gap-3"
+   493→   493→              >
+   494→   494→                {statusIcon(f.status)}
+   495→   495→                <div className="flex-1 min-w-0">
+   496→   496→                  <p className="text-sm font-medium truncate">{f.file.name}</p>
+   497→   497→                  <p className="text-xs text-muted-foreground">
+   498→   498→                    {(f.file.size / 1024 / 1024).toFixed(2)}MB
+   499→   499→                    {f.status === 'error' && f.error && ` — ${f.error}`}
+   500→   500→                  </p>
+   501→   501→                  {(f.status === 'uploading' || f.status === 'processing') && (
+   502→   502→                    <Progress value={f.status === 'processing' ? 100 : f.progress} className="mt-2 h-1.5" />
+   503→   503→                  )}
+   504→   504→                </div>
+   505→   505→                {f.status === 'done' && (
+   506→   506→                  <span className="text-xs text-emerald-600 font-medium">Done</span>
+   507→   507→                )}
+   508→   508→                <button
+   509→   509→                  onClick={(e) => {
+   510→   510→                    e.stopPropagation();
+   511→   511→                    removeFile(f.id);
+   512→   512→                  }}
+   513→   513→                  className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-destructive/10 transition-colors"
+   514→   514→                  aria-label={`Remove ${f.file.name}`}
+   515→   515→                >
+   516→   516→                  <X className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+   517→   517→                </button>
+   518→   518→              </motion.div>
+   519→   519→            ))}
+   520→   520→          </motion.div>
+   521→   521→        )}
+   522→   522→      </AnimatePresence>
+   523→   523→
+   524→   524→      {/* Action Buttons */}
+   525→   525→      {files.length > 0 && !generatedCount && (
+   526→   526→        <motion.div variants={fadeUp} className="flex flex-wrap gap-3">
+   527→   527→          <Button
+   528→   528→            onClick={simulateUpload}
+   529→   529→            disabled={files.every((f) => f.status === 'done') || files.every((f) => f.status === 'uploading' || f.status === 'processing')}
+   530→   530→          >
+   531→   531→            <Upload className="h-4 w-4 mr-2" />
+   532→   532→            Upload Files
+   533→   533→          </Button>
+   534→   534→          {(extractedSlides.length > 0 || files.some((f) => f.status === 'done')) && (
+   535→   535→            <>
+   536→   536→              <Button
+   537→   537→                onClick={() => simulateGenerate(false)}
+   538→   538→                disabled={!files.some((f) => f.status === 'done') || isGenerating}
+   539→   539→                variant="outline"
+   540→   540→              >
+   541→   541→                {isGenerating ? (
+   542→   542→                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+   543→   543→                ) : (
+   544→   544→                  <Sparkles className="h-4 w-4 mr-2" />
+   545→   545→                )}
+   546→   546→                Generate Questions for All
+   547→   547→              </Button>
+   548→   548→              {extractedSlides.length > 0 && (
+   549→   549→                <Button
+   550→   550→                  onClick={() => simulateGenerate(true)}
+   551→   551→                  disabled={selectedSlideIds.size === 0 || isGenerating}
+   552→   552→                  variant="outline"
+   553→   553→                  className="text-emerald-600 border-emerald-300 hover:bg-emerald-50"
+   554→   554→                >
+   555→   555→                  {isGenerating ? (
+   556→   556→                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+   557→   557→                  ) : (
+   558→   558→                    <Sparkles className="h-4 w-4 mr-2" />
+   559→   559→                  )}
+   560→   560→                  Generate for Selected ({selectedSlideIds.size})
+   561→   561→                </Button>
+   562→   562→              )}
+   563→   563→            </>
+   564→   564→          )}
+   565→   565→        </motion.div>
+   566→   566→      )}
+   567→   567→
+   568→   568→      {/* Slide Grouping Preview */}
+   569→   569→      <AnimatePresence>
+   570→   570→        {extractedSlides.length > 0 && !generatedCount && (
+   571→   571→          <motion.div
+   572→   572→            initial={{ opacity: 0, y: 20 }}
+   573→   573→            animate={{ opacity: 1, y: 0 }}
+   574→   574→            exit={{ opacity: 0, y: -10 }}
+   575→   575→            className="glass rounded-xl overflow-hidden"
+   576→   576→          >
+   577→   577→            <Collapsible open={slidesOpen} onOpenChange={setSlidesOpen}>
+   578→   578→              <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-accent/30 transition-colors">
+   579→   579→                <div className="flex items-center gap-2">
+   580→   580→                  {slidesOpen ? (
+   581→   581→                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+   582→   582→                  ) : (
+   583→   583→                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+   584→   584→                  )}
+   585→   585→                  <span className="font-medium text-sm">
+   586→   586→                    Extracted Slides ({extractedSlides.length})
+   587→   587→                  </span>
+   588→   588→                </div>
+   589→   589→                <div className="flex items-center gap-2">
+   590→   590→                  <span className="text-xs text-muted-foreground">
+   591→   591→                    {selectedSlideIds.size}/{extractedSlides.length} selected
+   592→   592→                  </span>
+   593→   593→                  <Button
+   594→   594→                    variant="ghost"
+   595→   595→                    size="sm"
+   596→   596→                    className="h-7 text-xs"
+   597→   597→                    onClick={(e) => {
+   598→   598→                      e.stopPropagation();
+   599→   599→                      toggleAllSlides();
+   600→   600→                    }}
+   601→   601→                  >
+   602→   602→                    {selectedSlideIds.size === extractedSlides.length ? 'Deselect All' : 'Select All'}
+   603→   603→                  </Button>
+   604→   604→                </div>
+   605→   605→              </CollapsibleTrigger>
+   606→   606→              <CollapsibleContent>
+   607→   607→                <div className="max-h-96 overflow-y-auto border-t">
+   608→   608→                  {extractedSlides.map((slide) => {
+   609→   609→                    const isSelected = selectedSlideIds.has(slide.id);
+   610→   610→                    const previewTitle = slide.title.length > 50 ? slide.title.slice(0, 50) + '…' : slide.title;
+   611→   611→                    return (
+   612→   612→                      <motion.div
+   613→   613→                        key={slide.id}
+   614→   614→                        initial={{ opacity: 0, x: -10 }}
+   615→   615→                        animate={{ opacity: 1, x: 0 }}
+   616→   616→                        transition={{ duration: 0.15 }}
+   617→   617→                        className={`flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0 transition-colors cursor-pointer ${
+   618→   618→                          isSelected ? 'bg-emerald-50/50' : 'hover:bg-accent/20'
+   619→   619→                        }`}
+   620→   620→                        onClick={() => toggleSlideSelection(slide.id)}
+   621→   621→                      >
+   622→   622→                        <Checkbox
+   623→   623→                          checked={isSelected}
+   624→   624→                          onCheckedChange={() => toggleSlideSelection(slide.id)}
+   625→   625→                          className={isSelected ? 'border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600' : ''}
+   626→   626→                        />
+   627→   627→                        <div className="flex items-center justify-center h-6 w-6 rounded-md bg-muted text-muted-foreground text-xs font-mono flex-shrink-0">
+   628→   628→                          {slide.order}
+   629→   629→                        </div>
+   630→   630→                        <div className="flex-1 min-w-0">
+   631→   631→                          <p className="text-sm font-medium truncate">{previewTitle}</p>
+   632→   632→                          <p className="text-xs text-muted-foreground">
+   633→   633→                            {slide.wordCount} words
+   634→   634→                          </p>
+   635→   635→                        </div>
+   636→   636→                        <Hash className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+   637→   637→                      </motion.div>
+   638→   638→                    );
+   639→   639→                  })}
+   640→   640→                </div>
+   641→   641→              </CollapsibleContent>
+   642→   642→            </Collapsible>
+   643→   643→          </motion.div>
+   644→   644→        )}
+   645→   645→      </AnimatePresence>
+   646→   646→
+   647→   647→      {/* Post-generation Results */}
+   648→   648→      <AnimatePresence>
+   649→   649→        {generatedCount !== null && (
+   650→   650→          <motion.div
+   651→   651→            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+   652→   652→            animate={{ opacity: 1, y: 0, scale: 1 }}
+   653→   653→            className="glass rounded-xl p-6 text-center space-y-4"
+   654→   654→          >
+   655→   655→            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10 mx-auto">
+   656→   656→              <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+   657→   657→            </div>
+   658→   658→            <div>
+   659→   659→              <h3 className="text-xl font-bold">Questions Generated!</h3>
+   660→   660→              <p className="text-muted-foreground text-sm mt-1">
+   661→   661→                {generatedCount} questions ready from {files.filter((f) => f.status === 'done').length} file(s)
+   662→   662→              </p>
+   663→   663→            </div>
+   664→   664→            <div className="flex justify-center gap-3">
+   665→   665→              <Button
+   666→   666→                onClick={() => {
+   667→   667→                  setQuizScore(0, generatedCount);
+   668→   668→                  navigate('quiz');
+   669→   669→                }}
+   670→   670→              >
+   671→   671→                <ClipboardCheck className="h-4 w-4 mr-2" />
+   672→   672→                Take Quiz
+   673→   673→              </Button>
+   674→   674→              <Button
+   675→   675→                variant="outline"
+   676→   676→                onClick={() => {
+   677→   677→                  setActiveCourse({
+   678→   678→                    id: uploadedCourseId || 'uploaded-' + Date.now(),
+   679→   679→                    title: courseTitle.trim() || 'Uploaded Material',
+   680→   680→                    description: `${effectiveCategory || 'General'} course from uploaded files`,
+   681→   681→                    subject: effectiveCategory || 'General',
+   682→   682→                    _count: { slides: extractedSlides.length || files.filter((f) => f.status === 'done').length, enrollments: 1, sessions: 0 },
+   683→   683→                    createdAt: new Date().toISOString(),
+   684→   684→                    updatedAt: new Date().toISOString(),
+   685→   685→                  });
+   686→   686→                  if (extractedSlides.length > 0) {
+   687→   687→                    setActiveSlides(
+   688→   688→                      extractedSlides.map((s, idx) => ({
+   689→   689→                        id: s.id,
+   690→   690→                        courseId: uploadedCourseId || 'uploaded-' + Date.now(),
+   691→   691→                        title: s.title,
+   692→   692→                        content: s.content,
+   693→   693→                        order: s.order,
+   694→   694→                        createdAt: new Date().toISOString(),
+   695→   695→                      })),
+   696→   696→                    );
+   697→   697→                  }
+   698→   698→                  navigate('dashboard');
+   699→   699→                }}
+   700→   700→              >
+   701→   701→                <BookOpen className="h-4 w-4 mr-2" />
+   702→   702→                View Course
+   703→   703→              </Button>
+   704→   704→            </div>
+   705→   705→          </motion.div>
+   706→   706→        )}
+   707→   707→      </AnimatePresence>
+   708→   708→    </motion.div>
+   709→   709→  );
+   710→   710→}

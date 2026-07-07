@@ -364,3 +364,22 @@ html.lenis, html.lenis body {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+
+/* Animated gradient sweep for dividers */
+@keyframes gradientSweep {
+  0% { background-position: -100% center; }
+  100% { background-position: 200% center; }
+}
+.animate-gradient-sweep {
+  background-size: 200% 100%;
+  animation: gradientSweep 3s ease-in-out infinite;
+}
+
+/* Mobile sidebar backdrop blur transition */
+[data-state="open"] > .backdrop-blur-overlay {
+  animation: backdropBlurIn 0.3s ease-out;
+}
+@keyframes backdropBlurIn {
+  0% { backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px); }
+  100% { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+}

@@ -2,7 +2,10 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Brain, Volume2, VolumeX, Loader2 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { Brain, Volume2, VolumeX, Loader2, Copy, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { ChatMessage } from '@/types'
 
@@ -22,25 +25,46 @@ interface ChatBubbleProps {
   message: ChatMessage
 }
 
-function parseMarkdown(text: string): string {
-  let html = text
-    // Code blocks
-    .replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre class="bg-muted rounded-md p-3 my-2 overflow-x-auto text-sm"><code>$2</code></pre>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-sm">$1</code>')
-    // Headers
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold mt-3 mb-1">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-semibold mt-3 mb-1">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-3 mb-1">$1</h1>')
-    // Bold
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Italic
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Unordered lists
-    .replace(/^[*-] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-    // Ordered lists
-    .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
-  return html
+function CopyCodeButton({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Fallback for older browsers
+      const textarea = document.createElement('textarea')
+      textarea.value = code
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }, [code])
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-800/80 hover:bg-zinc-700/80 rounded-md border border-zinc-700/50 transition-colors"
+      aria-label="Copy code"
+    >
+      {copied ? (
+        <>
+          <Check className="w-3 h-3 text-emerald-400" />
+          Copied
+        </>
+      ) : (
+        <>
+          <Copy className="w-3 h-3" />
+          Copy
+        </>
+      )}
+    </button>
+  )
 }
 
 function formatTime(dateStr: string): string {
@@ -51,7 +75,6 @@ function formatTime(dateStr: string): string {
 export function ChatBubble({ message }: ChatBubbleProps) {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
-  const parsedContent = parseMarkdown(message.content)
   const [isTTSLoading, setIsTTSLoading] = useState(false)
   const [isTTSPlaying, setIsTTSPlaying] = useState(false)
   const playingMessageIdRef = useRef<string | null>(null)
@@ -150,14 +173,126 @@ export function ChatBubble({ message }: ChatBubbleProps) {
           </div>
         )}
         <div className="flex flex-col gap-1">
-          <div
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
             className={`px-4 py-2.5 text-sm leading-relaxed ${
               isUser
                 ? 'bg-emerald-600 text-white rounded-2xl rounded-br-md chat-bubble-user'
                 : 'bg-card/80 backdrop-blur-sm border rounded-2xl rounded-bl-md chat-bubble-assistant'
             }`}
-            dangerouslySetInnerHTML={{ __html: parsedContent }}
-          />
+          >
+            {isUser ? (
+              <p className="whitespace-pre-wrap">{message.content}</p>
+            ) : (
+              <div className="markdown-body">
+                <ReactMarkdown
+                  components={{
+                    h1: ({ children }) => (
+                      <h1 className="text-lg font-bold mt-4 mb-2 text-foreground first:mt-0">{children}</h1>
+                    ),
+                    h2: ({ children }) => (
+                      <h2 className="text-base font-semibold mt-3 mb-1.5 text-foreground first:mt-0">{children}</h2>
+                    ),
+                    h3: ({ children }) => (
+                      <h3 className="text-sm font-semibold mt-2.5 mb-1 text-foreground first:mt-0">{children}</h3>
+                    ),
+                    p: ({ children }) => (
+                      <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
+                    ),
+                    strong: ({ children }) => (
+                      <strong className="font-semibold text-foreground">{children}</strong>
+                    ),
+                    em: ({ children }) => (
+                      <em className="italic text-foreground/80">{children}</em>
+                    ),
+                    ul: ({ children }) => (
+                      <ul className="list-disc ml-5 mb-2 space-y-0.5">{children}</ul>
+                    ),
+                    ol: ({ children }) => (
+                      <ol className="list-decimal ml-5 mb-2 space-y-0.5">{children}</ol>
+                    ),
+                    li: ({ children }) => (
+                      <li className="leading-relaxed">{children}</li>
+                    ),
+                    blockquote: ({ children }) => (
+                      <blockquote className="border-l-3 border-l-emerald-500 pl-3 my-2 italic text-muted-foreground bg-emerald-500/5 py-1.5 rounded-r-md">
+                        {children}
+                      </blockquote>
+                    ),
+                    a: ({ href, children }) => (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-emerald-600 dark:text-emerald-400 underline underline-offset-2 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors"
+                      >
+                        {children}
+                      </a>
+                    ),
+                    code: ({ className, children, ...props }) => {
+                      const match = /language-(\w+)/.exec(className || '')
+                      const codeString = String(children).replace(/\n$/, '')
+                      if (match) {
+                        return (
+                          <div className="relative my-2.5 rounded-lg overflow-hidden border border-zinc-800">
+                            <CopyCodeButton code={codeString} />
+                            <SyntaxHighlighter
+                              style={vscDarkPlus}
+                              language={match[1]}
+                              PreTag="div"
+                              customStyle={{
+                                margin: 0,
+                                padding: '16px',
+                                paddingRight: '64px',
+                                borderRadius: 0,
+                                fontSize: '13px',
+                                lineHeight: '1.5',
+                              }}
+                              {...props}
+                            >
+                              {codeString}
+                            </SyntaxHighlighter>
+                          </div>
+                        )
+                      }
+                      return (
+                        <code
+                          className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded text-[13px] font-mono"
+                          {...props}
+                        >
+                          {children}
+                        </code>
+                      )
+                    },
+                    pre: ({ children }) => (
+                      <pre className="my-0 p-0 bg-transparent overflow-x-auto">{children}</pre>
+                    ),
+                    table: ({ children }) => (
+                      <div className="my-2 overflow-x-auto rounded-lg border">
+                        <table className="w-full text-sm">{children}</table>
+                      </div>
+                    ),
+                    thead: ({ children }) => (
+                      <thead className="bg-muted/50">{children}</thead>
+                    ),
+                    th: ({ children }) => (
+                      <th className="px-3 py-2 text-left font-semibold text-foreground border-b">{children}</th>
+                    ),
+                    td: ({ children }) => (
+                      <td className="px-3 py-2 border-b last:border-b-0">{children}</td>
+                    ),
+                    hr: () => (
+                      <hr className="my-3 border-border" />
+                    ),
+                  }}
+                >
+                  {message.content}
+                </ReactMarkdown>
+              </div>
+            )}
+          </motion.div>
           {/* TTS Button - only for assistant messages */}
           {!isUser && !isSystem && (
             <motion.div

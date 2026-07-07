@@ -1,0 +1,908 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useState, useCallback, useMemo, useEffect } from 'react';
+     4→     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→     5→import {
+     6→     6→  CheckCircle2,
+     7→     7→  XCircle,
+     8→     8→  ChevronRight,
+     9→     9→  RotateCcw,
+    10→    10→  ArrowLeft,
+    11→    11→  Trophy,
+    12→    12→  Sparkles,
+    13→    13→  AlertTriangle,
+    14→    14→  BookOpen,
+    15→    15→  GripVertical,
+    16→    16→} from 'lucide-react';
+    17→    17→import { Button } from '@/components/ui/button';
+    18→    18→import { Progress } from '@/components/ui/progress';
+    19→    19→import { Input } from '@/components/ui/input';
+    20→    20→import { Badge } from '@/components/ui/badge';
+    21→    21→import { useAppStore } from '@/stores/appStore';
+    22→    22→import type { Question } from '@/types';
+    23→    23→
+    24→    24→// ---------- Typo-tolerance helper ----------
+    25→    25→function levenshteinDistance(a: string, b: string): number {
+    26→    26→  const matrix: number[][] = [];
+    27→    27→  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    28→    28→  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    29→    29→  for (let i = 1; i <= b.length; i++) {
+    30→    30→    for (let j = 1; j <= a.length; j++) {
+    31→    31→      const cost = b[i - 1] === a[j - 1] ? 0 : 1;
+    32→    32→      matrix[i][j] = Math.min(
+    33→    33→        matrix[i - 1][j] + 1,
+    34→    34→        matrix[i][j - 1] + 1,
+    35→    35→        matrix[i - 1][j - 1] + cost,
+    36→    36→      );
+    37→    37→    }
+    38→    38→  }
+    39→    39→  return matrix[b.length][a.length];
+    40→    40→}
+    41→    41→
+    42→    42→function isFuzzyMatch(userAnswer: string, correctAnswer: string, maxDistance: number = 2): boolean {
+    43→    43→  const ua = userAnswer.trim().toLowerCase();
+    44→    44→  const ca = correctAnswer.trim().toLowerCase();
+    45→    45→  if (ua === ca) return true;
+    46→    46→  if (ua.includes(ca) || ca.includes(ua)) return true;
+    47→    47→  // Levenshtein distance for typo tolerance
+    48→    48→  const dist = levenshteinDistance(ua, ca);
+    49→    49→  // Allow 1 typo for short answers, 2 for longer ones
+    50→    50→  const threshold = maxDistance || (ca.length <= 4 ? 1 : 2);
+    51→    51→  if (dist <= threshold) return true;
+    52→    52→  // Word-level check: all words of correct answer present in user answer (in any order)
+    53→    53→  const correctWords = ca.split(/\s+/);
+    54→    54→  const userWords = ua.split(/\s+/);
+    55→    55→  if (correctWords.every((w) => userWords.some((uw) => uw.includes(w) || w.includes(uw)))) return true;
+    56→    56→  return false;
+    57→    57→}
+    58→    58→
+    59→    59→// ---------- Mock questions for all 6 types ----------
+    60→    60→const MOCK_QUESTIONS: Question[] = [
+    61→    61→  {
+    62→    62→    id: 'mc-1',
+    63→    63→    type: 'multiple_choice',
+    64→    64→    question: 'What is the primary function of mitochondria in a cell?',
+    65→    65→    options: ['Protein synthesis', 'Energy production (ATP)', 'Cell division', 'Waste removal'],
+    66→    66→    answer: 'Energy production (ATP)',
+    67→    67→    explanation: 'Mitochondria are known as the "powerhouse of the cell" because they generate most of the cell\'s supply of ATP, used as a source of chemical energy.',
+    68→    68→    difficulty: 'easy',
+    69→    69→    concept: 'Cell Biology',
+    70→    70→    courseId: 'demo-course',
+    71→    71→  },
+    72→    72→  {
+    73→    73→    id: 'tf-1',
+    74→    74→    type: 'true_false',
+    75→    75→    question: 'Photosynthesis occurs in the mitochondria of plant cells.',
+    76→    76→    answer: 'False',
+    77→    77→    explanation: 'Photosynthesis occurs in the chloroplasts, not the mitochondria. Chloroplasts contain chlorophyll and are the site of the light-dependent and light-independent reactions.',
+    78→    78→    difficulty: 'easy',
+    79→    79→    concept: 'Cell Biology',
+    80→    80→    courseId: 'demo-course',
+    81→    81→  },
+    82→    82→  {
+    83→    83→    id: 'sa-1',
+    84→    84→    type: 'short_answer',
+    85→    85→    question: 'What is the chemical equation for cellular respiration?',
+    86→    86→    answer: 'C6H12O6 + 6O2 → 6CO2 + 6H2O + ATP',
+    87→    87→    explanation: 'Cellular respiration converts glucose and oxygen into carbon dioxide, water, and energy in the form of ATP.',
+    88→    88→    difficulty: 'medium',
+    89→    89→    concept: 'Biochemistry',
+    90→    90→    courseId: 'demo-course',
+    91→    91→  },
+    92→    92→  {
+    93→    93→    id: 'fb-1',
+    94→    94→    type: 'fill_blank',
+    95→    95→    question: 'The ____ is the control center of the cell, containing the genetic material DNA.',
+    96→    96→    answer: 'nucleus',
+    97→    97→    explanation: 'The nucleus is a membrane-bound organelle that contains the cell\'s chromosomes and regulates gene expression.',
+    98→    98→    difficulty: 'easy',
+    99→    99→    concept: 'Cell Biology',
+   100→   100→    courseId: 'demo-course',
+   101→   101→  },
+   102→   102→  {
+   103→   103→    id: 'fb-2',
+   104→   104→    type: 'fill_blank',
+   105→   105→    question: '____ is the process by which cells divide to form two identical daughter cells.',
+   106→   106→    answer: 'mitosis',
+   107→   107→    explanation: 'Mitosis ensures that each daughter cell receives an exact copy of the parent cell\'s DNA.',
+   108→   108→    difficulty: 'medium',
+   109→   109→    concept: 'Cell Biology',
+   110→   110→    courseId: 'demo-course',
+   111→   111→  },
+   112→   112→  {
+   113→   113→    id: 'match-1',
+   114→   114→    type: 'matching',
+   115→   115→    question: 'Match each cell organelle to its primary function.',
+   116→   116→    matchingPairs: [
+   117→   117→      { left: 'Ribosome', right: 'Protein synthesis' },
+   118→   118→      { left: 'Golgi apparatus', right: 'Packaging & shipping' },
+   119→   119→      { left: 'Lysosome', right: 'Digestion & recycling' },
+   120→   120→      { left: 'Endoplasmic reticulum', right: 'Lipid synthesis & transport' },
+   121→   121→    ],
+   122→   122→    answer: 'Ribosome-Protein synthesis, Golgi apparatus-Packaging & shipping, Lysosome-Digestion & recycling, Endoplasmic reticulum-Lipid synthesis & transport',
+   123→   123→    explanation: 'Each organelle has a specialized function that contributes to the overall operation of the cell.',
+   124→   124→    difficulty: 'medium',
+   125→   125→    concept: 'Cell Biology',
+   126→   126→    courseId: 'demo-course',
+   127→   127→  },
+   128→   128→  {
+   129→   129→    id: 'ec-1',
+   130→   130→    type: 'error_correction',
+   131→   131→    question: 'Identify and correct the errors in the following statement:',
+   132→   132→    errorText: 'Mitochondria are found only in animal cells. They are responsible for photosynthesis and converting sunlight into glucose. Plant cells do not have mitochondria.',
+   133→   133→    answer: 'Mitochondria are found in both animal and plant cells. They are responsible for cellular respiration and converting glucose into ATP (energy).',
+   134→   134→    explanation: 'The original text had three errors: (1) mitochondria are in both plant and animal cells, (2) they perform cellular respiration not photosynthesis, and (3) plant cells do have mitochondria.',
+   135→   135→    difficulty: 'hard',
+   136→   136→    concept: 'Cell Biology',
+   137→   137→    courseId: 'demo-course',
+   138→   138→  },
+   139→   139→  {
+   140→   140→    id: 'mc-2',
+   141→   141→    type: 'multiple_choice',
+   142→   142→    question: 'Which data structure uses LIFO (Last In, First Out) ordering?',
+   143→   143→    options: ['Queue', 'Stack', 'Linked List', 'Tree'],
+   144→   144→    answer: 'Stack',
+   145→   145→    explanation: 'A Stack follows LIFO ordering — the last element pushed onto the stack is the first one popped off. Think of a stack of plates.',
+   146→   146→    difficulty: 'easy',
+   147→   147→    concept: 'Data Structures',
+   148→   148→    courseId: 'cs-course',
+   149→   149→  },
+   150→   150→  {
+   151→   151→    id: 'sa-2',
+   152→   152→    type: 'short_answer',
+   153→   153→    question: 'What is the time complexity of binary search?',
+   154→   154→    answer: 'O(log n)',
+   155→   155→    explanation: 'Binary search divides the search space in half each step, giving logarithmic time complexity.',
+   156→   156→    difficulty: 'medium',
+   157→   157→    concept: 'Algorithms',
+   158→   158→    courseId: 'cs-course',
+   159→   159→  },
+   160→   160→];
+   161→   161→
+   162→   162→// ---------- Course filter ----------
+   163→   163→const COURSE_QUIZ_GROUPS = [
+   164→   164→  { id: 'all', label: 'All Questions', icon: BookOpen },
+   165→   165→  { id: 'demo-course', label: 'Cell Biology', icon: BookOpen },
+   166→   166→  { id: 'cs-course', label: 'Computer Science', icon: BookOpen },
+   167→   167→];
+   168→   168→
+   169→   169→// ---------- Confetti particle ----------
+   170→   170→function ConfettiParticle({ delay, color }: { delay: number; color: string }) {
+   171→   171→  const x = Math.random() * 300 - 150;
+   172→   172→  const y = -(Math.random() * 200 + 100);
+   173→   173→  const rotation = Math.random() * 720 - 360;
+   174→   174→  const scale = Math.random() * 0.5 + 0.5;
+   175→   175→
+   176→   176→  return (
+   177→   177→    <motion.div
+   178→   178→      initial={{ opacity: 1, x: 0, y: 0, rotate: 0, scale }}
+   179→   179→      animate={{
+   180→   180→        opacity: 0,
+   181→   181→        x,
+   182→   182→        y,
+   183→   183→        rotate: rotation,
+   184→   184→        scale: scale * 0.3,
+   185→   185→      }}
+   186→   186→      transition={{ duration: 1.2, delay, ease: 'easeOut' }}
+   187→   187→      className="absolute h-3 w-3 rounded-sm pointer-events-none"
+   188→   188→      style={{ backgroundColor: color, top: '40%', left: '50%' }}
+   189→   189→    />
+   190→   190→  );
+   191→   191→}
+   192→   192→
+   193→   193→const CONFETTI_COLORS = ['#10b981', '#14b8a6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#f97316', '#22c55e'];
+   194→   194→
+   195→   195→// ---------- Error correction component ----------
+   196→   196→function ErrorCorrectionInput({
+   197→   197→  errorText,
+   198→   198→  onAnswer,
+   199→   199→}: {
+   200→   200→  errorText: string;
+   201→   201→  onAnswer: (answer: string) => void;
+   202→   202→}) {
+   203→   203→  const [correction, setCorrection] = useState('');
+   204→   204→
+   205→   205→  return (
+   206→   206→    <div className="space-y-4">
+   207→   207→      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+   208→   208→        <div className="flex items-center gap-2 mb-2">
+   209→   209→          <AlertTriangle className="h-4 w-4 text-destructive" />
+   210→   210→          <span className="text-sm font-medium text-destructive">Statement with errors:</span>
+   211→   211→        </div>
+   212→   212→        <p className="text-sm leading-relaxed">{errorText}</p>
+   213→   213→      </div>
+   214→   214→      <div className="space-y-2">
+   215→   215→        <p className="text-sm font-medium">Your corrected version:</p>
+   216→   216→        <textarea
+   217→   217→          value={correction}
+   218→   218→          onChange={(e) => setCorrection(e.target.value)}
+   219→   219→          rows={4}
+   220→   220→          className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+   221→   221→          placeholder="Type the corrected statement here..."
+   222→   222→        />
+   223→   223→        <Button
+   224→   224→          onClick={() => onAnswer(correction)}
+   225→   225→          disabled={!correction.trim()}
+   226→   226→          size="sm"
+   227→   227→          className="mt-2"
+   228→   228→        >
+   229→   229→          Submit Correction
+   230→   230→        </Button>
+   231→   231→      </div>
+   232→   232→    </div>
+   233→   233→  );
+   234→   234→}
+   235→   235→
+   236→   236→// ---------- Matching question component (drag-and-drop) ----------
+   237→   237→function MatchingInput({
+   238→   238→  pairs,
+   239→   239→  onAnswer,
+   240→   240→}: {
+   241→   241→  pairs: Array<{ left: string; right: string }>;
+   242→   242→  onAnswer: (answer: string) => void;
+   243→   243→}) {
+   244→   244→  const shuffledRight = useMemo(() => {
+   245→   245→    const arr = [...pairs.map((p) => p.right)];
+   246→   246→    for (let i = arr.length - 1; i > 0; i--) {
+   247→   247→      const j = Math.floor(Math.random() * (i + 1));
+   248→   248→      [arr[i], arr[j]] = [arr[j], arr[i]];
+   249→   249→    }
+   250→   250→    return arr;
+   251→   251→  }, [pairs]);
+   252→   252→
+   253→   253→  const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
+   254→   254→  const [matches, setMatches] = useState<Record<string, string>>({});
+   255→   255→
+   256→   256→  const handleLeftClick = (left: string) => {
+   257→   257→    setSelectedLeft(left);
+   258→   258→  };
+   259→   259→
+   260→   260→  const handleRightClick = (right: string) => {
+   261→   261→    if (!selectedLeft) return;
+   262→   262→    setMatches((prev) => ({ ...prev, [selectedLeft]: right }));
+   263→   263→    setSelectedLeft(null);
+   264→   264→  };
+   265→   265→
+   266→   266→  const handleRemoveMatch = (left: string) => {
+   267→   267→    setMatches((prev) => {
+   268→   268→      const next = { ...prev };
+   269→   269→      delete next[left];
+   270→   270→      return next;
+   271→   271→    });
+   272→   272→  };
+   273→   273→
+   274→   274→  const handleSubmit = () => {
+   275→   275→    const answer = Object.entries(matches)
+   276→   276→      .map(([l, r]) => `${l}-${r}`)
+   277→   277→      .join(', ');
+   278→   278→    onAnswer(answer);
+   279→   279→  };
+   280→   280→
+   281→   281→  const allMatched = pairs.every((p) => matches[p.left]);
+   282→   282→  const usedRights = new Set(Object.values(matches));
+   283→   283→
+   284→   284→  return (
+   285→   285→    <div className="space-y-4">
+   286→   286→      <p className="text-sm text-muted-foreground">
+   287→   287→        Click a left item, then click its match on the right. Click a matched item to remove it.
+   288→   288→      </p>
+   289→   289→      <div className="grid grid-cols-2 gap-4">
+   290→   290→        {/* Left column */}
+   291→   291→        <div className="flex flex-col gap-2">
+   292→   292→          {pairs.map((p) => (
+   293→   293→            <motion.button
+   294→   294→              key={p.left}
+   295→   295→              whileTap={{ scale: 0.98 }}
+   296→   296→              onClick={() =>
+   297→   297→                matches[p.left]
+   298→   298→                  ? handleRemoveMatch(p.left)
+   299→   299→                  : handleLeftClick(p.left)
+   300→   300→              }
+   301→   301→              className={`rounded-lg border p-3 text-left text-sm font-medium transition-all ${
+   302→   302→                selectedLeft === p.left
+   303→   303→                  ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary/30'
+   304→   304→                  : matches[p.left]
+   305→   305→                    ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
+   306→   306→                    : 'border-border hover:border-primary/30 hover:bg-primary/5'
+   307→   307→              }`}
+   308→   308→            >
+   309→   309→              <div className="flex items-center gap-2">
+   310→   310→                <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40" />
+   311→   311→                <span className="flex-1">{p.left}</span>
+   312→   312→                {matches[p.left] && (
+   313→   313→                  <span className="text-xs opacity-60 truncate max-w-[120px]">
+   314→   314→                    → {matches[p.left]}
+   315→   315→                  </span>
+   316→   316→                )}
+   317→   317→              </div>
+   318→   318→            </motion.button>
+   319→   319→          ))}
+   320→   320→        </div>
+   321→   321→        {/* Right column */}
+   322→   322→        <div className="flex flex-col gap-2">
+   323→   323→          {shuffledRight.map((r) => {
+   324→   324→            const isUsed = usedRights.has(r);
+   325→   325→            return (
+   326→   326→              <motion.button
+   327→   327→                key={r}
+   328→   328→                whileTap={{ scale: 0.98 }}
+   329→   329→                onClick={() => !isUsed && handleRightClick(r)}
+   330→   330→                disabled={isUsed || !selectedLeft}
+   331→   331→                className={`rounded-lg border p-3 text-left text-sm transition-all ${
+   332→   332→                  isUsed
+   333→   333→                    ? 'border-border bg-muted/50 text-muted-foreground line-through opacity-50'
+   334→   334→                    : selectedLeft
+   335→   335→                      ? 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-pointer'
+   336→   336→                      : 'border-border opacity-60'
+   337→   337→                }`}
+   338→   338→              >
+   339→   339→                <div className="flex items-center gap-2">
+   340→   340→                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40" />
+   341→   341→                  {r}
+   342→   342→                </div>
+   343→   343→              </motion.button>
+   344→   344→            );
+   345→   345→          })}
+   346→   346→        </div>
+   347→   347→      </div>
+   348→   348→      <div className="flex items-center justify-between">
+   349→   349→        <span className="text-xs text-muted-foreground">
+   350→   350→          {Object.keys(matches).length} of {pairs.length} matched
+   351→   351→        </span>
+   352→   352→        <Button onClick={handleSubmit} disabled={!allMatched} size="sm">
+   353→   353→          Submit Matches
+   354→   354→        </Button>
+   355→   355→      </div>
+   356→   356→    </div>
+   357→   357→  );
+   358→   358→}
+   359→   359→
+   360→   360→// ---------- Main QuizView ----------
+   361→   361→export function QuizView() {
+   362→   362→  const { navigate, currentQuestions, activeCourse } = useAppStore();
+   363→   363→
+   364→   364→  const allQuestions = currentQuestions.length > 0 ? currentQuestions : MOCK_QUESTIONS;
+   365→   365→
+   366→   366→  const [selectedCourse, setSelectedCourse] = useState<string>('all');
+   367→   367→  const [currentIndex, setCurrentIndex] = useState(0);
+   368→   368→  const [answers, setAnswers] = useState<Record<string, string>>({});
+   369→   369→  const [answered, setAnswered] = useState<Record<string, boolean>>({});
+   370→   370→  const [showExplanation, setShowExplanation] = useState(false);
+   371→   371→  const [showConfetti, setShowConfetti] = useState(false);
+   372→   372→  const [showResults, setShowResults] = useState(false);
+   373→   373→
+   374→   374→  const handleCourseChange = (courseId: string) => {
+   375→   375→    setSelectedCourse(courseId);
+   376→   376→    // Reset quiz state on course change
+   377→   377→    setCurrentIndex(0);
+   378→   378→    setAnswers({});
+   379→   379→    setAnswered({});
+   380→   380→    setShowExplanation(false);
+   381→   381→    setShowResults(false);
+   382→   382→  };
+   383→   383→
+   384→   384→  // Filter questions by selected course
+   385→   385→  const questions = useMemo(() => {
+   386→   386→    if (selectedCourse === 'all') return allQuestions;
+   387→   387→    return allQuestions.filter((q) => q.courseId === selectedCourse);
+   388→   388→  }, [allQuestions, selectedCourse]);
+   389→   389→
+   390→   390→  const currentQ = questions[currentIndex];
+   391→   391→  const progress = questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0;
+   392→   392→
+   393→   393→  const isCorrect = useCallback(
+   394→   394→    (q: Question, userAnswer: string): boolean => {
+   395→   395→      const ua = userAnswer.trim().toLowerCase();
+   396→   396→      const ca = q.answer.trim().toLowerCase();
+   397→   397→      if (q.type === 'short_answer' || q.type === 'error_correction') {
+   398→   398→        return isFuzzyMatch(userAnswer, q.answer, 3);
+   399→   399→      }
+   400→   400→      if (q.type === 'fill_blank') {
+   401→   401→        return isFuzzyMatch(userAnswer, q.answer, 2);
+   402→   402→      }
+   403→   403→      return ua === ca;
+   404→   404→    },
+   405→   405→    [],
+   406→   406→  );
+   407→   407→
+   408→   408→  const handleAnswer = useCallback(
+   409→   409→    (answer: string) => {
+   410→   410→      if (!currentQ || answered[currentQ.id]) return;
+   411→   411→
+   412→   412→      const newAnswers = { ...answers, [currentQ.id]: answer };
+   413→   413→      const newAnswered = { ...answered, [currentQ.id]: true };
+   414→   414→      setAnswers(newAnswers);
+   415→   415→      setAnswered(newAnswered);
+   416→   416→      setShowExplanation(true);
+   417→   417→
+   418→   418→      if (isCorrect(currentQ, answer)) {
+   419→   419→        setShowConfetti(true);
+   420→   420→        setTimeout(() => setShowConfetti(false), 1500);
+   421→   421→      }
+   422→   422→    },
+   423→   423→    [answered, answers, currentQ, isCorrect],
+   424→   424→  );
+   425→   425→
+   426→   426→  const handleNext = () => {
+   427→   427→    setShowExplanation(false);
+   428→   428→    if (currentIndex < questions.length - 1) {
+   429→   429→      setCurrentIndex(currentIndex + 1);
+   430→   430→    } else {
+   431→   431→      setShowResults(true);
+   432→   432→    }
+   433→   433→  };
+   434→   434→
+   435→   435→  const handleRetry = () => {
+   436→   436→    setCurrentIndex(0);
+   437→   437→    setAnswers({});
+   438→   438→    setAnswered({});
+   439→   439→    setShowExplanation(false);
+   440→   440→    setShowResults(false);
+   441→   441→    setShowConfetti(false);
+   442→   442→  };
+   443→   443→
+   444→   444→  const score = useMemo(() => {
+   445→   445→    return questions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
+   446→   446→  }, [questions, answered, answers, isCorrect]);
+   447→   447→
+   448→   448→  const circumference = 2 * Math.PI * 54;
+   449→   449→  const scorePercent = questions.length > 0 ? score / questions.length : 0;
+   450→   450→  const strokeDashoffset = circumference * (1 - scorePercent);
+   451→   451→
+   452→   452→  // ---------- Empty State ----------
+   453→   453→  if (questions.length === 0) {
+   454→   454→    return (
+   455→   455→      <motion.div
+   456→   456→        initial={{ opacity: 0, y: 20 }}
+   457→   457→        animate={{ opacity: 1, y: 0 }}
+   458→   458→        className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
+   459→   459→      >
+   460→   460→        <div className="glass rounded-2xl p-8 text-center space-y-4 max-w-md">
+   461→   461→          <BookOpen className="h-16 w-16 text-primary/30 mx-auto" />
+   462→   462→          <h2 className="text-xl font-bold">No questions available</h2>
+   463→   463→          <p className="text-muted-foreground text-sm">
+   464→   464→            {selectedCourse !== 'all'
+   465→   465→              ? `No questions found for this course. Try selecting a different category.`
+   466→   466→              : 'Upload some study materials or generate questions from your courses to start practicing.'}
+   467→   467→          </p>
+   468→   468→          <div className="flex justify-center gap-3">
+   469→   469→            <Button onClick={() => navigate('upload')}>
+   470→   470→              <BookOpen className="h-4 w-4 mr-2" />
+   471→   471→              Upload Slides
+   472→   472→            </Button>
+   473→   473→            <Button variant="outline" onClick={() => navigate('dashboard')}>
+   474→   474→              <ArrowLeft className="h-4 w-4 mr-2" />
+   475→   475→              Back to Dashboard
+   476→   476→            </Button>
+   477→   477→          </div>
+   478→   478→        </div>
+   479→   479→      </motion.div>
+   480→   480→    );
+   481→   481→  }
+   482→   482→
+   483→   483→  // ---------- Results Screen ----------
+   484→   484→  if (showResults) {
+   485→   485→    return (
+   486→   486→      <motion.div
+   487→   487→        initial={{ opacity: 0, scale: 0.9 }}
+   488→   488→        animate={{ opacity: 1, scale: 1 }}
+   489→   489→        className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
+   490→   490→      >
+   491→   491→        <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full">
+   492→   492→          <div className="relative inline-flex">
+   493→   493→            <svg width="140" height="140" className="-rotate-90">
+   494→   494→              <circle
+   495→   495→                cx="70"
+   496→   496→                cy="70"
+   497→   497→                r="54"
+   498→   498→                fill="none"
+   499→   499→                stroke="currentColor"
+   500→   500→                strokeWidth="10"
+   501→   501→                className="text-muted/30"
+   502→   502→              />
+   503→   503→              <motion.circle
+   504→   504→                cx="70"
+   505→   505→                cy="70"
+   506→   506→                r="54"
+   507→   507→                fill="none"
+   508→   508→                stroke="url(#scoreGrad)"
+   509→   509→                strokeWidth="10"
+   510→   510→                strokeLinecap="round"
+   511→   511→                strokeDasharray={circumference}
+   512→   512→                initial={{ strokeDashoffset: circumference }}
+   513→   513→                animate={{ strokeDashoffset }}
+   514→   514→                transition={{ duration: 1.5, ease: 'easeOut' }}
+   515→   515→              />
+   516→   516→              <defs>
+   517→   517→                <linearGradient id="scoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+   518→   518→                  <stop offset="0%" stopColor="#10b981" />
+   519→   519→                  <stop offset="100%" stopColor="#14b8a6" />
+   520→   520→                </linearGradient>
+   521→   521→              </defs>
+   522→   522→            </svg>
+   523→   523→            <div className="absolute inset-0 flex flex-col items-center justify-center">
+   524→   524→              <Trophy className="h-6 w-6 text-amber-500 mb-1" />
+   525→   525→              <span className="text-3xl font-bold">{score}/{questions.length}</span>
+   526→   526→              <span className="text-xs text-muted-foreground">
+   527→   527→                {Math.round(scorePercent * 100)}% correct
+   528→   528→              </span>
+   529→   529→            </div>
+   530→   530→          </div>
+   531→   531→
+   532→   532→          <div>
+   533→   533→            <h2 className="text-2xl font-bold">
+   534→   534→              {scorePercent >= 0.8
+   535→   535→                ? 'Excellent!'
+   536→   536→                : scorePercent >= 0.6
+   537→   537→                  ? 'Good effort!'
+   538→   538→                  : 'Keep practicing!'}
+   539→   539→            </h2>
+   540→   540→            <p className="text-muted-foreground text-sm mt-1">
+   541→   541→              You answered {score} out of {questions.length} questions correctly
+   542→   542→            </p>
+   543→   543→          </div>
+   544→   544→
+   545→   545→          {/* Per-question breakdown */}
+   546→   546→          <div className="space-y-2 text-left">
+   547→   547→            <h3 className="text-sm font-semibold">Question Breakdown</h3>
+   548→   548→            <div className="max-h-48 overflow-y-auto space-y-1">
+   549→   549→              {questions.map((q, i) => {
+   550→   550→                const wasCorrect = answered[q.id] && isCorrect(q, answers[q.id] || '');
+   551→   551→                return (
+   552→   552→                  <div key={q.id} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-md bg-muted/50">
+   553→   553→                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${wasCorrect ? 'bg-emerald-500 text-white' : 'bg-destructive/20 text-destructive'}`}>
+   554→   554→                      {wasCorrect ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+   555→   555→                    </span>
+   556→   556→                    <span className="flex-1 truncate">{q.question.slice(0, 60)}{q.question.length > 60 ? '...' : ''}</span>
+   557→   557→                    <Badge variant="outline" className="text-[9px] px-1 py-0">{q.type.replace('_', ' ')}</Badge>
+   558→   558→                  </div>
+   559→   559→                );
+   560→   560→              })}
+   561→   561→            </div>
+   562→   562→          </div>
+   563→   563→
+   564→   564→          <div className="flex justify-center gap-3">
+   565→   565→            <Button onClick={handleRetry} variant="outline">
+   566→   566→              <RotateCcw className="h-4 w-4 mr-2" />
+   567→   567→              Try Again
+   568→   568→            </Button>
+   569→   569→            <Button onClick={() => navigate('dashboard')}>
+   570→   570→              <ArrowLeft className="h-4 w-4 mr-2" />
+   571→   571→              Back to Dashboard
+   572→   572→            </Button>
+   573→   573→          </div>
+   574→   574→        </div>
+   575→   575→      </motion.div>
+   576→   576→    );
+   577→   577→  }
+   578→   578→
+   579→   579→  // ---------- Question Screen ----------
+   580→   580→  return (
+   581→   581→    <div className="pl-14 lg:pl-0">
+   582→   582→      <div className="relative">
+   583→   583→        {/* Confetti */}
+   584→   584→        <AnimatePresence>
+   585→   585→          {showConfetti && (
+   586→   586→            <div className="fixed inset-0 pointer-events-none z-50">
+   587→   587→              {Array.from({ length: 16 }).map((_, i) => (
+   588→   588→                <ConfettiParticle
+   589→   589→                  key={i}
+   590→   590→                  delay={i * 0.03}
+   591→   591→                  color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
+   592→   592→                />
+   593→   593→              ))}
+   594→   594→            </div>
+   595→   595→          )}
+   596→   596→        </AnimatePresence>
+   597→   597→
+   598→   598→        {/* Course filter + Progress bar */}
+   599→   599→        <div className="mb-6 space-y-3">
+   600→   600→          {/* Course filter tabs */}
+   601→   601→          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+   602→   602→            {COURSE_QUIZ_GROUPS.map((group) => (
+   603→   603→              <button
+   604→   604→                key={group.id}
+   605→   605→                onClick={() => handleCourseChange(group.id)}
+   606→   606→                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all ${
+   607→   607→                  selectedCourse === group.id
+   608→   608→                    ? 'bg-primary text-primary-foreground shadow-sm'
+   609→   609→                    : 'border border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
+   610→   610→                }`}
+   611→   611→              >
+   612→   612→                <group.icon className="h-3.5 w-3.5" />
+   613→   613→                {group.label}
+   614→   614→                <span className={`ml-0.5 text-[10px] ${selectedCourse === group.id ? 'bg-white/20 px-1 rounded' : 'text-muted-foreground'}`}>
+   615→   615→                  {group.id === 'all'
+   616→   616→                    ? allQuestions.length
+   617→   617→                    : allQuestions.filter((q) => q.courseId === group.id).length}
+   618→   618→                </span>
+   619→   619→              </button>
+   620→   620→            ))}
+   621→   621→          </div>
+   622→   622→          <div className="flex items-center justify-between mb-2">
+   623→   623→            <span className="text-sm font-medium">
+   624→   624→              Question {currentIndex + 1} of {questions.length}
+   625→   625→            </span>
+   626→   626→            <div className="flex items-center gap-2">
+   627→   627→              <Badge variant="outline" className="text-[10px] px-1.5">
+   628→   628→                {currentQ?.difficulty}
+   629→   629→              </Badge>
+   630→   630→              <span className="text-xs text-muted-foreground bg-primary/10 px-2 py-0.5 rounded-full font-medium">
+   631→   631→                {currentQ?.type.replace('_', ' ')}
+   632→   632→              </span>
+   633→   633→            </div>
+   634→   634→          </div>
+   635→   635→          <Progress value={progress} className="h-2" />
+   636→   636→        </div>
+   637→   637→
+   638→   638→        {/* Question card */}
+   639→   639→        <AnimatePresence mode="wait">
+   640→   640→          {currentQ && (
+   641→   641→            <motion.div
+   642→   642→              key={currentQ.id}
+   643→   643→              initial={{ opacity: 0, x: 30 }}
+   644→   644→              animate={{ opacity: 1, x: 0 }}
+   645→   645→              exit={{ opacity: 0, x: -30 }}
+   646→   646→              transition={{ duration: 0.3 }}
+   647→   647→              className="glass rounded-xl p-6 space-y-6"
+   648→   648→            >
+   649→   649→              {/* Concept tag */}
+   650→   650→              {currentQ.concept && (
+   651→   651→                <div className="flex items-center gap-2">
+   652→   652→                  <Badge variant="secondary" className="text-xs">
+   653→   653→                    {currentQ.concept}
+   654→   654→                  </Badge>
+   655→   655→                </div>
+   656→   656→              )}
+   657→   657→
+   658→   658→              {/* Question text */}
+   659→   659→              <h2 className="text-lg font-semibold leading-relaxed">{currentQ.question}</h2>
+   660→   660→
+   661→   661→              {/* Question type renderer */}
+   662→   662→              {currentQ.type === 'multiple_choice' && currentQ.options && (
+   663→   663→                <div className="grid gap-2">
+   664→   664→                  {currentQ.options.map((opt, i) => {
+   665→   665→                    const letter = String.fromCharCode(65 + i);
+   666→   666→                    const isAnswered = answered[currentQ.id];
+   667→   667→                    const isSelected = answers[currentQ.id] === opt;
+   668→   668→                    const isCorrectOpt = opt === currentQ.answer;
+   669→   669→
+   670→   670→                    return (
+   671→   671→                      <motion.button
+   672→   672→                        key={opt}
+   673→   673→                        whileHover={!isAnswered ? { scale: 1.01 } : {}}
+   674→   674→                        whileTap={!isAnswered ? { scale: 0.99 } : {}}
+   675→   675→                        onClick={() => !isAnswered && handleAnswer(opt)}
+   676→   676→                        disabled={isAnswered}
+   677→   677→                        className={`flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition-all ${
+   678→   678→                          isAnswered
+   679→   679→                            ? isCorrectOpt
+   680→   680→                              ? 'border-emerald-500 bg-emerald-500/10'
+   681→   681→                              : isSelected
+   682→   682→                                ? 'border-destructive bg-destructive/10'
+   683→   683→                                : 'border-border opacity-60'
+   684→   684→                            : 'border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer'
+   685→   685→                        }`}
+   686→   686→                      >
+   687→   687→                        <span
+   688→   688→                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-bold ${
+   689→   689→                            isAnswered && isCorrectOpt
+   690→   690→                              ? 'bg-emerald-500 text-white'
+   691→   691→                              : isAnswered && isSelected
+   692→   692→                                ? 'bg-destructive text-white'
+   693→   693→                                : 'bg-muted text-muted-foreground'
+   694→   694→                          }`}
+   695→   695→                        >
+   696→   696→                          {isAnswered && isCorrectOpt ? (
+   697→   697→                            <CheckCircle2 className="h-4 w-4" />
+   698→   698→                          ) : isAnswered && isSelected ? (
+   699→   699→                            <XCircle className="h-4 w-4" />
+   700→   700→                          ) : (
+   701→   701→                            letter
+   702→   702→                          )}
+   703→   703→                        </span>
+   704→   704→                        <span>{opt}</span>
+   705→   705→                      </motion.button>
+   706→   706→                    );
+   707→   707→                  })}
+   708→   708→                </div>
+   709→   709→              )}
+   710→   710→
+   711→   711→              {currentQ.type === 'true_false' && (
+   712→   712→                <div className="flex gap-3">
+   713→   713→                  {['True', 'False'].map((opt) => {
+   714→   714→                    const isAnswered = answered[currentQ.id];
+   715→   715→                    const isSelected = answers[currentQ.id] === opt;
+   716→   716→                    const isCorrectOpt = opt === currentQ.answer;
+   717→   717→
+   718→   718→                    return (
+   719→   719→                      <motion.button
+   720→   720→                        key={opt}
+   721→   721→                        whileHover={!isAnswered ? { scale: 1.02 } : {}}
+   722→   722→                        whileTap={!isAnswered ? { scale: 0.98 } : {}}
+   723→   723→                        onClick={() => !isAnswered && handleAnswer(opt)}
+   724→   724→                        disabled={isAnswered}
+   725→   725→                        className={`flex-1 rounded-lg border p-4 text-center font-semibold transition-all ${
+   726→   726→                          isAnswered
+   727→   727→                            ? isCorrectOpt
+   728→   728→                              ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+   729→   729→                              : isSelected
+   730→   730→                                ? 'border-destructive bg-destructive/10 text-destructive'
+   731→   731→                                : 'border-border opacity-60'
+   732→   732→                            : 'border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer'
+   733→   733→                        }`}
+   734→   734→                      >
+   735→   735→                        {opt}
+   736→   736→                      </motion.button>
+   737→   737→                    );
+   738→   738→                  })}
+   739→   739→                </div>
+   740→   740→              )}
+   741→   741→
+   742→   742→              {currentQ.type === 'short_answer' && !answered[currentQ.id] && (
+   743→   743→                <div className="flex gap-2">
+   744→   744→                  <Input
+   745→   745→                    placeholder="Type your answer..."
+   746→   746→                    onKeyDown={(e) => {
+   747→   747→                      if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+   748→   748→                        handleAnswer((e.target as HTMLInputElement).value);
+   749→   749→                      }
+   750→   750→                    }}
+   751→   751→                    id="short-answer-input"
+   752→   752→                  />
+   753→   753→                  <Button
+   754→   754→                    onClick={() => {
+   755→   755→                      const input = document.getElementById('short-answer-input') as HTMLInputElement;
+   756→   756→                      if (input?.value.trim()) handleAnswer(input.value);
+   757→   757→                    }}
+   758→   758→                  >
+   759→   759→                    Submit
+   760→   760→                  </Button>
+   761→   761→                </div>
+   762→   762→              )}
+   763→   763→
+   764→   764→              {currentQ.type === 'short_answer' && answered[currentQ.id] && (
+   765→   765→                <div className="rounded-lg border p-4 text-sm space-y-1">
+   766→   766→                  <p className="text-muted-foreground">Your answer:</p>
+   767→   767→                  <p className="font-medium">{answers[currentQ.id]}</p>
+   768→   768→                </div>
+   769→   769→              )}
+   770→   770→
+   771→   771→              {currentQ.type === 'fill_blank' && !answered[currentQ.id] && (
+   772→   772→                <div className="flex gap-2 items-center">
+   773→   773→                  <Input
+   774→   774→                    placeholder="Fill in the blank..."
+   775→   775→                    onKeyDown={(e) => {
+   776→   776→                      if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+   777→   777→                        handleAnswer((e.target as HTMLInputElement).value);
+   778→   778→                      }
+   779→   779→                    }}
+   780→   780→                    id="fill-blank-input"
+   781→   781→                  />
+   782→   782→                  <Button
+   783→   783→                    onClick={() => {
+   784→   784→                      const input = document.getElementById('fill-blank-input') as HTMLInputElement;
+   785→   785→                      if (input?.value.trim()) handleAnswer(input.value);
+   786→   786→                    }}
+   787→   787→                  >
+   788→   788→                    Submit
+   789→   789→                  </Button>
+   790→   790→                </div>
+   791→   791→              )}
+   792→   792→
+   793→   793→              {currentQ.type === 'fill_blank' && answered[currentQ.id] && (
+   794→   794→                <div className="rounded-lg border p-4 text-sm space-y-1">
+   795→   795→                  <p className="text-muted-foreground">Your answer:</p>
+   796→   796→                  <p className="font-medium">{answers[currentQ.id]}</p>
+   797→   797→                </div>
+   798→   798→              )}
+   799→   799→
+   800→   800→              {currentQ.type === 'matching' && currentQ.matchingPairs && !answered[currentQ.id] && (
+   801→   801→                <MatchingInput
+   802→   802→                  pairs={currentQ.matchingPairs}
+   803→   803→                  onAnswer={(answer) => handleAnswer(answer)}
+   804→   804→                />
+   805→   805→              )}
+   806→   806→
+   807→   807→              {currentQ.type === 'error_correction' && currentQ.errorText && !answered[currentQ.id] && (
+   808→   808→                <ErrorCorrectionInput
+   809→   809→                  errorText={currentQ.errorText}
+   810→   810→                  onAnswer={(answer) => handleAnswer(answer)}
+   811→   811→                />
+   812→   812→              )}
+   813→   813→
+   814→   814→              {currentQ.type === 'error_correction' && answered[currentQ.id] && (
+   815→   815→                <div className="rounded-lg border p-4 text-sm space-y-1">
+   816→   816→                  <p className="text-muted-foreground">Your correction:</p>
+   817→   817→                  <p className="font-medium">{answers[currentQ.id] || '(empty)'}</p>
+   818→   818→                </div>
+   819→   819→              )}
+   820→   820→
+   821→   821→              {/* Explanation */}
+   822→   822→              <AnimatePresence>
+   823→   823→                {showExplanation && currentQ.explanation && (
+   824→   824→                  <motion.div
+   825→   825→                    initial={{ opacity: 0, y: 10, height: 0 }}
+   826→   826→                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+   827→   827→                    exit={{ opacity: 0, y: -10, height: 0 }}
+   828→   828→                    className="overflow-hidden"
+   829→   829→                  >
+   830→   830→                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2">
+   831→   831→                      <div className="flex items-center gap-2">
+   832→   832→                        <Sparkles className="h-4 w-4 text-primary" />
+   833→   833→                        <span className="text-sm font-semibold text-primary">Explanation</span>
+   834→   834→                      </div>
+   835→   835→                      <p className="text-sm text-muted-foreground leading-relaxed">
+   836→   836→                        {currentQ.explanation}
+   837→   837→                      </p>
+   838→   838→                      {currentQ.type === 'short_answer' || currentQ.type === 'error_correction' || currentQ.type === 'fill_blank' ? (
+   839→   839→                        <div className="mt-2">
+   840→   840→                          <span className="text-xs text-muted-foreground">Expected answer: </span>
+   841→   841→                          <span className="text-xs font-medium">{currentQ.answer}</span>
+   842→   842→                        </div>
+   843→   843→                      ) : null}
+   844→   844→                    </div>
+   845→   845→                  </motion.div>
+   846→   846→                )}
+   847→   847→              </AnimatePresence>
+   848→   848→
+   849→   849→              {/* Navigation buttons */}
+   850→   850→              <div className="flex items-center justify-between">
+   851→   851→                <Button
+   852→   852→                  variant="ghost"
+   853→   853→                  size="sm"
+   854→   854→                  onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
+   855→   855→                  disabled={currentIndex === 0}
+   856→   856→                  className="text-muted-foreground"
+   857→   857→                >
+   858→   858→                  Previous
+   859→   859→                </Button>
+   860→   860→                {answered[currentQ.id] && (
+   861→   861→                  <motion.div
+   862→   862→                    initial={{ opacity: 0, y: 10 }}
+   863→   863→                    animate={{ opacity: 1, y: 0 }}
+   864→   864→                  >
+   865→   865→                    <Button onClick={handleNext}>
+   866→   866→                      {currentIndex < questions.length - 1 ? (
+   867→   867→                        <>
+   868→   868→                          Next <ChevronRight className="h-4 w-4 ml-1" />
+   869→   869→                        </>
+   870→   870→                      ) : (
+   871→   871→                        <>
+   872→   872→                          See Results <Trophy className="h-4 w-4 ml-1" />
+   873→   873→                        </>
+   874→   874→                      )}
+   875→   875→                    </Button>
+   876→   876→                  </motion.div>
+   877→   877→                )}
+   878→   878→              </div>
+   879→   879→            </motion.div>
+   880→   880→          )}
+   881→   881→        </AnimatePresence>
+   882→   882→
+   883→   883→        {/* Question navigator dots */}
+   884→   884→        {questions.length > 1 && (
+   885→   885→          <div className="flex items-center justify-center gap-1 mt-6 flex-wrap">
+   886→   886→            {questions.map((q, i) => (
+   887→   887→              <button
+   888→   888→                key={q.id}
+   889→   889→                onClick={() => setCurrentIndex(i)}
+   890→   890→                className={`h-2.5 w-2.5 rounded-full transition-all ${
+   891→   891→                  i === currentIndex
+   892→   892→                    ? 'bg-primary w-6'
+   893→   893→                    : answered[q.id]
+   894→   894→                      ? isCorrect(q, answers[q.id] || '')
+   895→   895→                        ? 'bg-emerald-500'
+   896→   896→                        : 'bg-destructive/60'
+   897→   897→                      : 'bg-muted hover:bg-primary/40'
+   898→   898→                }`}
+   899→   899→                aria-label={`Go to question ${i + 1}`}
+   900→   900→              />
+   901→   901→            ))}
+   902→   902→          </div>
+   903→   903→        )}
+   904→   904→      </div>
+   905→   905→    </div>
+   906→   906→  );
+   907→   907→}
+   908→   908→

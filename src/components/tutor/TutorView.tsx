@@ -24,9 +24,16 @@ import {
   BookOpen,
   MessageCircle,
   Columns,
+  Play,
+  Pause,
+  RotateCcw,
+  SkipForward,
+  Timer,
+  Coffee,
+  Brain,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 
 import { ChatBubble, stopAllTTS } from './ChatBubble'
 import { TypingIndicator } from './TypingIndicator'
@@ -36,6 +43,44 @@ import { TipInput } from './TipInput'
 import { FeedbackBar } from './FeedbackBar'
 import { CourseContextPanel } from './CourseContextPanel'
 import { PersonaSelector } from './PersonaSelector'
+
+// ---------- Pomodoro Timer ----------
+const POMODORO_MODES = [
+  { id: 'focus' as const, label: 'Focus', duration: 25 * 60, icon: Brain, color: 'text-emerald-600 dark:text-emerald-400' },
+  { id: 'shortBreak' as const, label: 'Short Break', duration: 5 * 60, icon: Coffee, color: 'text-teal-600 dark:text-teal-400' },
+  { id: 'longBreak' as const, label: 'Long Break', duration: 15 * 60, icon: Timer, color: 'text-cyan-600 dark:text-cyan-400' },
+]
+
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.value = 660
+    osc.type = 'sine'
+    gain.gain.value = 0.3
+    osc.start()
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+    osc.stop(ctx.currentTime + 0.5)
+    // Second beep
+    setTimeout(() => {
+      const osc2 = ctx.createOscillator()
+      const gain2 = ctx.createGain()
+      osc2.connect(gain2)
+      gain2.connect(ctx.destination)
+      osc2.frequency.value = 880
+      osc2.type = 'sine'
+      gain2.gain.value = 0.3
+      osc2.start()
+      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+      osc2.stop(ctx.currentTime + 0.5)
+    }, 200)
+  } catch {
+    // Audio not available
+  }
+}
 
 const QUICK_TOPICS = ['Cell Biology', 'Data Structures', 'World History', 'Calculus', 'Creative Writing']
 
@@ -98,6 +143,76 @@ export function TutorView() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Pomodoro state
+  const [pomodoroExpanded, setPomodoroExpanded] = useState(false)
+  const [pomodoroRunning, setPomodoroRunning] = useState(false)
+  const [pomodoroModeIndex, setPomodoroModeIndex] = useState(0)
+  const [pomodoroTimeLeft, setPomodoroTimeLeft] = useState(POMODORO_MODES[0].duration)
+  const [pomodoroSessions, setPomodoroSessions] = useState(0)
+  const pomodoroRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const currentPomodoroMode = POMODORO_MODES[pomodoroModeIndex]
+  const pomodoroProgress = 1 - pomodoroTimeLeft / currentPomodoroMode.duration
+  const pomodoroCircumference = 2 * Math.PI * 16
+  const pomodoroStrokeOffset = pomodoroCircumference * (1 - pomodoroProgress)
+
+  const handlePomodoroToggle = useCallback(() => {
+    setPomodoroRunning((prev) => !prev)
+  }, [])
+
+  const handlePomodoroReset = useCallback(() => {
+    setPomodoroRunning(false)
+    setPomodoroTimeLeft(currentPomodoroMode.duration)
+  }, [currentPomodoroMode.duration])
+
+  const handlePomodoroSkip = useCallback(() => {
+    setPomodoroRunning(false)
+    const nextIndex = (pomodoroModeIndex + 1) % POMODORO_MODES.length
+    // Auto-transition: Focus -> Short Break, every 4th Focus -> Long Break
+    if (pomodoroModeIndex === 0) {
+      // Was in focus mode
+      const newSessionCount = pomodoroSessions + 1
+      setPomodoroSessions(newSessionCount)
+      if (newSessionCount % 4 === 0) {
+        // Every 4th: go to long break
+        setPomodoroModeIndex(2)
+        setPomodoroTimeLeft(POMODORO_MODES[2].duration)
+        return
+      }
+    }
+    setPomodoroModeIndex(nextIndex)
+    setPomodoroTimeLeft(POMODORO_MODES[nextIndex].duration)
+  }, [pomodoroModeIndex, pomodoroSessions])
+
+  // Pomodoro tick
+  useEffect(() => {
+    if (pomodoroRunning) {
+      pomodoroRef.current = setInterval(() => {
+        setPomodoroTimeLeft((prev) => {
+          if (prev <= 1) {
+            playBeep()
+            toast.success(`${currentPomodoroMode.label} session complete!`)
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+    } else if (pomodoroRef.current) {
+      clearInterval(pomodoroRef.current)
+      pomodoroRef.current = null
+    }
+    return () => {
+      if (pomodoroRef.current) clearInterval(pomodoroRef.current)
+    }
+  }, [pomodoroRunning, currentPomodoroMode.label])
+
+  // Auto-stop pomodoro when time reaches 0
+  useEffect(() => {
+    if (pomodoroTimeLeft === 0 && pomodoroRunning) {
+      setPomodoroRunning(false)
+    }
+  }, [pomodoroTimeLeft, pomodoroRunning])
 
   const showSlidePanel = (tutorMode === 'slide' || tutorMode === 'hybrid') && activeSlides.length > 0
 
@@ -271,6 +386,164 @@ export function TutorView() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* Collapsible Pomodoro Timer */}
+          <div className="relative">
+            <button
+              onClick={() => setPomodoroExpanded(!pomodoroExpanded)}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-border bg-card/50 hover:bg-accent/50 transition-colors"
+              aria-label="Toggle Pomodoro timer"
+            >
+              <svg width="20" height="20" className="-rotate-90">
+                <circle
+                  cx="10"
+                  cy="10"
+                  r="8"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className="text-muted/30"
+                />
+                <circle
+                  cx="10"
+                  cy="10"
+                  r="8"
+                  fill="none"
+                  stroke="url(#pomoGrad)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeDasharray={pomodoroCircumference}
+                  strokeDashoffset={pomodoroStrokeOffset}
+                  className="transition-all duration-500"
+                />
+                <defs>
+                  <linearGradient id="pomoGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#10b981" />
+                    <stop offset="100%" stopColor="#14b8a6" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <span className={`font-mono text-xs font-medium ${currentPomodoroMode.color}`}>
+                {Math.floor(pomodoroTimeLeft / 60)}:{String(pomodoroTimeLeft % 60).padStart(2, '0')}
+              </span>
+            </button>
+
+            {/* Expanded Pomodoro Panel */}
+            <AnimatePresence>
+              {pomodoroExpanded && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="absolute top-full right-0 mt-2 z-50 w-64 rounded-xl border bg-card p-4 shadow-lg space-y-3"
+                >
+                  {/* Mode tabs */}
+                  <div className="flex items-center rounded-lg border border-border bg-background/50 p-0.5">
+                    {POMODORO_MODES.map((mode, i) => {
+                      const Icon = mode.icon
+                      return (
+                        <button
+                          key={mode.id}
+                          onClick={() => {
+                            setPomodoroModeIndex(i)
+                            setPomodoroTimeLeft(mode.duration)
+                            setPomodoroRunning(false)
+                          }}
+                          className={`flex-1 flex items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all ${
+                            pomodoroModeIndex === i
+                              ? 'bg-primary text-primary-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          <Icon className="w-3 h-3" />
+                          <span className="hidden sm:inline">{mode.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Circular timer */}
+                  <div className="flex justify-center">
+                    <div className="relative">
+                      <svg width="96" height="96" className="-rotate-90">
+                        <circle
+                          cx="48"
+                          cy="48"
+                          r="42"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                          className="text-muted/20"
+                        />
+                        <motion.circle
+                          cx="48"
+                          cy="48"
+                          r="42"
+                          fill="none"
+                          stroke="url(#pomoGradLarge)"
+                          strokeWidth="4"
+                          strokeLinecap="round"
+                          strokeDasharray={2 * Math.PI * 42}
+                          strokeDashoffset={2 * Math.PI * 42 * (1 - pomodoroProgress)}
+                          className="transition-all duration-1000"
+                        />
+                        <defs>
+                          <linearGradient id="pomoGradLarge" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stopColor="#10b981" />
+                            <stop offset="100%" stopColor="#14b8a6" />
+                          </linearGradient>
+                        </defs>
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className={`text-2xl font-bold font-mono ${currentPomodoroMode.color}`}>
+                          {Math.floor(pomodoroTimeLeft / 60)}:{String(pomodoroTimeLeft % 60).padStart(2, '0')}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground mt-0.5">{currentPomodoroMode.label}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Session count */}
+                  <div className="text-center">
+                    <span className="text-xs text-muted-foreground">
+                      Session <span className={`font-bold ${currentPomodoroMode.color}`}>{(pomodoroSessions % 4) + 1}</span> / 4
+                    </span>
+                  </div>
+
+                  {/* Controls */}
+                  <div className="flex items-center justify-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={handlePomodoroReset}
+                      aria-label="Reset timer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      className="h-9 w-9"
+                      onClick={handlePomodoroToggle}
+                      aria-label={pomodoroRunning ? 'Pause' : 'Start'}
+                    >
+                      {pomodoroRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={handlePomodoroSkip}
+                      aria-label="Skip to next"
+                    >
+                      <SkipForward className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           <Badge variant="outline" className="font-mono text-xs">
             <span className={timerSeconds > 0 ? 'text-emerald-600 dark:text-emerald-400' : ''}>
               {formatTimer(timerSeconds)}

@@ -15,19 +15,13 @@ import {
   ChevronDown,
   ChevronRight,
   Hash,
+  File,
+  Presentation,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Collapsible,
   CollapsibleContent,
@@ -81,6 +75,53 @@ const fadeUp = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
 };
+
+// File type config
+const FILE_TYPE_CONFIG: Record<string, { icon: typeof File; color: string; bg: string }> = {
+  '.pdf': { icon: FileText, color: 'text-red-500', bg: 'bg-red-500/10' },
+  '.pptx': { icon: Presentation, color: 'text-orange-500', bg: 'bg-orange-500/10' },
+  '.ppt': { icon: Presentation, color: 'text-orange-500', bg: 'bg-orange-500/10' },
+  '.docx': { icon: File, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+};
+
+// Category colors
+const CATEGORY_COLORS: Record<string, string> = {
+  'Science': 'from-emerald-500/15 to-teal-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+  'Mathematics': 'from-violet-500/15 to-purple-500/15 text-violet-700 dark:text-violet-300 border-violet-500/20',
+  'Computer Science': 'from-cyan-500/15 to-sky-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/20',
+  'Languages': 'from-amber-500/15 to-orange-500/15 text-amber-700 dark:text-amber-300 border-amber-500/20',
+  'History': 'from-rose-500/15 to-pink-500/15 text-rose-700 dark:text-rose-300 border-rose-500/20',
+  'Business': 'from-slate-500/15 to-gray-500/15 text-slate-700 dark:text-slate-300 border-slate-500/20',
+  'Other': 'from-muted to-muted text-muted-foreground border-border',
+};
+
+// Floating particles for upload zone
+function FloatingParticles() {
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <motion.div
+          key={i}
+          className="absolute w-1.5 h-1.5 rounded-full bg-primary/20"
+          style={{
+            left: `${15 + i * 15}%`,
+            top: `${20 + (i % 3) * 25}%`,
+          }}
+          animate={{
+            y: [0, -20, 0],
+            opacity: [0.2, 0.6, 0.2],
+          }}
+          transition={{
+            duration: 3 + i * 0.5,
+            repeat: Infinity,
+            delay: i * 0.3,
+            ease: 'easeInOut',
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 
 export function UploadView() {
   const { navigate, setActiveCourse, setActiveSlides, setCurrentQuestions, setQuizScore } = useAppStore();
@@ -329,20 +370,27 @@ export function UploadView() {
     setFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
-  const statusIcon = (status: FileStatus) => {
+  const statusIcon = (status: FileStatus, fileName: string) => {
+    const ext = '.' + (fileName.split('.').pop()?.toLowerCase() || '');
+    const typeConfig = FILE_TYPE_CONFIG[ext];
+    const TypeIcon = typeConfig?.icon || FileText;
+    const typeColor = typeConfig?.color || 'text-muted-foreground';
+
     switch (status) {
       case 'pending':
-        return <FileText className="h-4 w-4 text-muted-foreground" />;
+        return <TypeIcon className={`h-5 w-5 ${typeColor}`} />;
       case 'uploading':
-        return <Loader2 className="h-4 w-4 text-primary animate-spin" />;
+        return <Loader2 className="h-5 w-5 text-primary animate-spin" />;
       case 'processing':
-        return <Loader2 className="h-4 w-4 text-amber-500 animate-spin" />;
+        return <Loader2 className="h-5 w-5 text-amber-500 animate-spin" />;
       case 'done':
-        return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
+        return <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 300 }}><CheckCircle2 className="h-5 w-5 text-emerald-500" /></motion.div>;
       case 'error':
-        return <AlertCircle className="h-4 w-4 text-destructive" />;
+        return <AlertCircle className="h-5 w-5 text-destructive" />;
     }
   };
+
+  const getFileExt = (fileName: string) => '.' + (fileName.split('.').pop()?.toLowerCase() || '');
 
   return (
     <motion.div
@@ -351,66 +399,84 @@ export function UploadView() {
       animate="animate"
       className="space-y-6 pt-2 lg:pt-4 pl-14 lg:pl-0"
     >
-      <motion.div variants={fadeUp}>
-        <h1 className="text-2xl font-bold">Upload Slides</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Upload your study materials and we&apos;ll generate questions automatically.
-        </p>
+      {/* Gradient header */}
+      <motion.div
+        variants={fadeUp}
+        className="rounded-xl p-6 mesh-gradient gradient-border relative overflow-hidden"
+      >
+        <FloatingParticles />
+        <div className="relative z-10">
+          <h1 className="text-2xl font-bold gradient-text">Upload Slides</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Upload your study materials and we&apos;ll generate questions automatically.
+          </p>
+        </div>
       </motion.div>
 
       {/* Course Category & Title */}
       <motion.div variants={fadeUp} className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="category-select" className="text-sm font-medium">
-              Course Category
-            </Label>
-            <Select
-              value={showCustomCategory ? '__custom__' : selectedCategory}
-              onValueChange={(val) => {
-                if (val === '__custom__') {
-                  setShowCustomCategory(true);
-                } else {
-                  setShowCustomCategory(false);
-                  setSelectedCategory(val);
-                }
+        {/* Colored category pills */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Course Category</Label>
+          <div className="flex flex-wrap gap-2">
+            {COURSE_CATEGORIES.map((cat) => (
+              <motion.button
+                key={cat}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => {
+                  if (showCustomCategory) setShowCustomCategory(false);
+                  setSelectedCategory(cat);
+                }}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                  selectedCategory === cat && !showCustomCategory
+                    ? `bg-gradient-to-r ${CATEGORY_COLORS[cat] || CATEGORY_COLORS['Other']} shadow-sm`
+                    : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                }`}
+              >
+                {cat}
+              </motion.button>
+            ))}
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                setShowCustomCategory(true);
+                setSelectedCategory('');
               }}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                showCustomCategory
+                  ? 'bg-gradient-to-r from-primary/15 to-secondary/15 text-primary border-primary/20'
+                  : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+              }`}
             >
-              <SelectTrigger id="category-select" className="w-full">
-                <SelectValue placeholder="Select Course Category" />
-              </SelectTrigger>
-              <SelectContent>
-                {COURSE_CATEGORIES.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {cat}
-                  </SelectItem>
-                ))}
-                <SelectItem value="__custom__">Or create new...</SelectItem>
-              </SelectContent>
-            </Select>
-            <AnimatePresence>
-              {showCustomCategory && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Input
-                    placeholder="Enter custom category name..."
-                    value={customCategory}
-                    onChange={(e) => setCustomCategory(e.target.value)}
-                    className="mt-2"
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
+              Custom...
+            </motion.button>
           </div>
+          <AnimatePresence>
+            {showCustomCategory && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <Input
+                  placeholder="Enter custom category name..."
+                  value={customCategory}
+                  onChange={(e) => setCustomCategory(e.target.value)}
+                  className="mt-2"
+                  autoFocus
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="course-title" className="text-sm font-medium">
-              Course Title <span className="text-destructive">*</span>
-            </Label>
+        <div className="space-y-2">
+          <Label htmlFor="course-title" className="text-sm font-medium">
+            Course Title <span className="text-destructive">*</span>
+          </Label>
             <Input
               id="course-title"
               placeholder="Enter course title..."
@@ -430,7 +496,6 @@ export function UploadView() {
                 </motion.p>
               )}
             </AnimatePresence>
-          </div>
         </div>
       </motion.div>
 
@@ -444,12 +509,13 @@ export function UploadView() {
           onDragLeave={() => setIsDragOver(false)}
           onDrop={handleDrop}
           onClick={() => inputRef.current?.click()}
-          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all
-            ${isDragOver
-              ? 'border-primary bg-primary/5 scale-[1.01]'
-              : 'border-border hover:border-primary/50 hover:bg-accent/30'
-            }`}
+          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all overflow-hidden ${
+            isDragOver
+              ? 'border-primary bg-primary/5 scale-[1.01] glow-emerald'
+              : 'border-border hover:border-primary/40 hover:bg-accent/20'
+          }`}
         >
+          <FloatingParticles />
           <input
             ref={inputRef}
             type="file"
@@ -458,10 +524,14 @@ export function UploadView() {
             className="hidden"
             onChange={(e) => e.target.files && addFiles(e.target.files)}
           />
-          <div className="flex flex-col items-center gap-3">
-            <div className={`h-14 w-14 rounded-2xl flex items-center justify-center transition-colors ${isDragOver ? 'bg-primary/20' : 'bg-primary/10'}`}>
-              <Upload className={`h-7 w-7 ${isDragOver ? 'text-primary' : 'text-primary/60'}`} />
-            </div>
+          <div className="relative z-10 flex flex-col items-center gap-3">
+            <motion.div
+              className={`h-16 w-16 rounded-2xl flex items-center justify-center transition-colors ${isDragOver ? 'bg-primary/20' : 'bg-primary/10'}`}
+              animate={isDragOver ? { y: [0, -6, 0] } : {}}
+              transition={{ duration: 0.6, repeat: isDragOver ? Infinity : 0 }}
+            >
+              <Upload className={`h-8 w-8 transition-colors ${isDragOver ? 'text-primary' : 'text-primary/60'}`} />
+            </motion.div>
             <div>
               <p className="font-medium">
                 {isDragOver ? 'Drop files here' : 'Drag & drop files here, or click to browse'}
@@ -483,28 +553,47 @@ export function UploadView() {
             exit={{ opacity: 0, height: 0 }}
             className="space-y-2 max-h-96 overflow-y-auto"
           >
-            {files.map((f) => (
-              <motion.div
-                key={f.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                className="glass rounded-lg p-3 flex items-center gap-3"
-              >
-                {statusIcon(f.status)}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{f.file.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(f.file.size / 1024 / 1024).toFixed(2)}MB
-                    {f.status === 'error' && f.error && ` — ${f.error}`}
-                  </p>
-                  {(f.status === 'uploading' || f.status === 'processing') && (
-                    <Progress value={f.status === 'processing' ? 100 : f.progress} className="mt-2 h-1.5" />
+            {files.map((f, idx) => {
+              const ext = getFileExt(f.file.name);
+              const typeConfig = FILE_TYPE_CONFIG[ext];
+              return (
+                <motion.div
+                  key={f.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ delay: idx * 0.06 }}
+                  className={`glass rounded-lg p-3 flex items-center gap-3 ${f.status === 'done' ? 'glow-emerald' : ''}`}
+                >
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${typeConfig?.bg || 'bg-muted'}`}>
+                    {statusIcon(f.status, f.file.name)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{f.file.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {(f.file.size / 1024 / 1024).toFixed(2)}MB
+                      {f.status === 'error' && f.error && ` — ${f.error}`}
+                    </p>
+                    {(f.status === 'uploading' || f.status === 'processing') && (
+                      <div className="mt-2 relative h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
+                        <motion.div
+                          className="absolute inset-y-0 left-0 rounded-full"
+                          style={{ background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))' }}
+                          animate={{ width: `${f.status === 'processing' ? 100 : f.progress}%` }}
+                          transition={{ duration: 0.3 }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  {f.status === 'done' && (
+                    <motion.span
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="text-xs text-emerald-600 dark:text-emerald-400 font-medium"
+                    >
+                      Done
+                    </motion.span>
                   )}
-                </div>
-                {f.status === 'done' && (
-                  <span className="text-xs text-emerald-600 font-medium">Done</span>
-                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -516,7 +605,8 @@ export function UploadView() {
                   <X className="h-4 w-4 text-muted-foreground hover:text-destructive" />
                 </button>
               </motion.div>
-            ))}
+              );
+            })}
           </motion.div>
         )}
       </AnimatePresence>
@@ -569,10 +659,11 @@ export function UploadView() {
       <AnimatePresence>
         {extractedSlides.length > 0 && !generatedCount && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, y: 30, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10 }}
-            className="glass rounded-xl overflow-hidden"
+            transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+            className="glass rounded-xl overflow-hidden gradient-border glow-emerald"
           >
             <Collapsible open={slidesOpen} onOpenChange={setSlidesOpen}>
               <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-accent/30 transition-colors">
@@ -652,11 +743,11 @@ export function UploadView() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             className="glass rounded-xl p-6 text-center space-y-4"
           >
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10 mx-auto">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/15 to-teal-500/15 mx-auto pulse-glow">
               <CheckCircle2 className="h-8 w-8 text-emerald-500" />
             </div>
             <div>
-              <h3 className="text-xl font-bold">Questions Generated!</h3>
+              <h3 className="text-xl font-bold gradient-text">Questions Generated!</h3>
               <p className="text-muted-foreground text-sm mt-1">
                 {generatedCount} questions ready from {files.filter((f) => f.status === 'done').length} file(s)
               </p>

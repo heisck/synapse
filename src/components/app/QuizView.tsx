@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle2,
   XCircle,
   ChevronRight,
+  ChevronLeft,
   RotateCcw,
   ArrowLeft,
   Trophy,
@@ -13,6 +14,12 @@ import {
   AlertTriangle,
   BookOpen,
   GripVertical,
+  Flame,
+  Zap,
+  Shuffle,
+  Layers,
+  HelpCircle,
+  Lightbulb,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -20,6 +27,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/appStore';
 import type { Question } from '@/types';
+
+type StudyMode = 'quiz' | 'flashcard';
 
 // ---------- Typo-tolerance helper ----------
 function levenshteinDistance(a: string, b: string): number {
@@ -192,6 +201,35 @@ function ConfettiParticle({ delay, color }: { delay: number; color: string }) {
 
 const CONFETTI_COLORS = ['#10b981', '#14b8a6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#f97316', '#22c55e'];
 
+// ---------- Animated counter hook ----------
+function useAnimatedCounter(target: number, duration: number = 1200) {
+  const [count, setCount] = useState(0);
+  const rafRef = useRef<number>(0);
+  useEffect(() => {
+    const start = performance.now();
+    const tick = (now: number) => {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.round(eased * target));
+      if (progress < 1) rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [target, duration]);
+  return count;
+}
+
+// ---------- Type badge gradient map ----------
+const TYPE_BADGE_GRADIENT: Record<string, string> = {
+  multiple_choice: 'bg-gradient-to-r from-emerald-500/15 to-teal-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+  true_false: 'bg-gradient-to-r from-amber-500/15 to-orange-500/15 text-amber-700 dark:text-amber-300 border-amber-500/20',
+  short_answer: 'bg-gradient-to-r from-cyan-500/15 to-sky-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/20',
+  fill_blank: 'bg-gradient-to-r from-violet-500/15 to-purple-500/15 text-violet-700 dark:text-violet-300 border-violet-500/20',
+  matching: 'bg-gradient-to-r from-rose-500/15 to-pink-500/15 text-rose-700 dark:text-rose-300 border-rose-500/20',
+  error_correction: 'bg-gradient-to-r from-red-500/15 to-destructive/15 text-red-700 dark:text-red-300 border-red-500/20',
+};
+
 // ---------- Error correction component ----------
 function ErrorCorrectionInput({
   errorText,
@@ -300,9 +338,9 @@ function MatchingInput({
               }
               className={`rounded-lg border p-3 text-left text-sm font-medium transition-all ${
                 selectedLeft === p.left
-                  ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary/30'
+                  ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary/30 shadow-sm shadow-primary/10'
                   : matches[p.left]
-                    ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
+                    ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 shadow-sm shadow-emerald-500/5'
                     : 'border-border hover:border-primary/30 hover:bg-primary/5'
               }`}
             >
@@ -310,9 +348,13 @@ function MatchingInput({
                 <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40" />
                 <span className="flex-1">{p.left}</span>
                 {matches[p.left] && (
-                  <span className="text-xs opacity-60 truncate max-w-[120px]">
-                    → {matches[p.left]}
-                  </span>
+                  <motion.span
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="text-xs opacity-70 truncate max-w-[120px] text-emerald-600 dark:text-emerald-400"
+                  >
+                    {matches[p.left]}
+                  </motion.span>
                 )}
               </div>
             </motion.button>
@@ -332,7 +374,7 @@ function MatchingInput({
                   isUsed
                     ? 'border-border bg-muted/50 text-muted-foreground line-through opacity-50'
                     : selectedLeft
-                      ? 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-pointer'
+                      ? 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-pointer hover:shadow-sm hover:shadow-primary/5'
                       : 'border-border opacity-60'
                 }`}
               >
@@ -346,12 +388,27 @@ function MatchingInput({
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">
-          {Object.keys(matches).length} of {pairs.length} matched
-        </span>
-        <Button onClick={handleSubmit} disabled={!allMatched} size="sm">
-          Submit Matches
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="relative h-1.5 w-24 rounded-full bg-muted/50 overflow-hidden">
+            <motion.div
+              className="absolute inset-y-0 left-0 rounded-full"
+              style={{ background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))' }}
+              animate={{ width: `${(Object.keys(matches).length / pairs.length) * 100}%` }}
+              transition={{ duration: 0.3 }}
+            />
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {Object.keys(matches).length}/{pairs.length} matched
+          </span>
+        </div>
+        <motion.div
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <Button onClick={handleSubmit} disabled={!allMatched} size="sm" className={allMatched ? 'glow-emerald' : ''}>
+            Submit Matches
+          </Button>
+        </motion.div>
       </div>
     </div>
   );
@@ -363,6 +420,7 @@ export function QuizView() {
 
   const allQuestions = currentQuestions.length > 0 ? currentQuestions : MOCK_QUESTIONS;
 
+  const [studyMode, setStudyMode] = useState<StudyMode>('quiz');
   const [selectedCourse, setSelectedCourse] = useState<string>('all');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -370,15 +428,114 @@ export function QuizView() {
   const [showExplanation, setShowExplanation] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [streak, setStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
+  const [showStreakPopup, setShowStreakPopup] = useState(false);
+  const animatedScore = useAnimatedCounter(showResults ? score : 0, 1500);
+
+  // Flashcard state
+  const [flipped, setFlipped] = useState(false);
+  const [knownCards, setKnownCards] = useState<Set<string>>(new Set());
+  const [stillLearningCards, setStillLearningCards] = useState<Set<string>>(new Set());
+  const [flashcardReviewed, setFlashcardReviewed] = useState<Set<string>>(new Set());
+  const [showFlashcardSummary, setShowFlashcardSummary] = useState(false);
+
+  const flashcardQuestions = useMemo(() => {
+    if (selectedCourse === 'all') return allQuestions;
+    return allQuestions.filter((q) => q.courseId === selectedCourse);
+  }, [allQuestions, selectedCourse]);
+
+  const flashcardProgress = flashcardQuestions.length > 0
+    ? (flashcardReviewed.size / flashcardQuestions.length) * 100
+    : 0;
+
+  const handleShuffle = useCallback(() => {
+    setCurrentIndex(0);
+    setFlipped(false);
+  }, []);
+
+  const handleFlashcardMark = useCallback((type: 'known' | 'learning') => {
+    if (!flashcardQuestions[currentIndex]) return;
+    const id = flashcardQuestions[currentIndex].id;
+    const newReviewed = new Set(flashcardReviewed);
+    newReviewed.add(id);
+    setFlashcardReviewed(newReviewed);
+
+    if (type === 'known') {
+      setKnownCards((prev) => new Set(prev).add(id));
+      setStillLearningCards((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    } else {
+      setStillLearningCards((prev) => new Set(prev).add(id));
+      setKnownCards((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+
+    setFlipped(false);
+    if (currentIndex < flashcardQuestions.length - 1) {
+      setCurrentIndex((prev) => prev + 1);
+    } else {
+      setShowFlashcardSummary(true);
+    }
+  }, [currentIndex, flashcardQuestions, flashcardReviewed]);
+
+  const handleFlashcardPrev = useCallback(() => {
+    setFlipped(false);
+    setCurrentIndex((prev) => Math.max(0, prev - 1));
+  }, []);
+
+  const handleFlashcardNext = useCallback(() => {
+    setFlipped(false);
+    if (currentIndex < flashcardQuestions.length - 1) {
+      setCurrentIndex((prev) => prev + 1);
+    }
+  }, [currentIndex, flashcardQuestions.length]);
+
+  const handleFlashcardReset = useCallback(() => {
+    setCurrentIndex(0);
+    setFlipped(false);
+    setKnownCards(new Set());
+    setStillLearningCards(new Set());
+    setFlashcardReviewed(new Set());
+    setShowFlashcardSummary(false);
+  }, []);
 
   const handleCourseChange = (courseId: string) => {
     setSelectedCourse(courseId);
-    // Reset quiz state on course change
     setCurrentIndex(0);
     setAnswers({});
     setAnswered({});
     setShowExplanation(false);
     setShowResults(false);
+    setStreak(0);
+    setBestStreak(0);
+    setFlipped(false);
+    setKnownCards(new Set());
+    setStillLearningCards(new Set());
+    setFlashcardReviewed(new Set());
+    setShowFlashcardSummary(false);
+  };
+
+  const handleModeChange = (mode: StudyMode) => {
+    setStudyMode(mode);
+    setCurrentIndex(0);
+    setAnswers({});
+    setAnswered({});
+    setShowExplanation(false);
+    setShowResults(false);
+    setStreak(0);
+    setBestStreak(0);
+    setFlipped(false);
+    setKnownCards(new Set());
+    setStillLearningCards(new Set());
+    setFlashcardReviewed(new Set());
+    setShowFlashcardSummary(false);
   };
 
   // Filter questions by selected course
@@ -418,9 +575,18 @@ export function QuizView() {
       if (isCorrect(currentQ, answer)) {
         setShowConfetti(true);
         setTimeout(() => setShowConfetti(false), 1500);
+        const newStreak = streak + 1;
+        setStreak(newStreak);
+        if (newStreak > bestStreak) setBestStreak(newStreak);
+        if (newStreak >= 3) {
+          setShowStreakPopup(true);
+          setTimeout(() => setShowStreakPopup(false), 1200);
+        }
+      } else {
+        setStreak(0);
       }
     },
-    [answered, answers, currentQ, isCorrect],
+    [answered, answers, currentQ, isCorrect, streak, bestStreak],
   );
 
   const handleNext = () => {
@@ -439,18 +605,20 @@ export function QuizView() {
     setShowExplanation(false);
     setShowResults(false);
     setShowConfetti(false);
+    setStreak(0);
+    setBestStreak(0);
   };
 
   const score = useMemo(() => {
     return questions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
   }, [questions, answered, answers, isCorrect]);
 
-  const circumference = 2 * Math.PI * 54;
+  const circumference = 2 * Math.PI * 62;
   const scorePercent = questions.length > 0 ? score / questions.length : 0;
   const strokeDashoffset = circumference * (1 - scorePercent);
 
   // ---------- Empty State ----------
-  if (questions.length === 0) {
+  if (questions.length === 0 && flashcardQuestions.length === 0) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -486,27 +654,62 @@ export function QuizView() {
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 200, damping: 20 }}
         className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
       >
-        <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full">
+        {/* Confetti burst for high scores */}
+        <AnimatePresence>
+          {scorePercent >= 0.8 && (
+            <div className="fixed inset-0 pointer-events-none z-50">
+              {Array.from({ length: 32 }).map((_, i) => (
+                <ConfettiParticle
+                  key={`result-${i}`}
+                  delay={i * 0.04}
+                  color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
+                />
+              ))}
+            </div>
+          )}
+        </AnimatePresence>
+        <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full glow-emerald-strong">
+          {/* Animated grade badge */}
+          <motion.div
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: 'spring', stiffness: 180, damping: 12, delay: 0.2 }}
+            className="mx-auto"
+          >
+            <div className={`inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-lg ${
+              scorePercent >= 0.9
+                ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-white shadow-amber-400/30'
+                : scorePercent >= 0.7
+                  ? 'bg-gradient-to-r from-emerald-400 to-teal-500 text-white shadow-emerald-400/30'
+                  : scorePercent >= 0.5
+                    ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-white shadow-cyan-400/30'
+                    : 'bg-gradient-to-r from-orange-400 to-red-400 text-white shadow-orange-400/30'
+            }`}>
+              {scorePercent >= 0.9 ? <Trophy className="h-4 w-4" /> : scorePercent >= 0.7 ? <Zap className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+              {scorePercent >= 0.9 ? 'Outstanding' : scorePercent >= 0.7 ? 'Well Done' : scorePercent >= 0.5 ? 'Good Try' : 'Keep Going'}
+            </div>
+          </motion.div>
           <div className="relative inline-flex">
-            <svg width="140" height="140" className="-rotate-90">
+            <svg width="160" height="160" className="-rotate-90">
               <circle
-                cx="70"
-                cy="70"
-                r="54"
+                cx="80"
+                cy="80"
+                r="62"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="10"
-                className="text-muted/30"
+                className="text-muted/20"
               />
               <motion.circle
-                cx="70"
-                cy="70"
-                r="54"
+                cx="80"
+                cy="80"
+                r="62"
                 fill="none"
                 stroke="url(#scoreGrad)"
-                strokeWidth="10"
+                strokeWidth="12"
                 strokeLinecap="round"
                 strokeDasharray={circumference}
                 initial={{ strokeDashoffset: circumference }}
@@ -516,18 +719,35 @@ export function QuizView() {
               <defs>
                 <linearGradient id="scoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
                   <stop offset="0%" stopColor="#10b981" />
-                  <stop offset="100%" stopColor="#14b8a6" />
+                  <stop offset="50%" stopColor="#14b8a6" />
+                  <stop offset="100%" stopColor="#06b6d4" />
                 </linearGradient>
               </defs>
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <Trophy className="h-6 w-6 text-amber-500 mb-1" />
-              <span className="text-3xl font-bold">{score}/{questions.length}</span>
-              <span className="text-xs text-muted-foreground">
+              <motion.span
+                className="text-4xl font-bold gradient-text"
+                key={animatedScore}
+              >
+                {animatedScore}<span className="text-lg font-normal text-muted-foreground">/{questions.length}</span>
+              </motion.span>
+              <span className="text-xs text-muted-foreground mt-1">
                 {Math.round(scorePercent * 100)}% correct
               </span>
             </div>
           </div>
+          {/* Best streak */}
+          {bestStreak >= 2 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.8 }}
+              className="flex items-center justify-center gap-1.5 text-sm"
+            >
+              <Flame className="h-4 w-4 text-orange-500" />
+              <span className="text-muted-foreground">Best streak: <span className="font-bold text-foreground">{bestStreak} in a row</span></span>
+            </motion.div>
+          )}
 
           <div>
             <h2 className="text-2xl font-bold">
@@ -545,17 +765,30 @@ export function QuizView() {
           {/* Per-question breakdown */}
           <div className="space-y-2 text-left">
             <h3 className="text-sm font-semibold">Question Breakdown</h3>
-            <div className="max-h-48 overflow-y-auto space-y-1">
+            <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
               {questions.map((q, i) => {
                 const wasCorrect = answered[q.id] && isCorrect(q, answers[q.id] || '');
                 return (
-                  <div key={q.id} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-md bg-muted/50">
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${wasCorrect ? 'bg-emerald-500 text-white' : 'bg-destructive/20 text-destructive'}`}>
+                  <motion.div
+                    key={q.id}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md ${wasCorrect ? 'bg-emerald-500/5' : 'bg-destructive/5'}`}
+                  >
+                    <motion.span
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 300, delay: i * 0.05 }}
+                      className={`flex h-5 w-5 items-center justify-center rounded-full ${wasCorrect ? 'bg-emerald-500 text-white' : 'bg-destructive/20 text-destructive'}`}
+                    >
                       {wasCorrect ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                    </span>
+                    </motion.span>
                     <span className="flex-1 truncate">{q.question.slice(0, 60)}{q.question.length > 60 ? '...' : ''}</span>
-                    <Badge variant="outline" className="text-[9px] px-1 py-0">{q.type.replace('_', ' ')}</Badge>
-                  </div>
+                    <span className={`text-[9px] px-1.5 py-0 rounded-full font-medium border ${TYPE_BADGE_GRADIENT[q.type] || 'bg-muted text-muted-foreground border-border'}`}>
+                      {q.type.replace('_', ' ')}
+                    </span>
+                  </motion.div>
                 );
               })}
             </div>
@@ -576,10 +809,113 @@ export function QuizView() {
     );
   }
 
+  // ---------- Flashcard Summary ----------
+  if (studyMode === 'flashcard' && showFlashcardSummary) {
+    const knownCount = knownCards.size;
+    const learningCount = stillLearningCards.size;
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+        className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
+      >
+        <div className="glass rounded-2xl p-8 text-center space-y-6 max-w-md w-full">
+          <motion.div
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: 'spring', stiffness: 180, damping: 12, delay: 0.2 }}
+            className="mx-auto"
+          >
+            <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-lg bg-gradient-to-r from-emerald-400 to-teal-500 text-white shadow-emerald-400/30">
+              <Layers className="h-4 w-4" />
+              Study Complete
+            </div>
+          </motion.div>
+
+          <div>
+            <h2 className="text-2xl font-bold">
+              {knownCount === flashcardQuestions.length
+                ? 'Perfect recall!'
+                : knownCount >= flashcardQuestions.length * 0.7
+                  ? 'Great progress!'
+                  : 'Keep practicing!'}
+            </h2>
+            <p className="text-muted-foreground text-sm mt-1">
+              You knew <span className="font-bold text-emerald-600 dark:text-emerald-400">{knownCount}</span> out of <span className="font-bold">{flashcardQuestions.length}</span> cards
+            </p>
+          </div>
+
+          <div className="flex items-center justify-center gap-6">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{knownCount}</div>
+              <div className="text-xs text-muted-foreground mt-1">Known</div>
+            </div>
+            <div className="h-10 w-px bg-border" />
+            <div className="text-center">
+              <div className="text-3xl font-bold text-amber-600 dark:text-amber-400">{learningCount}</div>
+              <div className="text-xs text-muted-foreground mt-1">Still Learning</div>
+            </div>
+          </div>
+
+          {learningCount > 0 && (
+            <div className="text-left space-y-2">
+              <h3 className="text-sm font-semibold">Cards to review</h3>
+              <div className="max-h-32 overflow-y-auto space-y-1">
+                {flashcardQuestions
+                  .filter((q) => stillLearningCards.has(q.id))
+                  .map((q) => (
+                    <div key={q.id} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-md bg-amber-500/5 border border-amber-500/10">
+                      <Lightbulb className="h-3 w-3 text-amber-500 shrink-0" />
+                      <span className="flex-1 truncate">{q.question.slice(0, 60)}{q.question.length > 60 ? '...' : ''}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-center gap-3">
+            <Button onClick={handleFlashcardReset} variant="outline">
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Study Again
+            </Button>
+            <Button onClick={() => navigate('dashboard')}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Dashboard
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
   // ---------- Question Screen ----------
   return (
     <div className="pl-14 lg:pl-0">
       <div className="relative">
+        {/* Streak popup */}
+        <AnimatePresence>
+          {showStreakPopup && (
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.8 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.8 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 15 }}
+              className="fixed top-1/4 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+            >
+              <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold text-sm shadow-lg shadow-orange-500/30">
+                <motion.span
+                  animate={{ scale: [1, 1.3, 1] }}
+                  transition={{ duration: 0.4, repeat: 2 }}
+                >
+                  <Flame className="h-5 w-5" />
+                </motion.span>
+                {streak} in a row!
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Confetti */}
         <AnimatePresence>
           {showConfetti && (
@@ -595,10 +931,56 @@ export function QuizView() {
           )}
         </AnimatePresence>
 
-        {/* Course filter + Progress bar */}
-        <div className="mb-6 space-y-3">
-          {/* Course filter tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        {/* Animated header */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 rounded-xl p-5 mesh-gradient gradient-border relative overflow-hidden"
+        >
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <h1 className="text-xl font-bold gradient-text">{studyMode === 'quiz' ? 'Quiz Practice' : 'Flashcard Study'}</h1>
+                {/* Mode toggle */}
+                <div className="flex items-center rounded-lg border border-border bg-background/50 p-0.5">
+                  <button
+                    onClick={() => handleModeChange('quiz')}
+                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                      studyMode === 'quiz'
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <HelpCircle className="w-3.5 h-3.5" />
+                    Quiz
+                  </button>
+                  <button
+                    onClick={() => handleModeChange('flashcard')}
+                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                      studyMode === 'flashcard'
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    Flashcard
+                  </button>
+                </div>
+              </div>
+              {studyMode === 'quiz' && streak >= 2 && (
+                <motion.div
+                  key={streak}
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20"
+                >
+                  <Flame className="h-4 w-4 text-orange-500" />
+                  <span className="text-xs font-bold text-orange-600 dark:text-orange-400">{streak} streak</span>
+                </motion.div>
+              )}
+            </div>
+            {/* Course filter tabs */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
             {COURSE_QUIZ_GROUPS.map((group) => (
               <button
                 key={group.id}
@@ -621,38 +1003,79 @@ export function QuizView() {
           </div>
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium">
-              Question {currentIndex + 1} of {questions.length}
+              {studyMode === 'quiz'
+                ? `Question ${currentIndex + 1} of ${questions.length}`
+                : `Card ${currentIndex + 1} of ${flashcardQuestions.length}`}
             </span>
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-[10px] px-1.5">
-                {currentQ?.difficulty}
-              </Badge>
-              <span className="text-xs text-muted-foreground bg-primary/10 px-2 py-0.5 rounded-full font-medium">
-                {currentQ?.type.replace('_', ' ')}
-              </span>
+              {studyMode === 'quiz' && (
+                <>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${
+                    currentQ?.difficulty === 'easy'
+                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+                      : currentQ?.difficulty === 'medium'
+                        ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
+                        : 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20'
+                  }`}>
+                    {currentQ?.difficulty}
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${TYPE_BADGE_GRADIENT[currentQ?.type || ''] || 'bg-muted text-muted-foreground border-border'}`}>
+                    {currentQ?.type.replace('_', ' ')}
+                  </span>
+                </>
+              )}
+              {studyMode === 'flashcard' && (
+                <span className="text-xs text-muted-foreground">
+                  {flashcardReviewed.size} of {flashcardQuestions.length} reviewed
+                </span>
+              )}
             </div>
           </div>
-          <Progress value={progress} className="h-2" />
-        </div>
+          {/* Custom gradient progress bar */}
+          <div className="relative h-2.5 w-full rounded-full bg-muted/50 overflow-hidden">
+            <motion.div
+              className="absolute inset-y-0 left-0 rounded-full"
+              style={{
+                background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214) 0%, oklch(0.687 0.159 177.89) 50%, oklch(0.565 0.194 149.214) 100%)',
+              }}
+              initial={{ width: 0 }}
+              animate={{ width: `${studyMode === 'quiz' ? progress : flashcardProgress}%` }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+            />
+            <motion.div
+              className="absolute top-1/2 -translate-y-1/2 text-[9px] font-bold text-white drop-shadow-sm"
+              animate={{ left: `${Math.max(studyMode === 'quiz' ? progress : flashcardProgress, 5)}%` }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+            >
+              {Math.round(studyMode === 'quiz' ? progress : flashcardProgress)}%
+            </motion.div>
+          </div>
+          </div>
+        </motion.div>
 
-        {/* Question card */}
+        {/* Quiz question card */}
+        {studyMode === 'quiz' && (
         <AnimatePresence mode="wait">
           {currentQ && (
             <motion.div
               key={currentQ.id}
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -30 }}
-              transition={{ duration: 0.3 }}
-              className="glass rounded-xl p-6 space-y-6"
+              initial={{ opacity: 0, x: 40, scale: 0.98 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -40, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              className="glass rounded-xl p-6 space-y-6 glow-emerald"
             >
               {/* Concept tag */}
               {currentQ.concept && (
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="text-xs">
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="flex items-center gap-2"
+                >
+                  <Badge variant="secondary" className="text-xs bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/10">
                     {currentQ.concept}
                   </Badge>
-                </div>
+                </motion.div>
               )}
 
               {/* Question text */}
@@ -670,22 +1093,31 @@ export function QuizView() {
                     return (
                       <motion.button
                         key={opt}
-                        whileHover={!isAnswered ? { scale: 1.01 } : {}}
+                        whileHover={!isAnswered ? { scale: 1.01, y: -1 } : {}}
                         whileTap={!isAnswered ? { scale: 0.99 } : {}}
                         onClick={() => !isAnswered && handleAnswer(opt)}
                         disabled={isAnswered}
-                        className={`flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition-all ${
+                        className={`relative flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition-all ${
                           isAnswered
                             ? isCorrectOpt
-                              ? 'border-emerald-500 bg-emerald-500/10'
+                              ? 'border-emerald-500/60 bg-emerald-500/8 shadow-sm shadow-emerald-500/10'
                               : isSelected
-                                ? 'border-destructive bg-destructive/10'
+                                ? 'border-destructive/60 bg-destructive/8'
                                 : 'border-border opacity-60'
-                            : 'border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer'
+                            : 'border-border hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm hover:shadow-primary/5 cursor-pointer'
                         }`}
                       >
-                        <span
-                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-bold ${
+                        <motion.span
+                          initial={false}
+                          animate={
+                            isAnswered && isCorrectOpt
+                              ? { scale: [1, 1.2, 1] }
+                              : isAnswered && isSelected
+                                ? { x: [0, -3, 3, -3, 3, 0] }
+                                : {}
+                          }
+                          transition={{ duration: 0.4 }}
+                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-bold transition-colors ${
                             isAnswered && isCorrectOpt
                               ? 'bg-emerald-500 text-white'
                               : isAnswered && isSelected
@@ -694,14 +1126,26 @@ export function QuizView() {
                           }`}
                         >
                           {isAnswered && isCorrectOpt ? (
-                            <CheckCircle2 className="h-4 w-4" />
+                            <motion.div
+                              initial={{ scale: 0, rotate: -90 }}
+                              animate={{ scale: 1, rotate: 0 }}
+                              transition={{ type: 'spring', stiffness: 300 }}
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                            </motion.div>
                           ) : isAnswered && isSelected ? (
-                            <XCircle className="h-4 w-4" />
+                            <motion.div
+                              initial={{ scale: 0, rotate: 90 }}
+                              animate={{ scale: 1, rotate: 0 }}
+                              transition={{ type: 'spring', stiffness: 300 }}
+                            >
+                              <XCircle className="h-4 w-4" />
+                            </motion.div>
                           ) : (
                             letter
                           )}
-                        </span>
-                        <span>{opt}</span>
+                        </motion.span>
+                        <span className={isAnswered && isCorrectOpt ? 'text-emerald-700 dark:text-emerald-300' : ''}>{opt}</span>
                       </motion.button>
                     );
                   })}
@@ -718,20 +1162,43 @@ export function QuizView() {
                     return (
                       <motion.button
                         key={opt}
-                        whileHover={!isAnswered ? { scale: 1.02 } : {}}
-                        whileTap={!isAnswered ? { scale: 0.98 } : {}}
+                        whileHover={!isAnswered ? { scale: 1.03, y: -2 } : {}}
+                        whileTap={!isAnswered ? { scale: 0.97 } : {}}
                         onClick={() => !isAnswered && handleAnswer(opt)}
                         disabled={isAnswered}
                         className={`flex-1 rounded-lg border p-4 text-center font-semibold transition-all ${
                           isAnswered
                             ? isCorrectOpt
-                              ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                              ? 'border-emerald-500/60 bg-emerald-500/8 text-emerald-700 dark:text-emerald-400 shadow-sm shadow-emerald-500/10'
                               : isSelected
-                                ? 'border-destructive bg-destructive/10 text-destructive'
+                                ? 'border-destructive/60 bg-destructive/8 text-destructive'
                                 : 'border-border opacity-60'
-                            : 'border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer'
+                            : 'border-border hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm hover:shadow-primary/5 cursor-pointer'
                         }`}
                       >
+                        <AnimatePresence mode="wait">
+                          {isAnswered && isCorrectOpt ? (
+                            <motion.span
+                              key="check"
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              exit={{ scale: 0 }}
+                              className="inline-flex"
+                            >
+                              <CheckCircle2 className="h-5 w-5 inline mr-1.5" />
+                            </motion.span>
+                          ) : isAnswered && isSelected ? (
+                            <motion.span
+                              key="x"
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              exit={{ scale: 0 }}
+                              className="inline-flex"
+                            >
+                              <XCircle className="h-5 w-5 inline mr-1.5" />
+                            </motion.span>
+                          ) : null}
+                        </AnimatePresence>
                         {opt}
                       </motion.button>
                     );
@@ -879,22 +1346,185 @@ export function QuizView() {
             </motion.div>
           )}
         </AnimatePresence>
+        )}
 
-        {/* Question navigator dots */}
-        {questions.length > 1 && (
-          <div className="flex items-center justify-center gap-1 mt-6 flex-wrap">
+        {/* Flashcard Mode */}
+        {studyMode === 'flashcard' && flashcardQuestions[currentIndex] && (
+          <div className="space-y-6">
+            <div
+              className="relative w-full cursor-pointer mx-auto"
+              style={{ perspective: '1000px' }}
+              onClick={() => setFlipped(!flipped)}
+            >
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={flashcardQuestions[currentIndex].id + (flipped ? '-back' : '-front')}
+                  initial={{ opacity: 0, rotateY: flipped ? -90 : 90 }}
+                  animate={{ opacity: 1, rotateY: 0 }}
+                  exit={{ opacity: 0, rotateY: flipped ? 90 : -90 }}
+                  transition={{ duration: 0.4, ease: 'easeInOut' }}
+                  style={{ transformStyle: 'preserve-3d' }}
+                >
+                  <div
+                    className={`glass rounded-2xl p-8 min-h-[280px] sm:min-h-[320px] flex flex-col items-center justify-center text-center transition-all ${
+                      flipped
+                        ? 'bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent border-emerald-500/20'
+                        : 'bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent'
+                    }`}
+                  >
+                    {!flipped ? (
+                      <>
+                        <div className="flex items-center gap-2 mb-4">
+                          <HelpCircle className="w-5 h-5 text-primary/60" />
+                          <Badge variant="secondary" className="text-xs bg-primary/10 border-primary/10">
+                            {flashcardQuestions[currentIndex].concept || flashcardQuestions[currentIndex].type.replace('_', ' ')}
+                          </Badge>
+                        </div>
+                        <h2 className="text-lg sm:text-xl font-semibold leading-relaxed max-w-lg">
+                          {flashcardQuestions[currentIndex].question}
+                        </h2>
+                        <p className="text-xs text-muted-foreground mt-6">Click to reveal the answer</p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2 mb-4">
+                          <Lightbulb className="w-5 h-5 text-emerald-500" />
+                          <Badge variant="secondary" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/10">
+                            Answer
+                          </Badge>
+                        </div>
+                        <p className="text-base sm:text-lg font-medium leading-relaxed max-w-lg">
+                          {flashcardQuestions[currentIndex].answer}
+                        </p>
+                        {flashcardQuestions[currentIndex].explanation && (
+                          <p className="text-sm text-muted-foreground mt-4 max-w-lg leading-relaxed">
+                            {flashcardQuestions[currentIndex].explanation}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-6">Click to see the question</p>
+                      </>
+                    )}
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+
+            {/* Known / Still Learning buttons */}
+            {flipped && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-center justify-center gap-3"
+              >
+                <Button
+                  variant="outline"
+                  className="flex-1 max-w-[200px] border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/50"
+                  onClick={(e) => { e.stopPropagation(); handleFlashcardMark('learning'); }}
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Still Learning
+                </Button>
+                <Button
+                  className="flex-1 max-w-[200px]"
+                  onClick={(e) => { e.stopPropagation(); handleFlashcardMark('known'); }}
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Mark as Known
+                </Button>
+              </motion.div>
+            )}
+
+            {/* Flashcard navigation */}
+            <div className="flex items-center justify-between">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleFlashcardPrev}
+                disabled={currentIndex === 0}
+                className="text-muted-foreground"
+              >
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                Previous
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const shuffled = [...flashcardQuestions].sort(() => Math.random() - 0.5);
+                    setCurrentIndex(0);
+                    setFlipped(false);
+                  }}
+                  className="text-muted-foreground"
+                >
+                  <Shuffle className="h-4 w-4 mr-1" />
+                  Shuffle
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleFlashcardReset}
+                  className="text-muted-foreground"
+                >
+                  <RotateCcw className="h-4 w-4 mr-1" />
+                  Reset
+                </Button>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleFlashcardNext}
+                disabled={currentIndex === flashcardQuestions.length - 1}
+                className="text-muted-foreground"
+              >
+                Next
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+
+            {/* Flashcard progress dots */}
+            {flashcardQuestions.length > 1 && (
+              <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                {flashcardQuestions.map((q, i) => (
+                  <button
+                    key={q.id}
+                    onClick={() => { setCurrentIndex(i); setFlipped(false); }}
+                    className={`h-2.5 rounded-full transition-all ${
+                      i === currentIndex
+                        ? 'bg-primary w-7 shadow-sm shadow-primary/30'
+                        : knownCards.has(q.id)
+                          ? 'bg-emerald-500 w-2.5'
+                          : stillLearningCards.has(q.id)
+                            ? 'bg-amber-500 w-2.5'
+                            : flashcardReviewed.has(q.id)
+                              ? 'bg-muted w-2.5'
+                              : 'bg-muted/60 hover:bg-primary/40 w-2.5'
+                    }`}
+                    aria-label={`Go to card ${i + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Question navigator dots (quiz mode only) */}
+        {studyMode === 'quiz' && questions.length > 1 && (
+          <div className="flex items-center justify-center gap-1.5 mt-6 flex-wrap">
             {questions.map((q, i) => (
-              <button
+              <motion.button
                 key={q.id}
+                whileHover={{ scale: 1.3 }}
+                whileTap={{ scale: 0.9 }}
                 onClick={() => setCurrentIndex(i)}
-                className={`h-2.5 w-2.5 rounded-full transition-all ${
+                className={`h-2.5 rounded-full transition-all ${
                   i === currentIndex
-                    ? 'bg-primary w-6'
+                    ? 'bg-primary w-7 shadow-sm shadow-primary/30'
                     : answered[q.id]
                       ? isCorrect(q, answers[q.id] || '')
-                        ? 'bg-emerald-500'
-                        : 'bg-destructive/60'
-                      : 'bg-muted hover:bg-primary/40'
+                        ? 'bg-emerald-500 w-2.5'
+                        : 'bg-destructive/60 w-2.5'
+                      : 'bg-muted hover:bg-primary/40 w-2.5'
                 }`}
                 aria-label={`Go to question ${i + 1}`}
               />
