@@ -62,7 +62,20 @@ function safeGetItem<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
     if (raw === null) return fallback;
-    return JSON.parse(raw) as T;
+    const parsed = JSON.parse(raw);
+    // Defensive: if fallback is an array, ensure parsed is also an array
+    if (Array.isArray(fallback) && !Array.isArray(parsed)) {
+      console.warn(`[SessionPersistence] Expected array for key "${key}", got ${typeof parsed}. Using fallback.`);
+      return fallback;
+    }
+    // Defensive: if fallback is an object (non-null, non-array), ensure parsed matches
+    if (fallback !== null && typeof fallback === 'object' && !Array.isArray(fallback)) {
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        console.warn(`[SessionPersistence] Expected object for key "${key}", got ${typeof parsed}. Using fallback.`);
+        return fallback;
+      }
+    }
+    return parsed as T;
   } catch {
     return fallback;
   }

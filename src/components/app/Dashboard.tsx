@@ -1702,7 +1702,7 @@ export function Dashboard() {
 
       {/* Quick Start Hero Card */}
       <motion.div variants={fadeUp}>
-        <div className="glass mesh-gradient gradient-border rounded-xl p-6 cursor-pointer group relative overflow-hidden animated-border-gradient hover-lift"
+        <div className="glass mesh-gradient gradient-border rounded-xl p-6 cursor-pointer group relative overflow-hidden animated-border-gradient hover-lift glass-card-shine"
           onClick={() => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic")}
           role="button"
           tabIndex={0}
@@ -1721,7 +1721,7 @@ export function Dashboard() {
                   </span>
                 )}
               </div>
-              <h2 className="text-xl font-bold">
+              <h2 className="text-xl font-bold shimmer-text">
                 {activeSessionId ? 'Continue Learning' : 'Start a Session'}
               </h2>
               <p className="text-muted-foreground text-sm">
@@ -2104,7 +2104,7 @@ export function Dashboard() {
 
       {/* Stats Row - with floating animation */}
       <motion.div variants={fadeUp}>
-        <div className="glass rounded-xl p-4 card-hover-lift">
+        <div className="glass rounded-xl p-4 card-hover-lift card-hover-shadow-lift">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               { icon: BookOpen, label: 'Active Courses', value: animatedCourses, trend: 'up' as const, change: studySessions.length > 0 ? `${studySessions.length} sessions` : 'No sessions yet', idx: 0 },
@@ -2501,6 +2501,11 @@ export function Dashboard() {
             </AnimatePresence>
           </div>
         </div>
+      </motion.div>
+
+      {/* Weekly Review Summary */}
+      <motion.div variants={fadeUp}>
+        <WeeklyReviewSummary />
       </motion.div>
 
       {/* Learning Analytics */}
@@ -3257,7 +3262,7 @@ function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof Cou
       onClick={onClick}
       className="group text-left w-full"
     >
-      <div className="glass rounded-xl overflow-hidden border border-border/50 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:glow-emerald">
+      <div className="glass rounded-xl overflow-hidden border border-border/50 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:glow-emerald card-hover-shadow-lift">
         {/* Thumbnail */}
         <div className="relative h-32 bg-gradient-to-br from-emerald-500/20 via-teal-500/15 to-emerald-600/10 flex items-center justify-center overflow-hidden">
           <BookOpen className="h-10 w-10 text-primary/40 group-hover:text-primary/60 transition-colors relative z-10" />
@@ -3293,5 +3298,100 @@ function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof Cou
         </div>
       </div>
     </motion.button>
+  );
+}
+
+/** Weekly Review Summary - shows key metrics from the past week */
+function WeeklyReviewSummary() {
+  const { studySessions, quizScore, quizTotal, notes, masteryMap } = useAppStore();
+
+  const weeklyData = useMemo(() => {
+    const now = new Date();
+    const weekAgo = new Date(now);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    weekAgo.setHours(0, 0, 0, 0);
+
+    const weekSessions = studySessions.filter((s) => new Date(s.date) >= weekAgo);
+    const totalMinutes = weekSessions.reduce((sum, s) => sum + s.duration, 0);
+    const avgSessionLength = weekSessions.length > 0 ? Math.round(totalMinutes / weekSessions.length) : 0;
+    const weekNotesCount = notes.filter((n) => new Date(n.updatedAt) >= weekAgo).length;
+
+    const concepts = Object.values(masteryMap);
+    const avgMastery = concepts.length > 0 ? Math.round(concepts.reduce((sum, c) => sum + ((c as Record<string, unknown>).level as number || 0), 0) / concepts.length) : 0;
+
+    const dayActivity: Record<string, number> = {};
+    weekSessions.forEach((s) => {
+      const day = new Date(s.date).toLocaleDateString('en', { weekday: 'short' });
+      dayActivity[day] = (dayActivity[day] || 0) + s.duration;
+    });
+    const mostProductiveDay = Object.entries(dayActivity).sort((a, b) => b[1] - a[1])[0];
+
+    return {
+      totalSessions: weekSessions.length,
+      totalMinutes,
+      avgSessionLength,
+      weekNotes: weekNotesCount,
+      avgMastery,
+      mostProductiveDay: mostProductiveDay ? mostProductiveDay[0] : 'N/A',
+    };
+  }, [studySessions, notes, masteryMap]);
+
+  const hasData = weeklyData.totalSessions > 0 || weeklyData.weekNotes > 0;
+
+  return (
+    <div className="glass card-shadow rounded-xl p-5 glass-card-shine card-hover-shadow-lift relative overflow-hidden">
+      <div className="absolute inset-0 mesh-gradient opacity-20 pointer-events-none" />
+      <div className="relative z-10">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center">
+              <TrendingUp className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Weekly Review</h3>
+              <p className="text-[10px] text-muted-foreground">Last 7 days summary</p>
+            </div>
+          </div>
+          <Badge variant="secondary" className="text-[10px]">
+            {hasData ? 'Active' : 'No data'}
+          </Badge>
+        </div>
+
+        {hasData ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-primary tabular-nums">{weeklyData.totalSessions}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Sessions</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-primary tabular-nums">{weeklyData.totalMinutes > 60 ? `${Math.round(weeklyData.totalMinutes / 60)}h` : `${weeklyData.totalMinutes}m`}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Study Time</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-primary tabular-nums">{weeklyData.avgMastery}%</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Avg Mastery</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-primary tabular-nums">{weeklyData.weekNotes}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Notes</p>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-6">
+            <p className="text-sm text-muted-foreground">Start studying to see your weekly review</p>
+          </div>
+        )}
+
+        {hasData && (
+          <div className="mt-3 pt-3 border-t border-border/30 flex items-center gap-2 text-xs text-muted-foreground">
+            <Sparkles className="h-3 w-3 text-primary" />
+            <span>
+              {weeklyData.avgSessionLength > 0 ? `Avg session: ${weeklyData.avgSessionLength} min` : 'No sessions yet'}
+              {weeklyData.mostProductiveDay !== 'N/A' ? ` · Most productive: ${weeklyData.mostProductiveDay}` : ''}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

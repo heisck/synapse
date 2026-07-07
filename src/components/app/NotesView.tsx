@@ -305,7 +305,7 @@ export function NotesView() {
             transition={{ type: 'spring', stiffness: 400, damping: 30, opacity: { duration: 0.2 } }}
             className="overflow-hidden"
           >
-            <div className="glass rounded-xl p-5 space-y-4 glow-emerald gradient-border card-shadow relative">
+            <div className="glass rounded-xl p-5 space-y-4 glow-emerald gradient-border card-shadow relative glass-blur-strong">
               <div className="absolute inset-0 rounded-xl mesh-gradient opacity-30 pointer-events-none" />
               <div className="relative z-10">
                 <div className="flex items-center justify-between">

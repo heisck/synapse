@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { StudySoundscapes } from '@/components/app/StudySoundscapes'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -966,6 +967,8 @@ export function TutorView() {
               {rightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
             </Button>
           </motion.div>
+          {/* Study Soundscapes */}
+          <StudySoundscapes />
         </div>
       </header>
 

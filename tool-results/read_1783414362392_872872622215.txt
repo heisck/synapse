@@ -1,0 +1,2002 @@
+     1→@import "tailwindcss";
+     2→@import "tw-animate-css";
+     3→
+     4→@custom-variant dark (&:is(.dark *));
+     5→
+     6→@theme inline {
+     7→  --color-background: var(--background);
+     8→  --color-foreground: var(--foreground);
+     9→  --font-sans: var(--font-geist-sans);
+    10→  --font-mono: var(--font-geist-mono);
+    11→  --color-sidebar-ring: var(--sidebar-ring);
+    12→  --color-sidebar-border: var(--sidebar-border);
+    13→  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    14→  --color-sidebar-accent: var(--sidebar-accent);
+    15→  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    16→  --color-sidebar-primary: var(--sidebar-primary);
+    17→  --color-sidebar-foreground: var(--sidebar-foreground);
+    18→  --color-sidebar: var(--sidebar);
+    19→  --color-chart-5: var(--chart-5);
+    20→  --color-chart-4: var(--chart-4);
+    21→  --color-chart-3: var(--chart-3);
+    22→  --color-chart-2: var(--chart-2);
+    23→  --color-chart-1: var(--chart-1);
+    24→  --color-ring: var(--ring);
+    25→  --color-input: var(--input);
+    26→  --color-border: var(--border);
+    27→  --color-destructive: var(--destructive);
+    28→  --color-accent-foreground: var(--accent-foreground);
+    29→  --color-accent: var(--accent);
+    30→  --color-muted-foreground: var(--muted-foreground);
+    31→  --color-muted: var(--muted);
+    32→  --color-secondary-foreground: var(--secondary-foreground);
+    33→  --color-secondary: var(--secondary);
+    34→  --color-primary-foreground: var(--primary-foreground);
+    35→  --color-primary: var(--primary);
+    36→  --color-popover-foreground: var(--popover-foreground);
+    37→  --color-popover: var(--popover);
+    38→  --color-card-foreground: var(--card-foreground);
+    39→  --color-card: var(--card);
+    40→  --radius-sm: calc(var(--radius) - 4px);
+    41→  --radius-md: calc(var(--radius) - 2px);
+    42→  --radius-lg: var(--radius);
+    43→  --radius-xl: calc(var(--radius) + 4px);
+    44→}
+    45→
+    46→:root {
+    47→  --radius: 0.625rem;
+    48→  --background: oklch(0.995 0.002 155);
+    49→  --foreground: oklch(0.185 0.02 155);
+    50→  --card: oklch(1 0 0);
+    51→  --card-foreground: oklch(0.185 0.02 155);
+    52→  --popover: oklch(1 0 0);
+    53→  --popover-foreground: oklch(0.185 0.02 155);
+    54→  --primary: oklch(0.627 0.194 149.214);
+    55→  --primary-foreground: oklch(0.985 0.002 155);
+    56→  --secondary: oklch(0.962 0.012 155);
+    57→  --secondary-foreground: oklch(0.32 0.06 155);
+    58→  --muted: oklch(0.962 0.012 155);
+    59→  --muted-foreground: oklch(0.536 0.03 155);
+    60→  --accent: oklch(0.935 0.035 155);
+    61→  --accent-foreground: oklch(0.32 0.06 155);
+    62→  --destructive: oklch(0.577 0.245 27.325);
+    63→  --border: oklch(0.918 0.018 155);
+    64→  --input: oklch(0.918 0.018 155);
+    65→  --ring: oklch(0.627 0.194 149.214);
+    66→  --chart-1: oklch(0.627 0.194 149.214);
+    67→  --chart-2: oklch(0.687 0.159 177.89);
+    68→  --chart-3: oklch(0.565 0.194 149.214);
+    69→  --chart-4: oklch(0.712 0.14 165.614);
+    70→  --chart-5: oklch(0.488 0.18 149.214);
+    71→  --sidebar: oklch(0.98 0.008 155);
+    72→  --sidebar-foreground: oklch(0.185 0.02 155);
+    73→  --sidebar-primary: oklch(0.627 0.194 149.214);
+    74→  --sidebar-primary-foreground: oklch(0.985 0.002 155);
+    75→  --sidebar-accent: oklch(0.935 0.035 155);
+    76→  --sidebar-accent-foreground: oklch(0.32 0.06 155);
+    77→  --sidebar-border: oklch(0.918 0.018 155);
+    78→  --sidebar-ring: oklch(0.627 0.194 149.214);
+    79→}
+    80→
+    81→.dark {
+    82→  --background: oklch(0.145 0.015 155);
+    83→  --foreground: oklch(0.962 0.012 155);
+    84→  --card: oklch(0.195 0.018 155);
+    85→  --card-foreground: oklch(0.962 0.012 155);
+    86→  --popover: oklch(0.195 0.018 155);
+    87→  --popover-foreground: oklch(0.962 0.012 155);
+    88→  --primary: oklch(0.687 0.159 177.89);
+    89→  --primary-foreground: oklch(0.145 0.015 155);
+    90→  --secondary: oklch(0.255 0.025 155);
+    91→  --secondary-foreground: oklch(0.962 0.012 155);
+    92→  --muted: oklch(0.255 0.025 155);
+    93→  --muted-foreground: oklch(0.655 0.04 155);
+    94→  --accent: oklch(0.285 0.04 155);
+    95→  --accent-foreground: oklch(0.962 0.012 155);
+    96→  --destructive: oklch(0.704 0.191 22.216);
+    97→  --border: oklch(0.32 0.035 155);
+    98→  --input: oklch(0.32 0.035 155);
+    99→  --ring: oklch(0.687 0.159 177.89);
+   100→  --chart-1: oklch(0.687 0.159 177.89);
+   101→  --chart-2: oklch(0.627 0.194 149.214);
+   102→  --chart-3: oklch(0.712 0.14 165.614);
+   103→  --chart-4: oklch(0.565 0.194 149.214);
+   104→  --chart-5: oklch(0.752 0.145 160);
+   105→  --sidebar: oklch(0.175 0.02 155);
+   106→  --sidebar-foreground: oklch(0.962 0.012 155);
+   107→  --sidebar-primary: oklch(0.687 0.159 177.89);
+   108→  --sidebar-primary-foreground: oklch(0.145 0.015 155);
+   109→  --sidebar-accent: oklch(0.285 0.04 155);
+   110→  --sidebar-accent-foreground: oklch(0.962 0.012 155);
+   111→  --sidebar-border: oklch(0.32 0.035 155);
+   112→  --sidebar-ring: oklch(0.687 0.159 177.89);
+   113→}
+   114→
+   115→@layer base {
+   116→  * {
+   117→    @apply border-border outline-ring/50;
+   118→  }
+   119→  body {
+   120→    @apply bg-background text-foreground;
+   121→  }
+   122→}
+   123→
+   124→/* Lenis smooth scroll */
+   125→html.lenis, html.lenis body {
+   126→  height: auto;
+   127→}
+   128→.lenis.lenis-smooth {
+   129→  scroll-behavior: auto !important;
+   130→}
+   131→.lenis.lenis-smooth [data-lenis-prevent] {
+   132→  overscroll-behavior: contain;
+   133→}
+   134→.lenis.lenis-stopped {
+   135→  overflow: hidden;
+   136→}
+   137→
+   138→/* Custom scrollbar */
+   139→* {
+   140→  scrollbar-width: thin;
+   141→  scrollbar-color: rgba(16, 185, 129, 0.3) transparent;
+   142→}
+   143→::-webkit-scrollbar {
+   144→  width: 6px;
+   145→  height: 6px;
+   146→}
+   147→::-webkit-scrollbar-track {
+   148→  background: transparent;
+   149→}
+   150→::-webkit-scrollbar-thumb {
+   151→  background: rgba(16, 185, 129, 0.3);
+   152→  border-radius: 3px;
+   153→}
+   154→::-webkit-scrollbar-thumb:hover {
+   155→  background: rgba(16, 185, 129, 0.5);
+   156→}
+   157→
+   158→/* Selection */
+   159→::selection {
+   160→  background: oklch(0.627 0.194 149.214 / 0.3);
+   161→  color: oklch(0.185 0.02 155);
+   162→}
+   163→.dark ::selection {
+   164→  background: oklch(0.687 0.159 177.89 / 0.4);
+   165→  color: oklch(0.962 0.012 155);
+   166→}
+   167→
+   168→/* Focus visible - animated version in enhanced utilities below */
+   169→
+   170→/* GSAP animation classes */
+   171→.gsap-fade-up {
+   172→  opacity: 0;
+   173→  transform: translateY(30px);
+   174→}
+   175→.gsap-fade-in {
+   176→  opacity: 0;
+   177→}
+   178→.gsap-slide-left {
+   179→  opacity: 0;
+   180→  transform: translateX(-30px);
+   181→}
+   182→.gsap-slide-right {
+   183→  opacity: 0;
+   184→  transform: translateX(30px);
+   185→}
+   186→.gsap-scale-up {
+   187→  opacity: 0;
+   188→  transform: scale(0.9);
+   189→}
+   190→
+   191→/* Gradient text */
+   192→@utility gradient-text {
+   193→  background: linear-gradient(135deg, oklch(0.627 0.194 149.214) 0%, oklch(0.687 0.159 177.89) 40%, oklch(0.565 0.194 149.214) 100%);
+   194→  -webkit-background-clip: text;
+   195→  -webkit-text-fill-color: transparent;
+   196→  background-clip: text;
+   197→}
+   198→
+   199→/* Glass morphism */
+   200→@utility glass {
+   201→  background: rgba(255, 255, 255, 0.6);
+   202→  backdrop-filter: blur(16px);
+   203→  -webkit-backdrop-filter: blur(16px);
+   204→  border: 1px solid rgba(255, 255, 255, 0.3);
+   205→}
+   206→.dark .glass,
+   207→:is(.dark *) .glass {
+   208→  background: rgba(30, 40, 35, 0.6);
+   209→  border: 1px solid rgba(255, 255, 255, 0.08);
+   210→}
+   211→
+   212→@utility glass-subtle {
+   213→  background: rgba(255, 255, 255, 0.4);
+   214→  backdrop-filter: blur(12px);
+   215→  -webkit-backdrop-filter: blur(12px);
+   216→  border: 1px solid rgba(255, 255, 255, 0.2);
+   217→}
+   218→.dark .glass-subtle,
+   219→:is(.dark *) .glass-subtle {
+   220→  background: rgba(30, 40, 35, 0.4);
+   221→  border: 1px solid rgba(255, 255, 255, 0.06);
+   222→}
+   223→
+   224→/* Glow effects */
+   225→@utility glow-emerald {
+   226→  box-shadow: 0 0 20px rgba(16, 185, 129, 0.15), 0 0 40px rgba(16, 185, 129, 0.05);
+   227→}
+   228→@utility glow-emerald-strong {
+   229→  box-shadow: 0 0 30px rgba(16, 185, 129, 0.25), 0 0 60px rgba(16, 185, 129, 0.1), 0 0 90px rgba(16, 185, 129, 0.05);
+   230→}
+   231→
+   232→/* Mesh gradient */
+   233→@utility mesh-gradient {
+   234→  background:
+   235→    radial-gradient(ellipse 80% 50% at 20% 40%, rgba(16, 185, 129, 0.12) 0%, transparent 50%),
+   236→    radial-gradient(ellipse 60% 40% at 80% 20%, rgba(20, 184, 166, 0.1) 0%, transparent 50%),
+   237→    radial-gradient(ellipse 50% 60% at 60% 80%, rgba(5, 150, 105, 0.08) 0%, transparent 50%);
+   238→}
+   239→.dark .mesh-gradient,
+   240→:is(.dark *) .mesh-gradient {
+   241→  background:
+   242→    radial-gradient(ellipse 80% 50% at 20% 40%, rgba(16, 185, 129, 0.14) 0%, transparent 50%),
+   243→    radial-gradient(ellipse 60% 40% at 80% 20%, rgba(6, 182, 212, 0.10) 0%, transparent 50%),
+   244→    radial-gradient(ellipse 50% 60% at 60% 80%, rgba(5, 150, 105, 0.09) 0%, transparent 50%);
+   245→}
+   246→
+   247→/* Noise texture overlay */
+   248→.noise::before {
+   249→  content: '';
+   250→  position: absolute;
+   251→  inset: 0;
+   252→  z-index: 0;
+   253→  opacity: 0.03;
+   254→  pointer-events: none;
+   255→  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+   256→  background-repeat: repeat;
+   257→  background-size: 256px 256px;
+   258→}
+   259→.dark .noise::before,
+   260→:is(.dark *) .noise::before {
+   261→  opacity: 0.04;
+   262→}
+   263→
+   264→/* Chat bubbles */
+   265→@utility chat-bubble-user {
+   266→  background: oklch(0.627 0.194 149.214);
+   267→  color: oklch(0.985 0.002 155);
+   268→  border-radius: 1rem 1rem 0.25rem 1rem;
+   269→}
+   270→.dark .chat-bubble-user,
+   271→:is(.dark *) .chat-bubble-user {
+   272→  background: oklch(0.565 0.194 149.214);
+   273→  color: oklch(0.985 0.002 155);
+   274→}
+   275→
+   276→@utility chat-bubble-assistant {
+   277→  background: oklch(0.962 0.012 155);
+   278→  color: oklch(0.185 0.02 155);
+   279→  border-radius: 1rem 1rem 1rem 0.25rem;
+   280→}
+   281→.dark .chat-bubble-assistant,
+   282→:is(.dark *) .chat-bubble-assistant {
+   283→  background: oklch(0.255 0.025 155);
+   284→  color: oklch(0.962 0.012 155);
+   285→}
+   286→
+   287→/* Grid pattern */
+   288→@utility grid-pattern {
+   289→  background-image:
+   290→    linear-gradient(rgba(16, 185, 129, 0.06) 1px, transparent 1px),
+   291→    linear-gradient(90deg, rgba(16, 185, 129, 0.06) 1px, transparent 1px);
+   292→  background-size: 40px 40px;
+   293→}
+   294→.dark .grid-pattern,
+   295→:is(.dark *) .grid-pattern {
+   296→  background-image:
+   297→    linear-gradient(rgba(16, 185, 129, 0.04) 1px, transparent 1px),
+   298→    linear-gradient(90deg, rgba(16, 185, 129, 0.04) 1px, transparent 1px);
+   299→  background-size: 40px 40px;
+   300→}
+   301→
+   302→/* Animations */
+   303→@keyframes float {
+   304→  0%, 100% { transform: translateY(0); }
+   305→  50% { transform: translateY(-6px); }
+   306→}
+   307→.animate-float {
+   308→  animation: float 3s ease-in-out infinite;
+   309→}
+   310→.animate-float-delayed {
+   311→  animation: float 3s ease-in-out infinite;
+   312→  animation-delay: 0.5s;
+   313→}
+   314→.animate-float-slow {
+   315→  animation: float 4s ease-in-out infinite;
+   316→  animation-delay: 1s;
+   317→}
+   318→
+   319→/* Animated gradient border */
+   320→@utility gradient-border {
+   321→  position: relative;
+   322→}
+   323→.gradient-border::before {
+   324→  content: '';
+   325→  position: absolute;
+   326→  inset: 0;
+   327→  border-radius: inherit;
+   328→  padding: 1px;
+   329→  background: linear-gradient(135deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89), oklch(0.565 0.194 149.214));
+   330→  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+   331→  mask-composite: exclude;
+   332→  pointer-events: none;
+   333→  opacity: 0;
+   334→  transition: opacity 0.3s;
+   335→}
+   336→.gradient-border:hover::before {
+   337→  opacity: 1;
+   338→}
+   339→
+   340→/* Pulse glow */
+   341→@utility pulse-glow {
+   342→  animation: pulseGlow 2s ease-in-out infinite;
+   343→}
+   344→@keyframes pulseGlow {
+   345→  0%, 100% { box-shadow: 0 0 5px rgba(16, 185, 129, 0.1); }
+   346→  50% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.2), 0 0 40px rgba(16, 185, 129, 0.05); }
+   347→}
+   348→
+   349→/* Shimmer loading */
+   350→@utility shimmer {
+   351→  background: linear-gradient(90deg, transparent 0%, rgba(16, 185, 129, 0.05) 50%, transparent 100%);
+   352→  background-size: 200% 100%;
+   353→  animation: shimmer 2s infinite;
+   354→}
+   355→@keyframes shimmer {
+   356→  0% { background-position: -200% 0; }
+   357→  100% { background-position: 200% 0; }
+   358→}
+   359→
+   360→/* Animated gradient sweep for dividers */
+   361→@keyframes gradientSweep {
+   362→  0% { background-position: -100% center; }
+   363→  100% { background-position: 200% center; }
+   364→}
+   365→.animate-gradient-sweep {
+   366→  background-size: 200% 100%;
+   367→  animation: gradientSweep 3s ease-in-out infinite;
+   368→}
+   369→
+   370→/* Mobile sidebar backdrop blur transition */
+   371→[data-state="open"] > .backdrop-blur-overlay {
+   372→  animation: backdropBlurIn 0.3s ease-out;
+   373→}
+   374→@keyframes backdropBlurIn {
+   375→  0% { backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px); }
+   376→  100% { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+   377→}
+   378→
+   379→/* ============================================
+   380→   ENHANCED UTILITIES
+   381→   ============================================ */
+   382→
+   383→/* 1. Animated gradient text sweep */
+   384→@utility gradient-text-animated {
+   385→  background: linear-gradient(135deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89), oklch(0.565 0.194 149.214), oklch(0.712 0.14 165.614), oklch(0.627 0.194 149.214));
+   386→  background-size: 300% 300%;
+   387→  -webkit-background-clip: text;
+   388→  -webkit-text-fill-color: transparent;
+   389→  background-clip: text;
+   390→  animation: gradientShift 6s ease-in-out infinite;
+   391→}
+   392→
+   393→/* 2. Glass card hover lift */
+   394→@utility glass-hover {
+   395→  background: rgba(255, 255, 255, 0.6);
+   396→  backdrop-filter: blur(16px);
+   397→  -webkit-backdrop-filter: blur(16px);
+   398→  border: 1px solid rgba(255, 255, 255, 0.3);
+   399→  transition: box-shadow 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+   400→  &:hover {
+   401→    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04);
+   402→    transform: translateY(-2px);
+   403→  }
+   404→}
+   405→.dark .glass-hover,
+   406→:is(.dark *) .glass-hover {
+   407→  background: rgba(30, 40, 35, 0.6);
+   408→  border: 1px solid rgba(255, 255, 255, 0.08);
+   409→  &:hover {
+   410→    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.2);
+   411→  }
+   412→}
+   413→
+   414→/* 3. Neon glow text */
+   415→@utility neon-text {
+   416→  color: oklch(0.712 0.14 165.614);
+   417→  text-shadow:
+   418→    0 0 7px rgba(16, 185, 129, 0.6),
+   419→    0 0 20px rgba(16, 185, 129, 0.3),
+   420→    0 0 42px rgba(16, 185, 129, 0.15);
+   421→}
+   422→.dark .neon-text,
+   423→:is(.dark *) .neon-text {
+   424→  color: oklch(0.75 0.16 165);
+   425→  text-shadow:
+   426→    0 0 7px rgba(16, 185, 129, 0.8),
+   427→    0 0 20px rgba(16, 185, 129, 0.5),
+   428→    0 0 42px rgba(16, 185, 129, 0.25);
+   429→}
+   430→
+   431→/* 4. Animated border (rotating conic gradient) */
+   432→@utility animated-border {
+   433→  position: relative;
+   434→  overflow: hidden;
+   435→  border-radius: inherit;
+   436→}
+   437→.animated-border::before {
+   438→  content: '';
+   439→  position: absolute;
+   440→  inset: -2px;
+   441→  z-index: -1;
+   442→  border-radius: inherit;
+   443→  background: conic-gradient(
+   444→    from var(--border-angle, 0deg),
+   445→    oklch(0.627 0.194 149.214),
+   446→    oklch(0.687 0.159 177.89),
+   447→    oklch(0.712 0.14 165.614),
+   448→    oklch(0.565 0.194 149.214),
+   449→    oklch(0.627 0.194 149.214)
+   450→  );
+   451→  animation: borderRotate 3s linear infinite;
+   452→}
+   453→.animated-border::after {
+   454→  content: '';
+   455→  position: absolute;
+   456→  inset: 1.5px;
+   457→  z-index: -1;
+   458→  border-radius: inherit;
+   459→  background: oklch(1 0 0);
+   460→}
+   461→.dark .animated-border::after,
+   462→:is(.dark *) .animated-border::after {
+   463→  background: oklch(0.195 0.018 155);
+   464→}
+   465→
+   466→@property --border-angle {
+   467→  syntax: "<angle>";
+   468→  initial-value: 0deg;
+   469→  inherits: false;
+   470→}
+   471→
+   472→/* 5. Smooth card shadow (multi-layered depth) */
+   473→@utility card-shadow {
+   474→  box-shadow:
+   475→    0 1px 2px rgba(0, 0, 0, 0.04),
+   476→    0 2px 4px rgba(0, 0, 0, 0.03),
+   477→    0 4px 8px rgba(0, 0, 0, 0.03),
+   478→    0 8px 16px rgba(0, 0, 0, 0.02);
+   479→}
+   480→.dark .card-shadow,
+   481→:is(.dark *) .card-shadow {
+   482→  box-shadow:
+   483→    0 1px 2px rgba(0, 0, 0, 0.15),
+   484→    0 2px 4px rgba(0, 0, 0, 0.12),
+   485→    0 4px 8px rgba(0, 0, 0, 0.1),
+   486→    0 8px 16px rgba(0, 0, 0, 0.08);
+   487→}
+   488→
+   489→/* 6a. Scroll fade top */
+   490→@utility scroll-fade-top {
+   491→  mask-image: linear-gradient(to bottom, transparent, black 32px);
+   492→  -webkit-mask-image: linear-gradient(to bottom, transparent, black 32px);
+   493→}
+   494→
+   495→/* 6b. Scroll fade bottom */
+   496→@utility scroll-fade-bottom {
+   497→  mask-image: linear-gradient(to top, transparent, black 32px);
+   498→  -webkit-mask-image: linear-gradient(to top, transparent, black 32px);
+   499→}
+   500→
+   501→/* 7. Dot grid pattern */
+   502→@utility dot-pattern {
+   503→  background-image: radial-gradient(circle, rgba(16, 185, 129, 0.12) 1px, transparent 1px);
+   504→  background-size: 24px 24px;
+   505→}
+   506→.dark .dot-pattern,
+   507→:is(.dark *) .dot-pattern {
+   508→  background-image: radial-gradient(circle, rgba(16, 185, 129, 0.08) 1px, transparent 1px);
+   509→  background-size: 24px 24px;
+   510→}
+   511→
+   512→/* 8. Enhanced dark mode scrollbar */
+   513→.dark ::-webkit-scrollbar-thumb {
+   514→  background: rgba(16, 185, 129, 0.25);
+   515→  border-radius: 3px;
+   516→}
+   517→.dark ::-webkit-scrollbar-thumb:hover {
+   518→  background: rgba(16, 185, 129, 0.45);
+   519→}
+   520→.dark * {
+   521→  scrollbar-color: rgba(16, 185, 129, 0.25) transparent;
+   522→}
+   523→
+   524→/* 9. Focus ring animation with pulse */
+   525→:focus-visible {
+   526→  outline: 2px solid oklch(0.627 0.194 149.214);
+   527→  outline-offset: 2px;
+   528→  border-radius: 4px;
+   529→  animation: focusPulse 1.5s ease-in-out 1;
+   530→}
+   531→.dark :focus-visible {
+   532→  outline-color: oklch(0.687 0.159 177.89);
+   533→}
+   534→
+   535→/* 10. Enhanced diagonal shimmer */
+   536→@utility shimmer-diagonal {
+   537→  background: linear-gradient(
+   538→    135deg,
+   539→    transparent 0%,
+   540→    transparent 40%,
+   541→    rgba(16, 185, 129, 0.08) 50%,
+   542→    transparent 60%,
+   543→    transparent 100%
+   544→  );
+   545→  background-size: 300% 300%;
+   546→  animation: shimmerDiagonal 2.5s ease-in-out infinite;
+   547→}
+   548→
+   549→/* ============================================
+   550→   NEW KEYFRAMES
+   551→   ============================================ */
+   552→
+   553→@keyframes gradientShift {
+   554→  0% { background-position: 0% 50%; }
+   555→  50% { background-position: 100% 50%; }
+   556→  100% { background-position: 0% 50%; }
+   557→}
+   558→
+   559→@keyframes borderRotate {
+   560→  0% { --border-angle: 0deg; }
+   561→  100% { --border-angle: 360deg; }
+   562→}
+   563→
+   564→@keyframes dotPulse {
+   565→  0%, 80%, 100% {
+   566→    transform: scale(0.6);
+   567→    opacity: 0.4;
+   568→  }
+   569→  40% {
+   570→    transform: scale(1);
+   571→    opacity: 1;
+   572→  }
+   573→}
+   574→
+   575→@keyframes slideUp {
+   576→  0% {
+   577→    opacity: 0;
+   578→    transform: translateY(20px);
+   579→  }
+   580→  100% {
+   581→    opacity: 1;
+   582→    transform: translateY(0);
+   583→  }
+   584→}
+   585→
+   586→@keyframes scaleIn {
+   587→  0% {
+   588→    opacity: 0;
+   589→    transform: scale(0.9);
+   590→  }
+   591→  100% {
+   592→    opacity: 1;
+   593→    transform: scale(1);
+   594→  }
+   595→}
+   596→
+   597→@keyframes focusPulse {
+   598→  0% {
+   599→    outline-offset: 2px;
+   600→    outline-color: oklch(0.627 0.194 149.214);
+   601→  }
+   602→  50% {
+   603→    outline-offset: 5px;
+   604→    outline-color: oklch(0.687 0.159 177.89 / 0.6);
+   605→  }
+   606→  100% {
+   607→    outline-offset: 2px;
+   608→    outline-color: oklch(0.627 0.194 149.214);
+   609→  }
+   610→}
+   611→
+   612→@keyframes shimmerDiagonal {
+   613→  0% { background-position: 200% 200%; }
+   614→  100% { background-position: -100% -100%; }
+   615→}
+   616→
+   617→/* ============================================
+   618→   TASK 17-c: GLASS MORPHISM & MICRO-INTERACTION UTILITIES
+   619→   ============================================ */
+   620→
+   621→/* Glass sidebar */
+   622→@utility glass-sidebar {
+   623→  backdrop-filter: blur(24px);
+   624→  -webkit-backdrop-filter: blur(24px);
+   625→  background: oklch(0.995 0.002 155 / 0.7);
+   626→  border-right: 1px solid oklch(0.918 0.018 155 / 0.5);
+   627→}
+   628→.dark .glass-sidebar,
+   629→:is(.dark *) .glass-sidebar {
+   630→  background: oklch(0.145 0.015 155 / 0.7);
+   631→  border-right: 1px solid oklch(0.32 0.035 155 / 0.5);
+   632→}
+   633→
+   634→/* Glass header */
+   635→@utility glass-header {
+   636→  backdrop-filter: blur(24px);
+   637→  -webkit-backdrop-filter: blur(24px);
+   638→  background: oklch(0.995 0.002 155 / 0.6);
+   639→  border-bottom: 1px solid oklch(0.918 0.018 155 / 0.3);
+   640→}
+   641→.dark .glass-header,
+   642→:is(.dark *) .glass-header {
+   643→  background: oklch(0.145 0.015 155 / 0.6);
+   644→  border-bottom: 1px solid oklch(0.32 0.035 155 / 0.3);
+   645→}
+   646→
+   647→/* Vertical gradient line (2px, emerald-to-teal) with animated position */
+   648→@utility gradient-line-vertical {
+   649→  position: relative;
+   650→  width: 2px;
+   651→  overflow: hidden;
+   652→}
+   653→.gradient-line-vertical::before {
+   654→  content: '';
+   655→  position: absolute;
+   656→  inset: 0;
+   657→  width: 100%;
+   658→  background: linear-gradient(
+   659→    to bottom,
+   660→    oklch(0.627 0.194 149.214),
+   661→    oklch(0.687 0.159 177.89),
+   662→    oklch(0.627 0.194 149.214),
+   663→    oklch(0.687 0.159 177.89),
+   664→    oklch(0.627 0.194 149.214)
+   665→  );
+   666→  background-size: 100% 300%;
+   667→  animation: gradientLineShift 4s ease-in-out infinite;
+   668→}
+   669→
+   670→/* Subtle float animation (2px) */
+   671→@utility float-animation {
+   672→  animation: floatSubtle 3s ease-in-out infinite;
+   673→}
+   674→
+   675→/* Timeline vertical connecting line */
+   676→@utility timeline-line {
+   677→  position: relative;
+   678→}
+   679→.timeline-line::before {
+   680→  content: '';
+   681→  position: absolute;
+   682→  left: 19px;
+   683→  top: 0;
+   684→  bottom: 0;
+   685→  width: 2px;
+   686→  background: linear-gradient(
+   687→    to bottom,
+   688→    oklch(0.627 0.194 149.214 / 0.4),
+   689→    oklch(0.687 0.159 177.89 / 0.15),
+   690→    oklch(0.627 0.194 149.214 / 0.05)
+   691→  );
+   692→  pointer-events: none;
+   693→}
+   694→
+   695→@keyframes floatSubtle {
+   696→  0%, 100% { transform: translateY(0); }
+   697→  50% { transform: translateY(-2px); }
+   698→}
+   699→
+   700→@keyframes gradientLineShift {
+   701→  0%, 100% { background-position: 0% 0%; }
+   702→  50% { background-position: 0% 100%; }
+   703→}
+   704→
+   705→/* ============================================
+   706→   MOBILE RESPONSIVE BREAKPOINTS (max-width: 640px)
+   707→   ============================================ */
+   708→
+   709→@media (max-width: 640px) {
+   710→  /* Reduce padding on glass cards for smaller screens */
+   711→  .glass.p-6 {
+   712→    padding: 1rem;
+   713→  }
+   714→  .glass.p-8 {
+   715→    padding: 1.25rem;
+   716→  }
+   717→
+   718→  /* Smaller font sizes for headings */
+   719→  h1 {
+   720→    font-size: 1.375rem;
+   721→    line-height: 1.4;
+   722→  }
+   723→  h2 {
+   724→    font-size: 1.125rem;
+   725→    line-height: 1.4;
+   726→  }
+   727→  h3 {
+   728→    font-size: 1rem;
+   729→    line-height: 1.4;
+   730→  }
+   731→
+   732→  /* Reduce mesh-gradient intensity on mobile */
+   733→  .mesh-gradient {
+   734→    background:
+   735→      radial-gradient(ellipse 80% 50% at 20% 40%, rgba(16, 185, 129, 0.06) 0%, transparent 50%),
+   736→      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(20, 184, 166, 0.05) 0%, transparent 50%),
+   737→      radial-gradient(ellipse 50% 60% at 60% 80%, rgba(5, 150, 105, 0.04) 0%, transparent 50%);
+   738→  }
+   739→  .dark .mesh-gradient,
+   740→  :is(.dark *) .mesh-gradient {
+   741→    background:
+   742→      radial-gradient(ellipse 80% 50% at 20% 40%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
+   743→      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(6, 182, 212, 0.06) 0%, transparent 50%),
+   744→      radial-gradient(ellipse 50% 60% at 60% 80%, rgba(5, 150, 105, 0.05) 0%, transparent 50%);
+   745→  }
+   746→}
+   747→
+   748→/* ============================================
+   749→   ROUND 7: NEW MICRO-ANIMATION UTILITIES
+   750→   ============================================ */
+   751→
+   752→/* 1. Glass card with inner glow (hover-activated) */
+   753→@utility glass-inner-glow {
+   754→  background: rgba(255, 255, 255, 0.6);
+   755→  backdrop-filter: blur(16px);
+   756→  -webkit-backdrop-filter: blur(16px);
+   757→  border: 1px solid rgba(255, 255, 255, 0.3);
+   758→  box-shadow: inset 0 0 30px rgba(255, 255, 255, 0.05);
+   759→  transition: box-shadow 0.4s ease;
+   760→  &:hover {
+   761→    box-shadow: inset 0 0 50px rgba(255, 255, 255, 0.1), 0 0 20px rgba(255, 255, 255, 0.05);
+   762→  }
+   763→}
+   764→.dark .glass-inner-glow,
+   765→:is(.dark *) .glass-inner-glow {
+   766→  background: rgba(30, 40, 35, 0.6);
+   767→  border: 1px solid rgba(255, 255, 255, 0.08);
+   768→  box-shadow: inset 0 0 30px rgba(16, 185, 129, 0.05);
+   769→  &:hover {
+   770→    box-shadow: inset 0 0 50px rgba(16, 185, 129, 0.1), 0 0 20px rgba(16, 185, 129, 0.08);
+   771→  }
+   772→}
+   773→
+   774→/* 2. Animated typing cursor blink */
+   775→@utility typing-cursor {
+   776→  display: inline-block;
+   777→  width: 2px;
+   778→  height: 1em;
+   779→  background-color: currentColor;
+   780→  animation: cursorBlink 1s step-end infinite;
+   781→  vertical-align: text-bottom;
+   782→  margin-left: 1px;
+   783→}
+   784→
+   785→/* 3. Gradient text with shimmer sweep */
+   786→@utility gradient-text-shimmer {
+   787→  background: linear-gradient(
+   788→    90deg,
+   789→    oklch(0.627 0.194 149.214) 0%,
+   790→    oklch(0.687 0.159 177.89) 25%,
+   791→    oklch(0.985 0.002 155) 50%,
+   792→    oklch(0.687 0.159 177.89) 75%,
+   793→    oklch(0.627 0.194 149.214) 100%
+   794→  );
+   795→  background-size: 200% 100%;
+   796→  -webkit-background-clip: text;
+   797→  -webkit-text-fill-color: transparent;
+   798→  background-clip: text;
+   799→  animation: shimmerSweep 3s ease-in-out infinite;
+   800→}
+   801→.dark .gradient-text-shimmer,
+   802→:is(.dark *) .gradient-text-shimmer {
+   803→  background: linear-gradient(
+   804→    90deg,
+   805→    oklch(0.687 0.159 177.89) 0%,
+   806→    oklch(0.712 0.14 165.614) 25%,
+   807→    oklch(0.962 0.012 155) 50%,
+   808→    oklch(0.712 0.14 165.614) 75%,
+   809→    oklch(0.687 0.159 177.89) 100%
+   810→  );
+   811→  background-size: 200% 100%;
+   812→  -webkit-background-clip: text;
+   813→  -webkit-text-fill-color: transparent;
+   814→  background-clip: text;
+   815→  animation: shimmerSweep 3s ease-in-out infinite;
+   816→}
+   817→
+   818→/* 4. Floating particles background effect */
+   819→@utility floating-particles {
+   820→  position: relative;
+   821→  overflow: hidden;
+   822→}
+   823→.floating-particles::before,
+   824→.floating-particles::after {
+   825→  content: '';
+   826→  position: absolute;
+   827→  border-radius: 50%;
+   828→  pointer-events: none;
+   829→  animation: particlesFloat 6s ease-in-out infinite;
+   830→}
+   831→.floating-particles::before {
+   832→  width: 6px;
+   833→  height: 6px;
+   834→  background: radial-gradient(circle, rgba(16, 185, 129, 0.4), transparent 70%);
+   835→  top: 20%;
+   836→  left: 15%;
+   837→  animation-delay: 0s;
+   838→}
+   839→.floating-particles::after {
+   840→  width: 4px;
+   841→  height: 4px;
+   842→  background: radial-gradient(circle, rgba(20, 184, 166, 0.35), transparent 70%);
+   843→  bottom: 25%;
+   844→  right: 20%;
+   845→  animation-delay: -3s;
+   846→}
+   847→.dark .floating-particles::before,
+   848→:is(.dark *) .floating-particles::before {
+   849→  background: radial-gradient(circle, rgba(16, 185, 129, 0.3), transparent 70%);
+   850→}
+   851→.dark .floating-particles::after,
+   852→:is(.dark *) .floating-particles::after {
+   853→  background: radial-gradient(circle, rgba(20, 184, 166, 0.25), transparent 70%);
+   854→}
+   855→
+   856→/* 5. Smooth border radius morphing utility */
+   857→@utility morph-radius {
+   858→  border-radius: 1rem;
+   859→  transition: border-radius 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+   860→  &:hover {
+   861→    border-radius: 9999px;
+   862→  }
+   863→}
+   864→
+   865→/* 6. Animated checkmark drawing (SVG stroke-dashoffset animation) */
+   866→@utility checkmark-draw {
+   867→  stroke: oklch(0.627 0.194 149.214);
+   868→  stroke-width: 2;
+   869→  fill: none;
+   870→  stroke-dasharray: 24;
+   871→  stroke-dashoffset: 24;
+   872→  stroke-linecap: round;
+   873→  stroke-linejoin: round;
+   874→  animation: checkmarkStroke 0.4s ease-out forwards;
+   875→}
+   876→.dark .checkmark-draw,
+   877→:is(.dark *) .checkmark-draw {
+   878→  stroke: oklch(0.687 0.159 177.89);
+   879→}
+   880→
+   881→/* 7. Glass panel with top accent line (colored, 3px) */
+   882→@utility glass-accent-top {
+   883→  position: relative;
+   884→  background: rgba(255, 255, 255, 0.6);
+   885→  backdrop-filter: blur(16px);
+   886→  -webkit-backdrop-filter: blur(16px);
+   887→  border: 1px solid rgba(255, 255, 255, 0.3);
+   888→  border-top: 3px solid transparent;
+   889→  border-image: linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89)) 1;
+   890→  border-radius: 0.75rem;
+   891→  overflow: hidden;
+   892→}
+   893→.glass-accent-top::before {
+   894→  content: '';
+   895→  position: absolute;
+   896→  top: 0;
+   897→  left: 0;
+   898→  right: 0;
+   899→  height: 3px;
+   900→  background: linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89));
+   901→  border-radius: 0.75rem 0.75rem 0 0;
+   902→  z-index: 1;
+   903→}
+   904→.dark .glass-accent-top,
+   905→:is(.dark *) .glass-accent-top {
+   906→  background: rgba(30, 40, 35, 0.6);
+   907→  border: 1px solid rgba(255, 255, 255, 0.08);
+   908→  border-top: 3px solid transparent;
+   909→  border-image: linear-gradient(90deg, oklch(0.687 0.159 177.89), oklch(0.712 0.14 165.614)) 1;
+   910→}
+   911→
+   912→/* 8. Subtle breathing/pulsing scale animation */
+   913→@utility breathe {
+   914→  animation: breatheScale 4s ease-in-out infinite;
+   915→}
+   916→
+   917→/* 9. Animated dashed border (border dash-offset rotation) */
+   918→@utility animated-dashed-border {
+   919→  border: 2px dashed rgba(16, 185, 129, 0.3);
+   920→  animation: dashRotate 20s linear infinite;
+   921→  background-image: none;
+   922→}
+   923→.dark .animated-dashed-border,
+   924→:is(.dark *) .animated-dashed-border {
+   925→  border-color: rgba(16, 185, 129, 0.5);
+   926→}
+   927→
+   928→/* 10. Glass card with corner decorations */
+   929→@utility glass-corner-decorations {
+   930→  position: relative;
+   931→  background: rgba(255, 255, 255, 0.6);
+   932→  backdrop-filter: blur(16px);
+   933→  -webkit-backdrop-filter: blur(16px);
+   934→  border: 1px solid rgba(255, 255, 255, 0.3);
+   935→}
+   936→.glass-corner-decorations::before {
+   937→  content: '';
+   938→  position: absolute;
+   939→  top: 8px;
+   940→  left: 8px;
+   941→  width: 12px;
+   942→  height: 12px;
+   943→  border-top: 2px solid oklch(0.627 0.194 149.214);
+   944→  border-left: 2px solid oklch(0.627 0.194 149.214);
+   945→  opacity: 0.3;
+   946→  transition: opacity 0.3s ease;
+   947→  pointer-events: none;
+   948→}
+   949→.glass-corner-decorations::after {
+   950→  content: '';
+   951→  position: absolute;
+   952→  bottom: 8px;
+   953→  right: 8px;
+   954→  width: 12px;
+   955→  height: 12px;
+   956→  border-bottom: 2px solid oklch(0.627 0.194 149.214);
+   957→  border-right: 2px solid oklch(0.627 0.194 149.214);
+   958→  opacity: 0.3;
+   959→  transition: opacity 0.3s ease;
+   960→  pointer-events: none;
+   961→}
+   962→.glass-corner-decorations:hover::before,
+   963→.glass-corner-decorations:hover::after {
+   964→  opacity: 0.6;
+   965→}
+   966→.dark .glass-corner-decorations,
+   967→:is(.dark *) .glass-corner-decorations {
+   968→  background: rgba(30, 40, 35, 0.6);
+   969→  border: 1px solid rgba(255, 255, 255, 0.08);
+   970→}
+   971→.dark .glass-corner-decorations::before,
+   972→:is(.dark *) .glass-corner-decorations::before {
+   973→  border-color: oklch(0.687 0.159 177.89);
+   974→}
+   975→.dark .glass-corner-decorations::after,
+   976→:is(.dark *) .glass-corner-decorations::after {
+   977→  border-color: oklch(0.687 0.159 177.89);
+   978→}
+   979→
+   980→/* ============================================
+   981→   ROUND 7: NEW KEYFRAMES
+   982→   ============================================ */
+   983→
+   984→@keyframes cursorBlink {
+   985→  0%, 100% { opacity: 1; }
+   986→  50% { opacity: 0; }
+   987→}
+   988→
+   989→@keyframes shimmerSweep {
+   990→  0% { background-position: 100% 50%; }
+   991→  100% { background-position: -100% 50%; }
+   992→}
+   993→
+   994→@keyframes particlesFloat {
+   995→  0%, 100% {
+   996→    transform: translateY(0) translateX(0);
+   997→    opacity: 0.4;
+   998→  }
+   999→  25% {
+  1000→    transform: translateY(-12px) translateX(6px);
+  1001→    opacity: 0.8;
+  1002→  }
+  1003→  50% {
+  1004→    transform: translateY(-6px) translateX(-4px);
+  1005→    opacity: 0.6;
+  1006→  }
+  1007→  75% {
+  1008→    transform: translateY(-16px) translateX(2px);
+  1009→    opacity: 0.9;
+  1010→  }
+  1011→}
+  1012→
+  1013→@keyframes checkmarkStroke {
+  1014→  0% { stroke-dashoffset: 24; }
+  1015→  100% { stroke-dashoffset: 0; }
+  1016→}
+  1017→
+  1018→@keyframes breatheScale {
+  1019→  0%, 100% { transform: scale(1); }
+  1020→  50% { transform: scale(1.02); }
+  1021→}
+  1022→
+  1023→@keyframes dashRotate {
+  1024→  0% { stroke-dashoffset: 0; }
+  1025→  100% { stroke-dashoffset: -1000; }
+  1026→}
+  1027→
+  1028→/* ============================================
+  1029→   PAGE TRANSITION ENHANCEMENTS
+  1030→   ============================================ */
+  1031→
+  1032→/* Page Loading Skeleton — full-page animated shimmer */
+  1033→@utility page-skeleton {
+  1034→  position: relative;
+  1035→  overflow: hidden;
+  1036→  background: oklch(0.962 0.012 155);
+  1037→  min-height: 100vh;
+  1038→}
+  1039→.page-skeleton::before {
+  1040→  content: '';
+  1041→  position: absolute;
+  1042→  inset: 0;
+  1043→  background: linear-gradient(
+  1044→    90deg,
+  1045→    transparent 0%,
+  1046→    rgba(16, 185, 129, 0.06) 40%,
+  1047→    rgba(16, 185, 129, 0.1) 50%,
+  1048→    rgba(16, 185, 129, 0.06) 60%,
+  1049→    transparent 100%
+  1050→  );
+  1051→  background-size: 200% 100%;
+  1052→  animation: skeletonShimmer 1.8s ease-in-out infinite;
+  1053→  pointer-events: none;
+  1054→}
+  1055→.dark .page-skeleton,
+  1056→:is(.dark *) .page-skeleton {
+  1057→  background: oklch(0.145 0.015 155);
+  1058→}
+  1059→.dark .page-skeleton::before,
+  1060→:is(.dark *) .page-skeleton::before {
+  1061→  background: linear-gradient(
+  1062→    90deg,
+  1063→    transparent 0%,
+  1064→    rgba(16, 185, 129, 0.04) 40%,
+  1065→    rgba(16, 185, 129, 0.08) 50%,
+  1066→    rgba(16, 185, 129, 0.04) 60%,
+  1067→    transparent 100%
+  1068→  );
+  1069→  background-size: 200% 100%;
+  1070→}
+  1071→
+  1072→@keyframes skeletonShimmer {
+  1073→  0% { background-position: 200% 0; }
+  1074→  100% { background-position: -200% 0; }
+  1075→}
+  1076→
+  1077→/* Smooth Page Enter Animations */
+  1078→@keyframes pageSlideIn {
+  1079→  0% {
+  1080→    opacity: 0;
+  1081→    transform: translateY(24px);
+  1082→  }
+  1083→  100% {
+  1084→    opacity: 1;
+  1085→    transform: translateY(0);
+  1086→  }
+  1087→}
+  1088→
+  1089→@keyframes pageFadeIn {
+  1090→  0% {
+  1091→    opacity: 0;
+  1092→  }
+  1093→  100% {
+  1094→    opacity: 1;
+  1095→  }
+  1096→}
+  1097→
+  1098→@keyframes pageScaleIn {
+  1099→  0% {
+  1100→    opacity: 0;
+  1101→    transform: scale(0.95);
+  1102→  }
+  1103→  60% {
+  1104→    opacity: 1;
+  1105→    transform: scale(1.005);
+  1106→  }
+  1107→  100% {
+  1108→    opacity: 1;
+  1109→    transform: scale(1);
+  1110→  }
+  1111→}
+  1112→
+  1113→.animate-page-slide-in {
+  1114→  animation: pageSlideIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  1115→}
+  1116→
+  1117→.animate-page-fade-in {
+  1118→  animation: pageFadeIn 0.3s ease-out both;
+  1119→}
+  1120→
+  1121→.animate-page-scale-in {
+  1122→  animation: pageScaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  1123→}
+  1124→
+  1125→/* Enhanced Glass Morphism for Dark Mode */
+  1126→@utility glass-dark-enhanced {
+  1127→  background: rgba(255, 255, 255, 0.6);
+  1128→  backdrop-filter: blur(16px);
+  1129→  -webkit-backdrop-filter: blur(16px);
+  1130→  border: 1px solid rgba(255, 255, 255, 0.3);
+  1131→}
+  1132→.dark .glass-dark-enhanced,
+  1133→:is(.dark *) .glass-dark-enhanced {
+  1134→  background: rgba(20, 30, 25, 0.7);
+  1135→  backdrop-filter: blur(32px);
+  1136→  -webkit-backdrop-filter: blur(32px);
+  1137→  border: 1px solid rgba(16, 185, 129, 0.1);
+  1138→  box-shadow: inset 0 0 30px rgba(16, 185, 129, 0.03), 0 0 1px rgba(16, 185, 129, 0.1);
+  1139→}
+  1140→
+  1141→/* Scroll Progress Indicator — fixed top bar with emerald gradient */
+  1142→.scroll-progress {
+  1143→  position: fixed;
+  1144→  top: 0;
+  1145→  left: 0;
+  1146→  width: 100%;
+  1147→  height: 2px;
+  1148→  z-index: 9999;
+  1149→  background: transparent;
+  1150→  pointer-events: none;
+  1151→}
+  1152→.scroll-progress::before {
+  1153→  content: '';
+  1154→  display: block;
+  1155→  height: 100%;
+  1156→  width: 0%;
+  1157→  background: linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89), oklch(0.712 0.14 165.614));
+  1158→  border-radius: 0 1px 1px 0;
+  1159→  animation: scrollProgressFill 0.1s linear;
+  1160→  transition: width 0.1s linear;
+  1161→}
+  1162→.dark .scroll-progress::before,
+  1163→:is(.dark *) .scroll-progress::before {
+  1164→  background: linear-gradient(90deg, oklch(0.687 0.159 177.89), oklch(0.712 0.14 165.614), oklch(0.752 0.145 160));
+  1165→  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4), 0 0 16px rgba(16, 185, 129, 0.2);
+  1166→}
+  1167→
+  1168→@keyframes scrollProgressFill {
+  1169→  0% { width: 0%; }
+  1170→  100% { width: var(--scroll-progress, 0%); }
+  1171→}
+  1172→
+  1173→/* Mood Tuning Sliders */
+  1174→.mood-slider {
+  1175→  --track-bg: oklch(0.92 0.02 155);
+  1176→  --track-fill-start: oklch(0.627 0.194 149.214);
+  1177→  --track-fill-end: oklch(0.687 0.159 177.89);
+  1178→  --thumb-color: oklch(0.58 0.18 155);
+  1179→  --thumb-glow: rgba(16, 185, 129, 0.35);
+  1180→
+  1181→  background: linear-gradient(
+  1182→    90deg,
+  1183→    var(--track-fill-start) 0%,
+  1184→    var(--track-fill-end) calc(var(--slider-progress) * 100%),
+  1185→    var(--track-bg) calc(var(--slider-progress) * 100%),
+  1186→    var(--track-bg) 100%
+  1187→  );
+  1188→  box-shadow: 0 0 6px oklch(0.627 0.194 149.214 / 0.1);
+  1189→  transition: box-shadow 0.2s ease;
+  1190→}
+  1191→
+  1192→.mood-slider:hover {
+  1193→  box-shadow: 0 0 12px oklch(0.627 0.194 149.214 / 0.2);
+  1194→}
+  1195→
+  1196→.mood-slider::-webkit-slider-thumb {
+  1197→  -webkit-appearance: none;
+  1198→  appearance: none;
+  1199→  width: 14px;
+  1200→  height: 14px;
+  1201→  border-radius: 50%;
+  1202→  background: var(--thumb-color);
+  1203→  border: 2px solid white;
+  1204→  box-shadow: 0 0 8px var(--thumb-glow), 0 1px 4px rgba(0, 0, 0, 0.15);
+  1205→  cursor: pointer;
+  1206→  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  1207→}
+  1208→
+  1209→.mood-slider::-webkit-slider-thumb:hover {
+  1210→  transform: scale(1.2);
+  1211→  box-shadow: 0 0 14px var(--thumb-glow), 0 0 4px var(--thumb-glow), 0 2px 6px rgba(0, 0, 0, 0.2);
+  1212→}
+  1213→
+  1214→.mood-slider::-webkit-slider-thumb:active {
+  1215→  transform: scale(1.1);
+  1216→}
+  1217→
+  1218→.mood-slider::-moz-range-thumb {
+  1219→  width: 14px;
+  1220→  height: 14px;
+  1221→  border-radius: 50%;
+  1222→  background: var(--thumb-color);
+  1223→  border: 2px solid white;
+  1224→  box-shadow: 0 0 8px var(--thumb-glow), 0 1px 4px rgba(0, 0, 0, 0.15);
+  1225→  cursor: pointer;
+  1226→  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  1227→}
+  1228→
+  1229→.mood-slider::-moz-range-thumb:hover {
+  1230→  transform: scale(1.2);
+  1231→  box-shadow: 0 0 14px var(--thumb-glow), 0 0 4px var(--thumb-glow), 0 2px 6px rgba(0, 0, 0, 0.2);
+  1232→}
+  1233→
+  1234→.mood-slider::-moz-range-track {
+  1235→  height: 6px;
+  1236→  border-radius: 9999px;
+  1237→  background: transparent;
+  1238→}
+  1239→
+  1240→.dark .mood-slider {
+  1241→  --track-bg: oklch(0.25 0.02 155);
+  1242→  --track-fill-start: oklch(0.55 0.17 155);
+  1243→  --track-fill-end: oklch(0.627 0.194 149.214);
+  1244→  --thumb-color: oklch(0.687 0.159 177.89);
+  1245→  --thumb-glow: rgba(16, 185, 129, 0.5);
+  1246→}
+  1247→
+  1248→.dark .mood-slider:hover {
+  1249→  box-shadow: 0 0 16px oklch(0.627 0.194 149.214 / 0.25);
+  1250→}
+  1251→
+  1252→.dark .mood-slider::-webkit-slider-thumb {
+  1253→  border-color: oklch(0.2 0.02 155);
+  1254→}
+  1255→
+  1256→.dark .mood-slider::-moz-range-thumb {
+  1257→  border-color: oklch(0.2 0.02 155);
+  1258→}
+  1259→
+  1260→@keyframes meshBgShift {
+  1261→  0% { background-position: 0% 50%; }
+  1262→  25% { background-position: 100% 0%; }
+  1263→  50% { background-position: 100% 100%; }
+  1264→  75% { background-position: 0% 100%; }
+  1265→  100% { background-position: 0% 50%; }
+  1266→}
+  1267→
+  1268→/* ============================================
+  1269→   TASK 9-d: CATEGORY, SHIMMER & TILT UTILITIES
+  1270→   ============================================ */
+  1271→
+  1272→/* Category chip base */
+  1273→.category-chip {
+  1274→  display: inline-flex;
+  1275→  align-items: center;
+  1276→  gap: 0.375rem;
+  1277→  padding: 0.375rem 0.75rem;
+  1278→  border-radius: 9999px;
+  1279→  font-size: 0.75rem;
+  1280→  font-weight: 500;
+  1281→  border: 1px solid transparent;
+  1282→  transition: all 0.2s ease;
+  1283→  cursor: pointer;
+  1284→  user-select: none;
+  1285→  position: relative;
+  1286→  overflow: hidden;
+  1287→}
+  1288→
+  1289→.category-chip-science {
+  1290→  background: oklch(0.627 0.194 149.214 / 0.12);
+  1291→  color: oklch(0.527 0.154 149.214);
+  1292→  border-color: oklch(0.627 0.194 149.214 / 0.2);
+  1293→}
+  1294→.category-chip-science.active {
+  1295→  background: linear-gradient(135deg, oklch(0.527 0.154 149.214), oklch(0.627 0.194 149.214));
+  1296→  color: white;
+  1297→  border-color: transparent;
+  1298→}
+  1299→
+  1300→.category-chip-mathematics {
+  1301→  background: oklch(0.627 0.194 177.89 / 0.12);
+  1302→  color: oklch(0.527 0.154 177.89);
+  1303→  border-color: oklch(0.627 0.194 177.89 / 0.2);
+  1304→}
+  1305→.category-chip-mathematics.active {
+  1306→  background: linear-gradient(135deg, oklch(0.527 0.154 177.89), oklch(0.627 0.194 177.89));
+  1307→  color: white;
+  1308→  border-color: transparent;
+  1309→}
+  1310→
+  1311→.category-chip-computer-science {
+  1312→  background: oklch(0.687 0.159 220 / 0.12);
+  1313→  color: oklch(0.557 0.169 220);
+  1314→  border-color: oklch(0.687 0.159 220 / 0.2);
+  1315→}
+  1316→.category-chip-computer-science.active {
+  1317→  background: linear-gradient(135deg, oklch(0.557 0.169 220), oklch(0.687 0.159 220));
+  1318→  color: white;
+  1319→  border-color: transparent;
+  1320→}
+  1321→
+  1322→.category-chip-languages {
+  1323→  background: oklch(0.752 0.145 85 / 0.12);
+  1324→  color: oklch(0.617 0.155 85);
+  1325→  border-color: oklch(0.752 0.145 85 / 0.2);
+  1326→}
+  1327→.category-chip-languages.active {
+  1328→  background: linear-gradient(135deg, oklch(0.617 0.155 85), oklch(0.752 0.145 85));
+  1329→  color: white;
+  1330→  border-color: transparent;
+  1331→}
+  1332→
+  1333→.category-chip-history {
+  1334→  background: oklch(0.687 0.159 60 / 0.12);
+  1335→  color: oklch(0.557 0.169 60);
+  1336→  border-color: oklch(0.687 0.159 60 / 0.2);
+  1337→}
+  1338→.category-chip-history.active {
+  1339→  background: linear-gradient(135deg, oklch(0.557 0.169 60), oklch(0.687 0.159 60));
+  1340→  color: white;
+  1341→  border-color: transparent;
+  1342→}
+  1343→
+  1344→.category-chip-arts {
+  1345→  background: oklch(0.687 0.159 340 / 0.12);
+  1346→  color: oklch(0.557 0.169 340);
+  1347→  border-color: oklch(0.687 0.159 340 / 0.2);
+  1348→}
+  1349→.category-chip-arts.active {
+  1350→  background: linear-gradient(135deg, oklch(0.557 0.169 340), oklch(0.687 0.159 340));
+  1351→  color: white;
+  1352→  border-color: transparent;
+  1353→}
+  1354→
+  1355→.category-chip-business {
+  1356→  background: oklch(0.565 0.194 265 / 0.12);
+  1357→  color: oklch(0.455 0.174 265);
+  1358→  border-color: oklch(0.565 0.194 265 / 0.2);
+  1359→}
+  1360→.category-chip-business.active {
+  1361→  background: linear-gradient(135deg, oklch(0.455 0.174 265), oklch(0.565 0.194 265));
+  1362→  color: white;
+  1363→  border-color: transparent;
+  1364→}
+  1365→
+  1366→.category-chip-other {
+  1367→  background: oklch(0.7 0.015 155 / 0.12);
+  1368→  color: oklch(0.45 0.015 155);
+  1369→  border-color: oklch(0.7 0.015 155 / 0.3);
+  1370→}
+  1371→.category-chip-other.active {
+  1372→  background: linear-gradient(135deg, oklch(0.5 0.015 155), oklch(0.6 0.015 155));
+  1373→  color: white;
+  1374→  border-color: transparent;
+  1375→}
+  1376→
+  1377→.dark .category-chip-science { background: oklch(0.627 0.194 149.214 / 0.15); color: oklch(0.75 0.16 149.214); border-color: oklch(0.627 0.194 149.214 / 0.25); }
+  1378→.dark .category-chip-mathematics { background: oklch(0.627 0.194 177.89 / 0.15); color: oklch(0.75 0.16 177.89); border-color: oklch(0.627 0.194 177.89 / 0.25); }
+  1379→.dark .category-chip-computer-science { background: oklch(0.687 0.159 220 / 0.15); color: oklch(0.78 0.15 220); border-color: oklch(0.687 0.159 220 / 0.25); }
+  1380→.dark .category-chip-languages { background: oklch(0.752 0.145 85 / 0.15); color: oklch(0.82 0.14 85); border-color: oklch(0.752 0.145 85 / 0.25); }
+  1381→.dark .category-chip-history { background: oklch(0.687 0.159 60 / 0.15); color: oklch(0.78 0.15 60); border-color: oklch(0.687 0.159 60 / 0.25); }
+  1382→.dark .category-chip-arts { background: oklch(0.687 0.159 340 / 0.15); color: oklch(0.78 0.15 340); border-color: oklch(0.687 0.159 340 / 0.25); }
+  1383→.dark .category-chip-business { background: oklch(0.565 0.194 265 / 0.15); color: oklch(0.68 0.18 265); border-color: oklch(0.565 0.194 265 / 0.25); }
+  1384→.dark .category-chip-other { background: oklch(0.7 0.015 155 / 0.15); color: oklch(0.75 0.015 155); border-color: oklch(0.7 0.015 155 / 0.3); }
+  1385→
+  1386→/* Shimmer overlay for card hover effects */
+  1387→.shimmer-overlay {
+  1388→  position: absolute;
+  1389→  inset: 0;
+  1390→  pointer-events: none;
+  1391→  z-index: 2;
+  1392→  overflow: hidden;
+  1393→  border-radius: inherit;
+  1394→  opacity: 0;
+  1395→  transition: opacity 0.3s ease;
+  1396→}
+  1397→
+  1398→.shimmer-overlay::before {
+  1399→  content: '';
+  1400→  position: absolute;
+  1401→  inset: 0;
+  1402→  background: linear-gradient(
+  1403→    105deg,
+  1404→    transparent 40%,
+  1405→    rgba(255, 255, 255, 0.2) 45%,
+  1406→    rgba(255, 255, 255, 0.3) 50%,
+  1407→    rgba(255, 255, 255, 0.2) 55%,
+  1408→    transparent 60%
+  1409→  );
+  1410→  transform: translateX(-100%);
+  1411→  transition: none;
+  1412→}
+  1413→
+  1414→.dark .shimmer-overlay::before {
+  1415→  background: linear-gradient(
+  1416→    105deg,
+  1417→    transparent 40%,
+  1418→    rgba(16, 185, 129, 0.12) 45%,
+  1419→    rgba(16, 185, 129, 0.2) 50%,
+  1420→    rgba(16, 185, 129, 0.12) 55%,
+  1421→    transparent 60%
+  1422→  );
+  1423→}
+  1424→
+  1425→.shimmer-overlay-active {
+  1426→  opacity: 1;
+  1427→}
+  1428→
+  1429→.shimmer-overlay-active::before {
+  1430→  animation: shimmerOverlaySweep 0.8s ease-out forwards;
+  1431→}
+  1432→
+  1433→@keyframes shimmerOverlaySweep {
+  1434→  0% { transform: translateX(-100%); }
+  1435→  100% { transform: translateX(100%); }
+  1436→}
+  1437→
+  1438→/* 3D tilt card utility */
+  1439→.tilt-card {
+  1440→  perspective: 800px;
+  1441→  transform-style: preserve-3d;
+  1442→}
+  1443→
+  1444→.tilt-card-inner {
+  1445→  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+  1446→  transform-style: preserve-3d;
+  1447→  will-change: transform;
+  1448→}
+  1449→
+  1450→/* Gradient mesh background (CSS-only animated) */
+  1451→.gradient-mesh-bg {
+  1452→  position: absolute;
+  1453→  inset: 0;
+  1454→  overflow: hidden;
+  1455→  z-index: 0;
+  1456→}
+  1457→
+  1458→.gradient-mesh-bg::before,
+  1459→.gradient-mesh-bg::after {
+  1460→  content: '';
+  1461→  position: absolute;
+  1462→  border-radius: 50%;
+  1463→  filter: blur(80px);
+  1464→  opacity: 0.3;
+  1465→  animation: meshFloat 12s ease-in-out infinite;
+  1466→}
+  1467→
+  1468→.gradient-mesh-bg::before {
+  1469→  width: 50%;
+  1470→  height: 60%;
+  1471→  top: -10%;
+  1472→  left: -10%;
+  1473→  background: radial-gradient(ellipse, oklch(0.627 0.194 149.214 / 0.4), transparent 70%);
+  1474→}
+  1475→
+  1476→.gradient-mesh-bg::after {
+  1477→  width: 45%;
+  1478→  height: 55%;
+  1479→  bottom: -10%;
+  1480→  right: -10%;
+  1481→  background: radial-gradient(ellipse, oklch(0.687 0.159 177.89 / 0.35), transparent 70%);
+  1482→  animation-delay: -6s;
+  1483→  animation-direction: reverse;
+  1484→}
+  1485→
+  1486→.dark .gradient-mesh-bg::before {
+  1487→  background: radial-gradient(ellipse, oklch(0.627 0.194 149.214 / 0.25), transparent 70%);
+  1488→}
+  1489→.dark .gradient-mesh-bg::after {
+  1490→  background: radial-gradient(ellipse, oklch(0.687 0.159 177.89 / 0.2), transparent 70%);
+  1491→}
+  1492→
+  1493→@keyframes meshFloat {
+  1494→  0%, 100% { transform: translate(0, 0) scale(1); }
+  1495→  25% { transform: translate(10%, 8%) scale(1.05); }
+  1496→  50% { transform: translate(5%, -5%) scale(0.95); }
+  1497→  75% { transform: translate(-8%, 3%) scale(1.02); }
+  1498→}
+  1499→
+  1500→/* CTA gradient border glow */
+  1501→.cta-glow-border {
+  1502→  position: relative;
+  1503→}
+  1504→
+  1505→.cta-glow-border::before {
+  1506→  content: '';
+  1507→  position: absolute;
+  1508→  inset: -3px;
+  1509→  border-radius: inherit;
+  1510→  background: linear-gradient(135deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89), oklch(0.712 0.14 165.614), oklch(0.627 0.194 149.214));
+  1511→  background-size: 300% 300%;
+  1512→  opacity: 0;
+  1513→  transition: opacity 0.4s ease;
+  1514→  z-index: -1;
+  1515→  filter: blur(6px);
+  1516→  animation: ctaGlowShift 4s ease-in-out infinite;
+  1517→}
+  1518→
+  1519→.cta-glow-border:hover::before {
+  1520→  opacity: 1;
+  1521→}
+  1522→
+  1523→@keyframes ctaGlowShift {
+  1524→  0% { background-position: 0% 50%; }
+  1525→  50% { background-position: 100% 50%; }
+  1526→  100% { background-position: 0% 50%; }
+  1527→}
+  1528→
+  1529→/* Sidebar progress bar */
+  1530→.sidebar-progress-bar {
+  1531→  position: relative;
+  1532→  height: 4px;
+  1533→  border-radius: 2px;
+  1534→  background: oklch(0.92 0.015 155 / 0.5);
+  1535→  overflow: hidden;
+  1536→}
+  1537→
+  1538→.dark .sidebar-progress-bar {
+  1539→  background: oklch(0.3 0.02 155);
+  1540→}
+  1541→
+  1542→.sidebar-progress-bar-fill {
+  1543→  height: 100%;
+  1544→  border-radius: 2px;
+  1545→  background: linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89));
+  1546→  transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  1547→}
+  1548→
+  1549→.dark .sidebar-progress-bar-fill {
+  1550→  background: linear-gradient(90deg, oklch(0.687 0.159 177.89), oklch(0.712 0.14 165.614));
+  1551→  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+  1552→}
+  1553→
+  1554→/* ============================================
+  1555→   TASK: VISUAL POLISH MICRO-INTERACTIONS
+  1556→   ============================================ */
+  1557→
+  1558→/* 1. hover-lift: Card hover with translateY and shadow transition */
+  1559→.hover-lift {
+  1560→  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+  1561→}
+  1562→.hover-lift:hover {
+  1563→  transform: translateY(-2px);
+  1564→  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  1565→}
+  1566→.dark .hover-lift:hover {
+  1567→  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(16, 185, 129, 0.06);
+  1568→}
+  1569→
+  1570→/* 2. glass-card-hover: Glass cards that brighten on hover */
+  1571→.glass-card-hover {
+  1572→  background: rgba(255, 255, 255, 0.6);
+  1573→  backdrop-filter: blur(16px);
+  1574→  -webkit-backdrop-filter: blur(16px);
+  1575→  border: 1px solid rgba(255, 255, 255, 0.3);
+  1576→  transition: background 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  1577→}
+  1578→.glass-card-hover:hover {
+  1579→  background: rgba(255, 255, 255, 0.75);
+  1580→  box-shadow: 0 4px 24px rgba(16, 185, 129, 0.08), inset 0 0 0 1px rgba(16, 185, 129, 0.1);
+  1581→  border-color: rgba(16, 185, 129, 0.15);
+  1582→}
+  1583→.dark .glass-card-hover,
+  1584→:is(.dark *) .glass-card-hover {
+  1585→  background: rgba(30, 40, 35, 0.6);
+  1586→  border: 1px solid rgba(255, 255, 255, 0.08);
+  1587→}
+  1588→.dark .glass-card-hover:hover,
+  1589→:is(.dark *) .glass-card-hover:hover {
+  1590→  background: rgba(35, 48, 40, 0.7);
+  1591→  box-shadow: 0 4px 24px rgba(16, 185, 129, 0.1), inset 0 0 0 1px rgba(16, 185, 129, 0.15);
+  1592→  border-color: rgba(16, 185, 129, 0.2);
+  1593→}
+  1594→
+  1595→/* 3. animated-border-gradient: Rotating gradient border effect */
+  1596→.animated-border-gradient {
+  1597→  position: relative;
+  1598→  border-radius: inherit;
+  1599→  overflow: hidden;
+  1600→}
+  1601→.animated-border-gradient::before {
+  1602→  content: '';
+  1603→  position: absolute;
+  1604→  inset: 0;
+  1605→  border-radius: inherit;
+  1606→  padding: 2px;
+  1607→  background: conic-gradient(
+  1608→    from var(--abg-angle, 0deg),
+  1609→    oklch(0.627 0.194 149.214),
+  1610→    oklch(0.687 0.159 177.89),
+  1611→    oklch(0.712 0.14 165.614),
+  1612→    oklch(0.627 0.194 149.214),
+  1613→    oklch(0.687 0.159 177.89),
+  1614→    oklch(0.627 0.194 149.214)
+  1615→  );
+  1616→  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  1617→  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  1618→  -webkit-mask-composite: xor;
+  1619→  mask-composite: exclude;
+  1620→  animation: abgRotate 4s linear infinite;
+  1621→  pointer-events: none;
+  1622→}
+  1623→@keyframes abgRotate {
+  1624→  to { --abg-angle: 360deg; }
+  1625→}
+  1626→@property --abg-angle {
+  1627→  syntax: '<angle>';
+  1628→  initial-value: 0deg;
+  1629→  inherits: false;
+  1630→}
+  1631→
+  1632→/* 4. text-gradient-emerald: Emerald gradient text */
+  1633→.text-gradient-emerald {
+  1634→  background: linear-gradient(135deg, oklch(0.527 0.154 149.214), oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89));
+  1635→  -webkit-background-clip: text;
+  1636→  -webkit-text-fill-color: transparent;
+  1637→  background-clip: text;
+  1638→}
+  1639→.dark .text-gradient-emerald,
+  1640→:is(.dark *) .text-gradient-emerald {
+  1641→  background: linear-gradient(135deg, oklch(0.687 0.159 177.89), oklch(0.752 0.145 160), oklch(0.712 0.14 165.614));
+  1642→  -webkit-background-clip: text;
+  1643→  -webkit-text-fill-color: transparent;
+  1644→  background-clip: text;
+  1645→}
+  1646→
+  1647→/* 5. shimmer-slow: Slower shimmer animation variant */
+  1648→.shimmer-slow {
+  1649→  position: relative;
+  1650→  overflow: hidden;
+  1651→}
+  1652→.shimmer-slow::after {
+  1653→  content: '';
+  1654→  position: absolute;
+  1655→  inset: 0;
+  1656→  background: linear-gradient(
+  1657→    105deg,
+  1658→    transparent 40%,
+  1659→    rgba(255, 255, 255, 0.12) 45%,
+  1660→    rgba(255, 255, 255, 0.18) 50%,
+  1661→    rgba(255, 255, 255, 0.12) 55%,
+  1662→    transparent 60%
+  1663→  );
+  1664→  transform: translateX(-100%);
+  1665→  pointer-events: none;
+  1666→  border-radius: inherit;
+  1667→}
+  1668→.shimmer-slow:hover::after {
+  1669→  animation: shimmerSlowSweep 1.4s ease-out;
+  1670→}
+  1671→.dark .shimmer-slow::after {
+  1672→  background: linear-gradient(
+  1673→    105deg,
+  1674→    transparent 40%,
+  1675→    rgba(16, 185, 129, 0.08) 45%,
+  1676→    rgba(16, 185, 129, 0.15) 50%,
+  1677→    rgba(16, 185, 129, 0.08) 55%,
+  1678→    transparent 60%
+  1679→  );
+  1680→}
+  1681→@keyframes shimmerSlowSweep {
+  1682→  0% { transform: translateX(-100%); }
+  1683→  100% { transform: translateX(100%); }
+  1684→}
+  1685→
+  1686→/* Sidebar top animated gradient line */
+  1687→.sidebar-top-gradient-line {
+  1688→  position: absolute;
+  1689→  top: 0;
+  1690→  left: 0;
+  1691→  right: 0;
+  1692→  height: 2px;
+  1693→  z-index: 20;
+  1694→  overflow: hidden;
+  1695→}
+  1696→.sidebar-top-gradient-line::before {
+  1697→  content: '';
+  1698→  position: absolute;
+  1699→  inset: 0;
+  1700→  background: linear-gradient(
+  1701→    90deg,
+  1702→    transparent 0%,
+  1703→    oklch(0.627 0.194 149.214) 20%,
+  1704→    oklch(0.687 0.159 177.89) 50%,
+  1705→    oklch(0.627 0.194 149.214) 80%,
+  1706→    transparent 100%
+  1707→  );
+  1708→  animation: sidebarTopLineShimmer 3s ease-in-out infinite;
+  1709→}
+  1710→@keyframes sidebarTopLineShimmer {
+  1711→  0%, 100% { transform: translateX(-30%); opacity: 0.6; }
+  1712→  50% { transform: translateX(30%); opacity: 1; }
+  1713→}
+  1714→.dark .sidebar-top-gradient-line::before {
+  1715→  background: linear-gradient(
+  1716→    90deg,
+  1717→    transparent 0%,
+  1718→    oklch(0.687 0.159 177.89) 20%,
+  1719→    oklch(0.712 0.14 165.614) 50%,
+  1720→    oklch(0.687 0.159 177.89) 80%,
+  1721→    transparent 100%
+  1722→  );
+  1723→  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+  1724→}
+  1725→
+  1726→/* Sidebar active glow bar (left side) */
+  1727→.sidebar-active-glow-bar {
+  1728→  position: absolute;
+  1729→  left: 0;
+  1730→  top: 15%;
+  1731→  bottom: 15%;
+  1732→  width: 3px;
+  1733→  border-radius: 0 3px 3px 0;
+  1734→  background: linear-gradient(to bottom, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89));
+  1735→  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5), 0 0 16px rgba(16, 185, 129, 0.2);
+  1736→}
+  1737→
+  1738→/* Dashboard mesh gradient background */
+  1739→.dashboard-mesh-bg {
+  1740→  position: fixed;
+  1741→  inset: 0;
+  1742→  z-index: -1;
+  1743→  overflow: hidden;
+  1744→  pointer-events: none;
+  1745→}
+  1746→.dashboard-mesh-bg::before {
+  1747→  content: '';
+  1748→  position: absolute;
+  1749→  width: 60%;
+  1750→  height: 50%;
+  1751→  top: -15%;
+  1752→  right: -10%;
+  1753→  border-radius: 50%;
+  1754→  background: radial-gradient(ellipse, oklch(0.627 0.194 149.214 / 0.08), transparent 70%);
+  1755→  filter: blur(60px);
+  1756→  animation: meshFloatDashboard 16s ease-in-out infinite;
+  1757→}
+  1758→.dashboard-mesh-bg::after {
+  1759→  content: '';
+  1760→  position: absolute;
+  1761→  width: 50%;
+  1762→  height: 45%;
+  1763→  bottom: -10%;
+  1764→  left: -5%;
+  1765→  border-radius: 50%;
+  1766→  background: radial-gradient(ellipse, oklch(0.687 0.159 177.89 / 0.06), transparent 70%);
+  1767→  filter: blur(60px);
+  1768→  animation: meshFloatDashboard 16s ease-in-out infinite reverse;
+  1769→  animation-delay: -8s;
+  1770→}
+  1771→@keyframes meshFloatDashboard {
+  1772→  0%, 100% { transform: translate(0, 0) scale(1); }
+  1773→  33% { transform: translate(3%, 5%) scale(1.05); }
+  1774→  66% { transform: translate(-3%, -3%) scale(0.95); }
+  1775→}
+  1776→.dark .dashboard-mesh-bg::before {
+  1777→  background: radial-gradient(ellipse, oklch(0.627 0.194 149.214 / 0.05), transparent 70%);
+  1778→}
+  1779→.dark .dashboard-mesh-bg::after {
+  1780→  background: radial-gradient(ellipse, oklch(0.687 0.159 177.89 / 0.04), transparent 70%);
+  1781→}
+  1782→
+  1783→/* Upload drag animated dashed border */
+  1784→.upload-drag-animated {
+  1785→  position: relative;
+  1786→}
+  1787→.upload-drag-animated.dragging {
+  1788→  border-style: dashed;
+  1789→  animation: uploadDashScroll 0.8s linear infinite;
+  1790→}
+  1791→@keyframes uploadDashScroll {
+  1792→  0% { stroke-dashoffset: 0; }
+  1793→  100% { stroke-dashoffset: -20; }
+  1794→}
+  1795→
+  1796→/* Upload drop zone CSS particles */
+  1797→.dropzone-particles {
+  1798→  position: absolute;
+  1799→  inset: 0;
+  1800→  overflow: hidden;
+  1801→  pointer-events: none;
+  1802→  border-radius: inherit;
+  1803→}
+  1804→.dropzone-particles::before,
+  1805→.dropzone-particles::after {
+  1806→  content: '';
+  1807→  position: absolute;
+  1808→  width: 4px;
+  1809→  height: 4px;
+  1810→  border-radius: 50%;
+  1811→  background: oklch(0.627 0.194 149.214 / 0.3);
+  1812→  animation: dzParticleFloat 5s ease-in-out infinite;
+  1813→}
+  1814→.dropzone-particles::before {
+  1815→  top: 25%;
+  1816→  left: 20%;
+  1817→  animation-delay: 0s;
+  1818→}
+  1819→.dropzone-particles::after {
+  1820→  top: 60%;
+  1821→  right: 25%;
+  1822→  animation-delay: -2.5s;
+  1823→  width: 3px;
+  1824→  height: 3px;
+  1825→  background: oklch(0.687 0.159 177.89 / 0.25);
+  1826→}
+  1827→.dark .dropzone-particles::before {
+  1828→  background: oklch(0.687 0.159 177.89 / 0.2);
+  1829→}
+  1830→.dark .dropzone-particles::after {
+  1831→  background: oklch(0.712 0.14 165.614 / 0.18);
+  1832→}
+  1833→@keyframes dzParticleFloat {
+  1834→  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.3; }
+  1835→  25% { transform: translate(15px, -20px) scale(1.3); opacity: 0.7; }
+  1836→  50% { transform: translate(-10px, -35px) scale(0.8); opacity: 0.5; }
+  1837→  75% { transform: translate(20px, -15px) scale(1.1); opacity: 0.8; }
+  1838→}
+  1839→
+  1840→/* Upload glass inner glow on focus */
+  1841→.upload-glass-focus {
+  1842→  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  1843→}
+  1844→.upload-glass-focus:focus-within {
+  1845→  box-shadow: inset 0 0 30px oklch(0.627 0.194 149.214 / 0.06), 0 0 0 1px oklch(0.627 0.194 149.214 / 0.2);
+  1846→  border-color: oklch(0.627 0.194 149.214 / 0.4);
+  1847→}
+  1848→.dark .upload-glass-focus:focus-within {
+  1849→  box-shadow: inset 0 0 30px oklch(0.687 0.159 177.89 / 0.06), 0 0 0 1px oklch(0.687 0.159 177.89 / 0.3);
+  1850→  border-color: oklch(0.687 0.159 177.89 / 0.4);
+  1851→}
+  1852→
+  1853→/* Quiz progress bar at very top */
+  1854→.quiz-top-progress {
+  1855→  position: absolute;
+  1856→  top: 0;
+  1857→  left: 0;
+  1858→  right: 0;
+  1859→  height: 3px;
+  1860→  z-index: 30;
+  1861→  overflow: hidden;
+  1862→  border-radius: 0 0 2px 2px;
+  1863→}
+  1864→.quiz-top-progress::before {
+  1865→  content: '';
+  1866→  display: block;
+  1867→  height: 100%;
+  1868→  width: var(--quiz-progress, 0%);
+  1869→  background: linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89), oklch(0.712 0.14 165.614));
+  1870→  transition: width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  1871→  border-radius: 0 2px 2px 0;
+  1872→}
+  1873→.dark .quiz-top-progress::before {
+  1874→  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+  1875→}
+  1876→
+  1877→/* Quiz answer pulsing glow */
+  1878→.quiz-answer-pulse {
+  1879→  animation: quizAnswerPulse 2s ease-in-out infinite;
+  1880→}
+  1881→@keyframes quizAnswerPulse {
+  1882→  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.3); }
+  1883→  50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  1884→}
+  1885→
+  1886→/* Quiz circular timer ring */
+  1887→.quiz-timer-ring {
+  1888→  position: relative;
+  1889→  display: inline-flex;
+  1890→  align-items: center;
+  1891→  justify-content: center;
+  1892→}
+  1893→.quiz-timer-ring svg {
+  1894→  transform: rotate(-90deg);
+  1895→}
+  1896→
+  1897→/* Tutor chat container glass backdrop */
+  1898→.tutor-chat-glass {
+  1899→  backdrop-filter: blur(20px);
+  1900→  -webkit-backdrop-filter: blur(20px);
+  1901→  background: oklch(0.995 0.002 155 / 0.4);
+  1902→}
+  1903→.dark .tutor-chat-glass,
+  1904→:is(.dark *) .tutor-chat-glass {
+  1905→  background: oklch(0.145 0.015 155 / 0.4);
+  1906→}
+  1907→
+  1908→/* Tutor AI message gradient border */
+  1909→.tutor-ai-bubble {
+  1910→  position: relative;
+  1911→  background: oklch(0.98 0.005 155 / 0.8);
+  1912→  backdrop-filter: blur(12px);
+  1913→  -webkit-backdrop-filter: blur(12px);
+  1914→  border: 1px solid oklch(0.92 0.015 155 / 0.6);
+  1915→}
+  1916→.dark .tutor-ai-bubble,
+  1917→:is(.dark *) .tutor-ai-bubble {
+  1918→  background: oklch(0.18 0.02 155 / 0.7);
+  1919→  border: 1px solid oklch(0.627 0.194 149.214 / 0.12);
+  1920→  box-shadow: inset 0 0 20px oklch(0.627 0.194 149.214 / 0.03);
+  1921→}
+  1922→
+  1923→/* Tutor floating input container */
+  1924→.tutor-floating-input {
+  1925→  backdrop-filter: blur(20px);
+  1926→  -webkit-backdrop-filter: blur(20px);
+  1927→  background: oklch(0.995 0.002 155 / 0.7);
+  1928→  border: 1px solid oklch(0.92 0.015 155 / 0.5);
+  1929→  box-shadow: 0 -4px 20px oklch(0 0 0 / 0.04), 0 -1px 3px oklch(0 0 0 / 0.02);
+  1930→}
+  1931→.dark .tutor-floating-input,
+  1932→:is(.dark *) .tutor-floating-input {
+  1933→  background: oklch(0.16 0.018 155 / 0.8);
+  1934→  border: 1px solid oklch(0.32 0.035 155 / 0.4);
+  1935→  box-shadow: 0 -4px 20px oklch(0 0 0 / 0.2), 0 -1px 3px oklch(0 0 0 / 0.1);
+  1936→}
+  1937→
+  1938→/* ============================================
+  1939→   ROUND 10-11 ENHANCED ANIMATIONS
+  1940→   ============================================ */
+  1941→
+  1942→/* Float animation - gentle up/down */
+  1943→@keyframes floatGentle {
+  1944→  0%, 100% { transform: translateY(0px); }
+  1945→  50% { transform: translateY(-8px); }
+  1946→}
+  1947→
+  1948→/* Float slow variant */
+  1949→@keyframes floatSlow {
+  1950→  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  1951→  50% { transform: translateY(-12px) rotate(2deg); }
+  1952→}
+  1953→
+  1954→/* Soft pulse opacity */
+  1955→@keyframes pulseSoft {
+  1956→  0%, 100% { opacity: 1; }
+  1957→  50% { opacity: 0.65; }
+  1958→}
+  1959→
+  1960→/* Emerald glow pulse box-shadow */
+  1961→@keyframes glowPulse {
+  1962→  0%, 100% { box-shadow: 0 0 8px oklch(0.6 0.12 160 / 0.2), 0 0 0px oklch(0.6 0.12 160 / 0); }
+  1963→  50% { box-shadow: 0 0 24px oklch(0.6 0.12 160 / 0.4), 0 0 60px oklch(0.6 0.12 160 / 0.1); }
+  1964→}
+  1965→
+  1966→/* Slide up and fade in */
+  1967→@keyframes slideUpFade {
+  1968→  from { opacity: 0; transform: translateY(16px); }
+  1969→  to { opacity: 1; transform: translateY(0); }
+  1970→}
+  1971→
+  1972→/* Shimmer sweep for text */
+  1973→@keyframes textShimmer {
+  1974→  0% { background-position: 200% 0; }
+  1975→  100% { background-position: -200% 0; }
+  1976→}
+  1977→
+  1978→/* Border glow cycle */
+  1979→@keyframes borderGlow {
+  1980→  0%, 100% { opacity: 0.4; }
+  1981→  50% { opacity: 1; }
+  1982→}
+  1983→
+  1984→@utility float-gentle {
+  1985→  animation: floatGentle 6s ease-in-out infinite;
+  1986→}
+  1987→
+  1988→@utility float-slow {
+  1989→  animation: floatSlow 8s ease-in-out infinite;
+  1990→}
+  1991→
+  1992→@utility pulse-soft {
+  1993→  animation: pulseSoft 3s ease-in-out infinite;
+  1994→}
+  1995→
+  1996→@utility glow-pulse {
+  1997→  animation: glowPulse 2s ease-in-out infinite;
+  1998→}
+  1999→
+  2000→@utility slide-up-fade {
+
+[showing lines 1-2000 of 2383; use offset=2001 with limit to continue reading]

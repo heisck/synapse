@@ -466,7 +466,7 @@ export function SettingsView() {
           <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
             <AlertDialogTrigger asChild>
               <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
-                <Button variant="outline" size="sm" className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/50 hover:bg-destructive/5 hover:shadow-[0_0_20px_rgba(239,68,68,0.1)] transition-all">
+                <Button variant="outline" size="sm" className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/50 hover:bg-destructive/5 hover:shadow-[0_0_20px_rgba(239,68,68,0.1)] pulse-border-glow transition-all">
                   <Trash2 className="h-4 w-4 mr-2" />
                   Clear All Data
                 </Button>

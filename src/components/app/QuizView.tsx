@@ -977,7 +977,7 @@ function WeaknessReportDialog({
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                className="glass rounded-xl p-4"
+                className="glass rounded-xl p-4 card-hover-scale"
               >
                 <h4 className="text-sm font-semibold mb-2">Overall Assessment</h4>
                 <p className="text-sm text-muted-foreground leading-relaxed">{report.summary}</p>
