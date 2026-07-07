@@ -35,6 +35,12 @@ import {
   Sunrise,
   CheckCircle2,
   Users,
+  ArrowUp,
+  ArrowRight,
+  ArrowDown,
+  Share2,
+  CalendarDays,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -46,7 +52,8 @@ import { clearSessionStorage } from '@/hooks/useSessionPersistence';
 import { useStudyStreak, useTotalStudyTime } from '@/hooks/useStudyTracker';
 import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
 import { format, formatDistanceToNow } from 'date-fns';
-import type { Achievement } from '@/types';
+import { toast } from 'sonner';
+import type { Achievement, StudySession } from '@/types';
 
 /* ── Dynamic Icon Map ── */
 const iconMap: Record<string, typeof Eye> = {
@@ -335,6 +342,7 @@ export function ProfileView() {
     : null;
 
   const [activeCategory, setActiveCategory] = useState<'all' | Achievement['category']>('all');
+  const [studyStatsExpanded, setStudyStatsExpanded] = useState(false);
 
   const initials = userName
     ? userName
@@ -1024,7 +1032,339 @@ export function ProfileView() {
       </motion.div>
 
       {/* ════════════════════════════════════════════
-          7. Action Buttons
+          7. Study Statistics
+      ════════════════════════════════════════════ */}
+      <motion.div variants={fadeUp} className="glass rounded-2xl card-shadow overflow-hidden">
+        <button
+          onClick={() => setStudyStatsExpanded((v) => !v)}
+          className="w-full flex items-center justify-between p-6 sm:p-8 text-left hover:bg-muted/20 transition-colors"
+          aria-expanded={studyStatsExpanded}
+        >
+          <div className="flex items-center gap-2">
+            <motion.div
+              animate={{ rotate: [0, 5, -5, 0] }}
+              transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <BarChart3 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            </motion.div>
+            <h2 className="text-lg font-semibold gradient-text">Study Statistics</h2>
+            {Object.keys(masteryMap).length > 0 && (
+              <Badge variant="secondary" className="text-[10px] px-2 py-0.5">
+                {Object.keys(masteryMap).length} concept{Object.keys(masteryMap).length !== 1 ? 's' : ''}
+              </Badge>
+            )}
+          </div>
+          <motion.div
+            animate={{ rotate: studyStatsExpanded ? 180 : 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          </motion.div>
+        </button>
+
+        <AnimatePresence>
+          {studyStatsExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+              className="overflow-hidden"
+            >
+              <div className="px-6 sm:px-8 pb-6 sm:pb-8 space-y-8">
+                {/* ── 7a. Subject Mastery Breakdown ── */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Subject Mastery Breakdown</h3>
+                  {Object.keys(masteryMap).length === 0 ? (
+                    <div className="text-center py-6">
+                      <Target className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                      <p className="text-sm text-muted-foreground">No mastery data yet. Start studying to track your progress!</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-1">
+                      {(() => {
+                        const entries = Object.entries(masteryMap)
+                          .map(([name, data]) => ({ name, ...data }))
+                          .sort((a, b) => a.level - b.level);
+                        return entries.map((concept, idx) => {
+                          const pct = (concept.level / 5) * 100;
+                          const masteryColor =
+                            concept.level <= 2
+                              ? 'bg-amber-500'
+                              : concept.level === 3
+                                ? 'bg-emerald-500'
+                                : 'bg-teal-500';
+                          const glowClass =
+                            concept.level >= 4
+                              ? 'shadow-[0_0_8px_oklch(0.687_0.159_177.89/0.5)]'
+                              : '';
+                          return (
+                            <motion.div
+                              key={concept.name}
+                              initial={{ opacity: 0, x: -16 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{
+                                delay: idx * 0.06,
+                                type: 'spring',
+                                stiffness: 350,
+                                damping: 22,
+                              }}
+                              className="space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="font-medium truncate">{concept.name}</span>
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-[10px] px-1.5 py-0 shrink-0"
+                                  >
+                                    {concept.attempts} attempt{concept.attempts !== 1 ? 's' : ''}
+                                  </Badge>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {concept.lastAssessed > 0 && (
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {formatDistanceToNow(new Date(concept.lastAssessed), { addSuffix: true })}
+                                    </span>
+                                  )}
+                                  <span className={`text-xs font-semibold tabular-nums ${concept.level <= 2 ? 'text-amber-600 dark:text-amber-400' : concept.level === 3 ? 'text-emerald-600 dark:text-emerald-400' : 'text-teal-600 dark:text-teal-400'}`}>
+                                    {concept.level}/5
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="h-2 w-full rounded-full bg-muted/60 dark:bg-muted/30 overflow-hidden">
+                                <motion.div
+                                  className={`h-full rounded-full ${masteryColor} ${glowClass}`}
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${pct}%` }}
+                                  transition={{
+                                    duration: 0.8,
+                                    ease: 'easeOut',
+                                    delay: idx * 0.06 + 0.15,
+                                  }}
+                                />
+                              </div>
+                              {concept.level < 3 && (
+                                <motion.button
+                                  whileHover={{ scale: 1.02 }}
+                                  whileTap={{ scale: 0.98 }}
+                                  onClick={() => navigate('tutor')}
+                                  className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
+                                >
+                                  Start Reviewing
+                                </motion.button>
+                              )}
+                            </motion.div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+                <Separator />
+
+                {/* ── 7b. Study Patterns Analysis ── */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Study Patterns Analysis</h3>
+                  {studySessions.length === 0 ? (
+                    <div className="text-center py-6">
+                      <CalendarDays className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                      <p className="text-sm text-muted-foreground">No sessions recorded yet.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Most Productive Day */}
+                      {(() => {
+                        const dayActivity: Record<string, number> = {};
+                        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                        studySessions.forEach((s: StudySession) => {
+                          const day = dayNames[new Date(s.date).getDay()];
+                          dayActivity[day] = (dayActivity[day] || 0) + s.duration;
+                        });
+                        const sorted = Object.entries(dayActivity).sort((a, b) => b[1] - a[1]);
+                        const topDay = sorted[0];
+                        const maxMinutes = topDay ? topDay[1] : 1;
+                        return (
+                          <div className="rounded-xl glass border border-border/40 p-4 space-y-3">
+                            <div className="flex items-center gap-1.5 text-muted-foreground">
+                              <Flame className="w-3.5 h-3.5" />
+                              <span className="text-xs font-medium">Most Productive Day</span>
+                            </div>
+                            <p className="text-sm font-bold text-foreground">{topDay ? topDay[0] : 'N/A'}</p>
+                            <div className="space-y-1.5">
+                              {sorted.slice(0, 5).map(([day, mins]) => (
+                                <div key={day} className="flex items-center gap-2">
+                                  <span className="text-[10px] text-muted-foreground w-8 truncate">{day.slice(0, 3)}</span>
+                                  <div className="flex-1 h-1.5 rounded-full bg-muted/60 dark:bg-muted/30 overflow-hidden">
+                                    <motion.div
+                                      className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                                      initial={{ width: 0 }}
+                                      animate={{ width: `${(mins / maxMinutes) * 100}%` }}
+                                      transition={{ duration: 0.8, ease: 'easeOut', delay: 0.2 }}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] text-muted-foreground tabular-nums">{mins}m</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Session Duration Stats */}
+                      <div className="rounded-xl glass border border-border/40 p-4 space-y-3">
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <Timer className="w-3.5 h-3.5" />
+                          <span className="text-xs font-medium">Session Stats</span>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Average Duration</span>
+                            <span className="font-semibold font-mono tabular-nums">
+                              {(() => {
+                                const avg = Math.round(studySessions.reduce((s: number, ses: StudySession) => s + ses.duration, 0) / studySessions.length);
+                                return `${avg} min`;
+                              })()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Total Study Time</span>
+                            <span className="font-semibold font-mono tabular-nums">
+                              {Math.floor(totalStudyTime / 60)}h {totalStudyTime % 60}m
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Best Streak</span>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">
+                              {bestStreak} days
+                            </span>
+                          </div>
+                          {quizTotal > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Quiz Accuracy</span>
+                              <span className={`font-semibold font-mono tabular-nums ${quizScore / quizTotal >= 0.7 ? 'text-emerald-600 dark:text-emerald-400' : quizScore / quizTotal >= 0.4 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'}`}>
+                                {Math.round((quizScore / quizTotal) * 100)}%
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <Separator />
+
+                {/* ── 7c. Learning Velocity ── */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Learning Velocity</h3>
+                  {(() => {
+                    const now = Date.now();
+                    const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
+                    const twoWeeksAgo = now - 14 * 24 * 60 * 60 * 1000;
+                    const masteryEntries = Object.values(masteryMap);
+
+                    const recentMastery = masteryEntries
+                      .filter((e) => e.lastAssessed >= oneWeekAgo)
+                      .reduce((s, e) => s + e.level, 0);
+                    const priorMastery = masteryEntries
+                      .filter((e) => e.lastAssessed >= twoWeeksAgo && e.lastAssessed < oneWeekAgo)
+                      .reduce((s, e) => s + e.level, 0);
+
+                    const velocityPerWeek = recentMastery;
+                    const priorVelocity = priorMastery;
+
+                    let status: 'Accelerating' | 'Steady' | 'Needs Attention';
+                    let statusColor: string;
+                    let StatusIcon: typeof ArrowUp;
+
+                    if (velocityPerWeek > priorVelocity && velocityPerWeek > 0) {
+                      status = 'Accelerating';
+                      statusColor = 'text-emerald-600 dark:text-emerald-400';
+                      StatusIcon = ArrowUp;
+                    } else if (velocityPerWeek > 0 || priorVelocity > 0) {
+                      status = 'Steady';
+                      statusColor = 'text-amber-600 dark:text-amber-400';
+                      StatusIcon = ArrowRight;
+                    } else {
+                      status = 'Needs Attention';
+                      statusColor = 'text-red-500 dark:text-red-400';
+                      StatusIcon = ArrowDown;
+                    }
+
+                    return (
+                      <div className="flex items-center gap-4 rounded-xl glass border border-border/40 p-4">
+                        <motion.div
+                          animate={{
+                            y: status === 'Accelerating' ? [0, -4, 0] : status === 'Needs Attention' ? [0, 4, 0] : [0, 0],
+                          }}
+                          transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                          className={statusColor}
+                        >
+                          <StatusIcon className="h-6 w-6" />
+                        </motion.div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-semibold ${statusColor}`}>{status}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {velocityPerWeek} mastery level{velocityPerWeek !== 1 ? 's' : ''} gained this week
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-lg font-bold font-mono tabular-nums text-foreground">{velocityPerWeek}</p>
+                          <p className="text-[10px] text-muted-foreground">levels/week</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <Separator />
+
+                {/* ── 7d. Share Stats ── */}
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">Share your learning progress with others</p>
+                  <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300 hover:border-emerald-500/40 transition-all"
+                      onClick={() => {
+                        const totalMastery = Object.values(masteryMap);
+                        const avgMastery = totalMastery.length > 0
+                          ? (totalMastery.reduce((s, c) => s + c.level, 0) / totalMastery.length).toFixed(1)
+                          : '0';
+                        const text = [
+                          `SynapseLearn Study Stats`,
+                          ``,
+                          `Sessions: ${studySessions.length}`,
+                          `Total Study Time: ${Math.floor(totalStudyTime / 60)}h ${totalStudyTime % 60}m`,
+                          `Concepts Tracked: ${totalMastery.length}`,
+                          `Average Mastery: ${avgMastery}/5`,
+                          `Current Streak: ${currentStreak} days`,
+                          `Best Streak: ${bestStreak} days`,
+                          quizTotal > 0 ? `Quiz Accuracy: ${Math.round((quizScore / quizTotal) * 100)}%` : '',
+                        ].filter(Boolean).join('\n');
+                        navigator.clipboard.writeText(text).then(() => {
+                          toast.success('Stats copied to clipboard!');
+                        }).catch(() => {
+                          toast.error('Failed to copy stats');
+                        });
+                      }}
+                    >
+                      <Share2 className="h-3.5 w-3.5 mr-1.5" />
+                      Share Stats
+                    </Button>
+                  </motion.div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* ════════════════════════════════════════════
+          8. Action Buttons
       ════════════════════════════════════════════ */}
       <motion.div variants={fadeUp} className="flex flex-wrap gap-3 pt-2">
         <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>

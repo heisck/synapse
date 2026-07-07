@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings, Achievement, StudySession, StudyGoal } from '@/types';
+import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings, Achievement, StudySession, StudyGoal, StudyNotification, AdaptiveResult } from '@/types';
 
 interface AppState {
   // Navigation
@@ -137,6 +137,24 @@ interface AppState {
   };
   setDailyChallenge: (data: Partial<AppState['dailyChallenge']>) => void;
   resetDailyStreak: () => void;
+
+  // Notifications
+  notifications: StudyNotification[];
+  addNotification: (n: Omit<StudyNotification, 'id' | 'read' | 'createdAt'>) => void;
+  markNotificationRead: (id: string) => void;
+  clearAllNotifications: () => void;
+
+  // Adaptive Results
+  adaptiveResults: AdaptiveResult[];
+  addAdaptiveResult: (result: AdaptiveResult) => void;
+  clearAdaptiveResults: () => void;
+
+  // Viewed Slides & Course Completion
+  viewedSlides: string[];
+  markSlideViewed: (slideId: string) => void;
+  isSlideViewed: (slideId: string) => boolean;
+  completedCourses: string[];
+  completeCourse: (courseId: string) => void;
 
   // UI
   sidebarOpen: boolean;
@@ -720,6 +738,29 @@ export const useAppStore = create<AppState>((set) => ({
     return { studyGoals: updated };
   }),
 
+  // Viewed Slides & Course Completion
+  viewedSlides: [],
+  markSlideViewed: (slideId) => set((s) => {
+    if (s.viewedSlides.includes(slideId)) return s;
+    const updated = [...s.viewedSlides, slideId];
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('synapse-viewed-slides', JSON.stringify(updated)); } catch { /* ignore */ }
+    }
+    return { viewedSlides: updated };
+  }),
+  isSlideViewed: (slideId) => {
+    return useAppStore.getState().viewedSlides.includes(slideId);
+  },
+  completedCourses: [],
+  completeCourse: (courseId) => set((s) => {
+    if (s.completedCourses.includes(courseId)) return s;
+    const updated = [...s.completedCourses, courseId];
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('synapse-completed-courses', JSON.stringify(updated)); } catch { /* ignore */ }
+    }
+    return { completedCourses: updated };
+  }),
+
   sidebarOpen: false,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   isLoading: false,
@@ -735,4 +776,29 @@ export const useAppStore = create<AppState>((set) => ({
   },
   setDailyChallenge: (data) => set((s) => ({ dailyChallenge: { ...s.dailyChallenge, ...data } })),
   resetDailyStreak: () => set({ dailyChallenge: { lastCompletedDate: null, streak: 0, bestScore: 0, totalCompleted: 0, todayResults: null } }),
+
+  // Notifications
+  notifications: [],
+  addNotification: (n) => set((s) => ({
+    notifications: [
+      {
+        ...n,
+        id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      },
+      ...s.notifications,
+    ].slice(0, 50),
+  })),
+  markNotificationRead: (id) => set((s) => ({
+    notifications: s.notifications.map((n) => n.id === id ? { ...n, read: true } : n),
+  })),
+  clearAllNotifications: () => set({ notifications: [] }),
+
+  // Adaptive Results
+  adaptiveResults: [],
+  addAdaptiveResult: (result) => set((s) => ({
+    adaptiveResults: [...s.adaptiveResults, result].slice(-200),
+  })),
+  clearAdaptiveResults: () => set({ adaptiveResults: [] }),
 }));

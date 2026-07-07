@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '@/stores/appStore';
-import type { LearnerProfile, MasteryMap, ChatMessage, Course, StudyGoal } from '@/types';
+import type { LearnerProfile, MasteryMap, ChatMessage, Course, StudyGoal, StudyNotification, AdaptiveResult } from '@/types';
 
 const STORAGE_KEY_PREFIX = 'synapselearn_';
 const KEYS = {
@@ -22,6 +22,10 @@ const KEYS = {
   moodSettings: `${STORAGE_KEY_PREFIX}mood_settings`,
   dailyChallenge: `${STORAGE_KEY_PREFIX}daily_challenge`,
   studyGoals: 'synapse-study-goals',
+  viewedSlides: 'synapse-viewed-slides',
+  completedCourses: 'synapse-completed-courses',
+  notifications: 'synapse-notifications',
+  adaptiveResults: 'synapse-adaptive-results',
 } as const;
 
 // Safely write to localStorage with quota handling
@@ -112,6 +116,10 @@ export function useSessionPersistence(): void {
     } | null>(KEYS.dailyChallenge, null);
     const savedMoodSettings: { energy: number; formality: number; patience: number; humor: number } = safeGetItem(KEYS.moodSettings, { energy: 50, formality: 50, patience: 70, humor: 30 });
     const savedStudyGoals: StudyGoal[] = safeGetItem(KEYS.studyGoals, []);
+    const savedViewedSlides: string[] = safeGetItem(KEYS.viewedSlides, []);
+    const savedCompletedCourses: string[] = safeGetItem(KEYS.completedCourses, []);
+    const savedNotifications: StudyNotification[] = safeGetItem(KEYS.notifications, []);
+    const savedAdaptiveResults: AdaptiveResult[] = safeGetItem(KEYS.adaptiveResults, []);
 
     // Only restore if there is meaningful persisted data
     const hasData =
@@ -121,7 +129,11 @@ export function useSessionPersistence(): void {
       Object.keys(savedMasteryMap).length > 0 ||
       savedOnboarding ||
       savedDailyChallenge !== null ||
-      savedStudyGoals.length > 0;
+      savedStudyGoals.length > 0 ||
+      savedViewedSlides.length > 0 ||
+      savedCompletedCourses.length > 0 ||
+      savedNotifications.length > 0 ||
+      savedAdaptiveResults.length > 0;
 
     if (!hasData) return;
 
@@ -143,6 +155,10 @@ export function useSessionPersistence(): void {
       ...(savedDailyChallenge && { dailyChallenge: savedDailyChallenge }),
       moodSettings: savedMoodSettings,
       ...(savedStudyGoals.length > 0 && { studyGoals: savedStudyGoals }),
+      ...(savedViewedSlides.length > 0 && { viewedSlides: savedViewedSlides }),
+      ...(savedCompletedCourses.length > 0 && { completedCourses: savedCompletedCourses }),
+      ...(savedNotifications.length > 0 && { notifications: savedNotifications }),
+      ...(savedAdaptiveResults.length > 0 && { adaptiveResults: savedAdaptiveResults }),
     });
   }, []);
 
@@ -254,6 +270,24 @@ export function useSessionPersistence(): void {
       },
     );
 
+    const unsubNotifications = store.subscribe(
+      (s) => s.notifications,
+      (notifications) => {
+        if (notifications.length > 0) {
+          safeSetItem(KEYS.notifications, JSON.stringify(notifications));
+        }
+      },
+    );
+
+    const unsubAdaptiveResults = store.subscribe(
+      (s) => s.adaptiveResults,
+      (adaptiveResults) => {
+        if (adaptiveResults.length > 0) {
+          safeSetItem(KEYS.adaptiveResults, JSON.stringify(adaptiveResults));
+        }
+      },
+    );
+
     return () => {
       unsubProfile();
       unsubCourses();
@@ -269,6 +303,8 @@ export function useSessionPersistence(): void {
       unsubTutorMode();
       unsubMoodSettings();
       unsubDailyChallenge();
+      unsubNotifications();
+      unsubAdaptiveResults();
     };
   }, [store]);
 

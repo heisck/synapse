@@ -32,6 +32,9 @@ import {
   Award,
   Hash,
   X,
+  RefreshCw,
+  ClipboardCheck,
+  Check,
 } from 'lucide-react';
 import {
   BarChart,
@@ -44,6 +47,9 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
+import { Slider } from '@/components/ui/slider';
+import { Label } from '@/components/ui/label';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -365,6 +371,581 @@ function getLastSessionTime(): number | null {
   } catch {
     return null;
   }
+}
+
+// --- Study Plan Types ---
+interface StudyPlanSession {
+  topic: string;
+  duration: number;
+  type: 'learn' | 'practice' | 'review' | 'quiz';
+  description: string;
+  resources: string[];
+}
+
+interface StudyPlanDay {
+  day: string;
+  title: string;
+  sessions: StudyPlanSession[];
+}
+
+interface StudyPlanData {
+  plan: {
+    overview: string;
+    totalHours: number;
+    days: StudyPlanDay[];
+    milestones: string[];
+    tips: string[];
+  };
+}
+
+const SESSION_TYPE_CONFIG: Record<string, { icon: typeof BookOpen; color: string; bg: string }> = {
+  learn: { icon: BookOpen, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-500/10' },
+  practice: { icon: Target, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-500/10' },
+  review: { icon: RefreshCw, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-500/10' },
+  quiz: { icon: ClipboardCheck, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/10' },
+};
+
+// Brain loading animation with orbiting dots
+function BrainLoader() {
+  return (
+    <div className="relative w-24 h-24 mx-auto my-6">
+      <motion.div
+        animate={{ scale: [1, 1.05, 1] }}
+        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute inset-0 flex items-center justify-center"
+      >
+        <Brain className="h-10 w-10 text-primary/60" />
+      </motion.div>
+      {[0, 1, 2, 3].map((i) => (
+        <motion.div
+          key={i}
+          className="absolute h-2.5 w-2.5 rounded-full bg-primary"
+          style={{
+            top: '50%',
+            left: '50%',
+          }}
+          animate={{
+            x: [
+              Math.cos((i * Math.PI * 2) / 4) * 38,
+              Math.cos(((i + 1) * Math.PI * 2) / 4) * 38,
+            ],
+            y: [
+              Math.sin((i * Math.PI * 2) / 4) * 38,
+              Math.sin(((i + 1) * Math.PI * 2) / 4) * 38,
+            ],
+            opacity: [0.3, 1, 0.3],
+          }}
+          transition={{
+            duration: 2,
+            repeat: Infinity,
+            delay: i * 0.5,
+            ease: 'linear',
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Study Plan Widget Component
+function StudyPlanWidget({ courses }: { courses: { id: string; title: string; subject: string }[] }) {
+  const [plan, setPlan] = useState<StudyPlanData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  const [checkedMilestones, setCheckedMilestones] = useState<Set<string>>(new Set());
+
+  // Dialog state
+  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [customTopic, setCustomTopic] = useState('');
+  const [hoursPerWeek, setHoursPerWeek] = useState([10]);
+  const [level, setLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('intermediate');
+  const [goals, setGoals] = useState<string[]>([]);
+  const [goalInput, setGoalInput] = useState('');
+  const [pace, setPace] = useState('moderate');
+  const [style, setStyle] = useState('balanced');
+
+  // Load persisted plan
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('synapse-study-plan');
+      if (saved) {
+        setPlan(JSON.parse(saved));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const courseTopics = useMemo(() => {
+    return courses.map((c) => c.title);
+  }, [courses]);
+
+  const toggleTopic = (topic: string) => {
+    setSelectedTopics((prev) =>
+      prev.includes(topic) ? prev.filter((t) => t !== topic) : prev.length < 5 ? [...prev, topic] : prev
+    );
+  };
+
+  const addCustomTopic = () => {
+    const trimmed = customTopic.trim();
+    if (trimmed && !selectedTopics.includes(trimmed) && selectedTopics.length < 5) {
+      setSelectedTopics((prev) => [...prev, trimmed]);
+      setCustomTopic('');
+    }
+  };
+
+  const addGoal = () => {
+    const trimmed = goalInput.trim();
+    if (trimmed && goals.length < 3) {
+      setGoals((prev) => [...prev, trimmed]);
+      setGoalInput('');
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (selectedTopics.length === 0) {
+      toast.error('Please select at least one topic');
+      return;
+    }
+
+    setLoading(true);
+    setDialogOpen(false);
+
+    try {
+      const res = await fetch('/api/study-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topics: selectedTopics,
+          hoursPerWeek: hoursPerWeek[0],
+          level,
+          goals,
+          preferences: { pace, style },
+        }),
+      });
+
+      const data = await res.json();
+      if (data.plan) {
+        setPlan(data);
+        setExpandedDay(data.plan.days[0]?.day ?? null);
+        setCheckedMilestones(new Set());
+        try { localStorage.setItem('synapse-study-plan', JSON.stringify(data)); } catch { /* ignore */ }
+        toast.success('Study plan generated successfully');
+      } else {
+        toast.error(data.error || 'Failed to generate study plan');
+      }
+    } catch {
+      toast.error('Failed to connect. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleMilestone = (milestone: string) => {
+    setCheckedMilestones((prev) => {
+      const next = new Set(prev);
+      if (next.has(milestone)) {
+        next.delete(milestone);
+      } else {
+        next.add(milestone);
+      }
+      return next;
+    });
+  };
+
+  const handleRegenerate = () => {
+    setDialogOpen(true);
+  };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="glass rounded-xl p-6">
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles className="h-5 w-5 text-primary" />
+          <h3 className="font-semibold text-sm">Generating Your Study Plan</h3>
+        </div>
+        <BrainLoader />
+        <p className="text-sm text-muted-foreground text-center">
+          AI is crafting a personalized plan for you...
+        </p>
+      </div>
+    );
+  }
+
+  // Plan display
+  if (plan) {
+    return (
+      <div className="glass rounded-xl p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Brain className="h-5 w-5 text-primary" />
+            <h3 className="font-semibold text-sm">Your Study Plan</h3>
+            <Badge variant="secondary" className="text-xs">
+              {plan.plan.totalHours} hrs/week
+            </Badge>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleRegenerate}>
+              <RefreshCw className="h-3.5 w-3.5 mr-1" />
+              Regenerate
+            </Button>
+          </div>
+        </div>
+
+        {/* Overview */}
+        <motion.p
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="text-sm text-muted-foreground leading-relaxed"
+        >
+          {plan.plan.overview}
+        </motion.p>
+
+        {/* 7-day timeline */}
+        <div className="space-y-2">
+          {plan.plan.days.map((day, dayIdx) => {
+            const isExpanded = expandedDay === day.day;
+            const totalMinutes = day.sessions.reduce((s, sess) => s + sess.duration, 0);
+            return (
+              <motion.div
+                key={day.day}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: dayIdx * 0.06, ease: 'easeOut' }}
+                className="rounded-lg border border-border/50 overflow-hidden"
+              >
+                <button
+                  onClick={() => setExpandedDay(isExpanded ? null : day.day)}
+                  className="w-full flex items-center justify-between p-3 hover:bg-accent/50 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-xs font-bold text-primary">
+                      {day.day.slice(0, 2)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{day.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {day.sessions.length} session{day.sessions.length !== 1 ? 's' : ''} -- {totalMinutes} min
+                      </p>
+                    </div>
+                  </div>
+                  <motion.div
+                    animate={{ rotate: isExpanded ? 180 : 0 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                  >
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  </motion.div>
+                </button>
+
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3, ease: 'easeOut' }}
+                      className="overflow-hidden"
+                    >
+                      <div className="px-3 pb-3 space-y-2">
+                        {day.sessions.map((session, sessIdx) => {
+                          const typeConfig = SESSION_TYPE_CONFIG[session.type] || SESSION_TYPE_CONFIG.learn;
+                          const TypeIcon = typeConfig.icon;
+                          return (
+                            <motion.div
+                              key={sessIdx}
+                              initial={{ opacity: 0, x: -12 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: sessIdx * 0.08, duration: 0.3, ease: 'easeOut' }}
+                              className="glass rounded-lg p-3 space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded ${typeConfig.bg}`}>
+                                    <TypeIcon className={`h-3.5 w-3.5 ${typeConfig.color}`} />
+                                  </div>
+                                  <Badge variant="outline" className="text-[10px] shrink-0 capitalize">
+                                    {session.topic}
+                                  </Badge>
+                                </div>
+                                <span className="text-xs text-muted-foreground shrink-0">{session.duration} min</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground leading-relaxed">{session.description}</p>
+                              {session.resources.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {session.resources.map((r, ri) => (
+                                    <span key={ri} className="text-[10px] text-primary/70 bg-primary/5 px-1.5 py-0.5 rounded">
+                                      {r}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        {/* Milestones checklist */}
+        {plan.plan.milestones.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Milestones</p>
+            <div className="space-y-1.5">
+              {plan.plan.milestones.map((milestone, idx) => {
+                const checked = checkedMilestones.has(milestone);
+                return (
+                  <motion.button
+                    key={idx}
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.08, duration: 0.3 }}
+                    onClick={() => toggleMilestone(milestone)}
+                    className="flex items-center gap-2.5 w-full text-left p-2 rounded-lg hover:bg-accent/50 transition-colors"
+                  >
+                    <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
+                      checked
+                        ? 'bg-emerald-500 border-emerald-500 text-white'
+                        : 'border-muted-foreground/30'
+                    }`}>
+                      {checked && (
+                        <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 400, damping: 20 }}>
+                          <Check className="h-3 w-3" />
+                        </motion.span>
+                      )}
+                    </div>
+                    <span className={`text-sm ${checked ? 'line-through text-muted-foreground' : ''}`}>{milestone}</span>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Tips */}
+        {plan.plan.tips.length > 0 && (
+          <div className="rounded-lg bg-amber-500/5 border border-amber-500/10 p-3 space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
+              <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">Study Tips</p>
+            </div>
+            <ul className="space-y-1">
+              {plan.plan.tips.map((tip, idx) => (
+                <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                  <span className="text-amber-500 mt-0.5">--</span>
+                  {tip}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Default state: Generate Plan button
+  return (
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <div className="glass rounded-xl p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            <h3 className="font-semibold text-sm">Your Study Plan</h3>
+          </div>
+          <DialogTrigger asChild>
+            <Button size="sm" className="glow-emerald">
+              <Sparkles className="h-4 w-4 mr-2" />
+              Generate Plan
+            </Button>
+          </DialogTrigger>
+        </div>
+        <p className="text-sm text-muted-foreground mt-2">
+          Get a personalized weekly study plan powered by AI based on your topics and goals.
+        </p>
+      </div>
+
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Brain className="h-5 w-5 text-primary" />
+            Generate Study Plan
+          </DialogTitle>
+          <DialogDescription>
+            Configure your preferences and let AI create a personalized weekly study schedule.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-5 py-2">
+          {/* Topics selection */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Topics (select up to 5)</Label>
+            <div className="flex flex-wrap gap-2">
+              {courseTopics.map((topic) => (
+                <button
+                  key={topic}
+                  onClick={() => toggleTopic(topic)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all border ${
+                    selectedTopics.includes(topic)
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background border-border hover:border-primary/50 hover:text-primary'
+                  }`}
+                >
+                  {topic}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Add a custom topic..."
+                value={customTopic}
+                onChange={(e) => setCustomTopic(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomTopic(); } }}
+                className="text-sm h-8"
+                disabled={selectedTopics.length >= 5}
+              />
+              <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={addCustomTopic} disabled={selectedTopics.length >= 5 || !customTopic.trim()}>
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            {selectedTopics.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {selectedTopics.map((t) => (
+                  <Badge key={t} variant="secondary" className="text-xs gap-1 pr-1">
+                    {t}
+                    <button onClick={() => toggleTopic(t)} className="ml-0.5 hover:text-destructive">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Hours per week slider */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Hours per week</Label>
+              <span className="text-sm font-bold text-primary">{hoursPerWeek[0]} hrs</span>
+            </div>
+            <Slider
+              value={hoursPerWeek}
+              onValueChange={setHoursPerWeek}
+              min={1}
+              max={20}
+              step={1}
+              className="w-full"
+            />
+          </div>
+
+          {/* Difficulty level */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Difficulty Level</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['beginner', 'intermediate', 'advanced'] as const).map((l) => (
+                <button
+                  key={l}
+                  onClick={() => setLevel(l)}
+                  className={`rounded-lg px-3 py-2 text-xs font-medium transition-all border capitalize ${
+                    level === l
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background border-border hover:border-primary/50 hover:text-primary'
+                  }`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Goals */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Goals (optional, max 3)</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="e.g., Pass the exam next month"
+                value={goalInput}
+                onChange={(e) => setGoalInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addGoal(); } }}
+                className="text-sm h-8"
+                disabled={goals.length >= 3}
+              />
+              <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={addGoal} disabled={goals.length >= 3 || !goalInput.trim()}>
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            {goals.length > 0 && (
+              <div className="space-y-1">
+                {goals.map((g, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <Target className="h-3 w-3 text-primary shrink-0" />
+                    <span className="flex-1">{g}</span>
+                    <button onClick={() => setGoals((prev) => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-destructive">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Preferences */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Pace</Label>
+              <div className="flex gap-1">
+                {['relaxed', 'moderate', 'intensive'].map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPace(p)}
+                    className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all border capitalize ${
+                      pace === p
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-background border-border hover:border-primary/50'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Style</Label>
+              <div className="flex gap-1">
+                {['visual', 'balanced', 'reading'].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStyle(s)}
+                    className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all border capitalize ${
+                      style === s
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-background border-border hover:border-primary/50'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setDialogOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleGenerate} disabled={selectedTopics.length === 0} className="glow-emerald">
+            <Sparkles className="h-4 w-4 mr-2" />
+            Generate Plan
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export function Dashboard() {
@@ -898,6 +1479,11 @@ export function Dashboard() {
             </div>
           );
         })()}
+      </motion.div>
+
+      {/* Your Study Plan - AI Generated */}
+      <motion.div variants={fadeUp}>
+        <StudyPlanWidget courses={courses} />
       </motion.div>
 
       {/* Learning Path Progress */}

@@ -33,7 +33,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/appStore';
 import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
-import type { Question } from '@/types';
+import type { Question, AdaptiveResult } from '@/types';
 
 type StudyMode = 'quiz' | 'flashcard' | 'daily' | 'review';
 
@@ -286,6 +286,122 @@ const COURSE_QUIZ_GROUPS = [
   { id: 'demo-course', label: 'Cell Biology', icon: BookOpen },
   { id: 'cs-course', label: 'Computer Science', icon: BookOpen },
 ];
+
+// ---------- Adaptive Difficulty Helpers ----------
+const ADAPTIVE_STORAGE_KEY = 'synapse-adaptive-results';
+
+function loadAdaptiveResults(): AdaptiveResult[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(ADAPTIVE_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAdaptiveResults(results: AdaptiveResult[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(ADAPTIVE_STORAGE_KEY, JSON.stringify(results));
+  } catch {
+    // storage unavailable
+  }
+}
+
+interface AdaptiveScoringInput {
+  question: Question;
+  masteryMap: Record<string, { level: number; evidence: string[]; lastAssessed: number; attempts: number }>;
+  adaptiveResults: AdaptiveResult[];
+  dueConcepts: Set<string>;
+}
+
+interface ScoredQuestion {
+  question: Question;
+  score: number;
+  reasons: string[];
+}
+
+function scoreQuestionForAdaptive(input: AdaptiveScoringInput): ScoredQuestion {
+  const { question, masteryMap, adaptiveResults, dueConcepts } = input;
+  let score = 0;
+  const reasons: string[] = [];
+  const concept = question.concept || 'Unknown';
+  const mastery = masteryMap[concept];
+
+  // 1. Low mastery bonus (level 1-2)
+  if (mastery && mastery.level < 3) {
+    score += 3;
+    reasons.push('low mastery');
+  }
+
+  // 2. Spaced repetition due for review
+  if (dueConcepts.has(concept)) {
+    score += 2;
+    reasons.push('needs review');
+  }
+
+  // 3. Recent performance: last 5 results on concept
+  const conceptResults = adaptiveResults
+    .filter((r) => r.concept === concept)
+    .slice(-5);
+  const last3 = conceptResults.slice(-3);
+  const wrongCount = last3.filter((r) => !r.correct).length;
+  const correctCount = conceptResults.filter((r) => r.correct).length;
+
+  if (wrongCount >= 2) {
+    score += 2;
+    reasons.push('recent struggles');
+  }
+
+  // 4. Difficulty match bonus
+  const targetLevel = mastery ? Math.min(mastery.level + 1, 3) : 1;
+  const targetDifficulty = targetLevel === 1 ? 'easy' : targetLevel === 2 ? 'medium' : 'hard';
+  if (question.difficulty === targetDifficulty) {
+    score += 1;
+  } else if (
+    (targetDifficulty === 'medium' && question.difficulty === 'easy') ||
+    (targetDifficulty === 'hard' && question.difficulty === 'medium')
+  ) {
+    score += 0.5;
+  }
+
+  // 5. Boost for concepts with many wrong answers (weaker areas)
+  if (correctCount >= 3) {
+    score += 1;
+    reasons.push('ready for harder questions');
+  }
+
+  return { question, score, reasons };
+}
+
+function getAdaptiveReasoning(scored: ScoredQuestion[]): string {
+  if (scored.length === 0) return '';
+
+  const conceptReasons = new Map<string, string[]>();
+  for (const sq of scored.slice(0, 5)) {
+    const concept = sq.question.concept || 'Unknown';
+    const existing = conceptReasons.get(concept) || [];
+    conceptReasons.set(concept, [...existing, ...sq.reasons]);
+  }
+
+  const parts: string[] = [];
+  for (const [concept, reasons] of conceptReasons) {
+    const uniqueReasons = [...new Set(reasons)];
+    const desc = uniqueReasons.map((r) => {
+      switch (r) {
+        case 'low mastery': return 'low mastery';
+        case 'needs review': return 'needs review';
+        case 'recent struggles': return 'struggling recently';
+        case 'ready for harder questions': return 'ready for challenge';
+        default: return r;
+      }
+    }).join(', ');
+    parts.push(`${concept} (${desc})`);
+  }
+
+  return 'Focusing on: ' + parts.join(', ');
+}
 
 // ---------- Confetti particle ----------
 function ConfettiParticle({ delay, color }: { delay: number; color: string }) {
@@ -721,11 +837,12 @@ function MatchingInput({
 
 // ---------- Main QuizView ----------
 export function QuizView() {
-  const { navigate, currentQuestions, activeCourse, updateMastery } = useAppStore();
+  const { navigate, currentQuestions, activeCourse, updateMastery, adaptiveResults, addAdaptiveResult, masteryMap } = useAppStore();
 
   const allQuestions = currentQuestions.length > 0 ? currentQuestions : MOCK_QUESTIONS;
 
   const [studyMode, setStudyMode] = useState<StudyMode>('quiz');
+  const [adaptiveOn, setAdaptiveOn] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<string>('all');
   const [showBookmarked, setShowBookmarked] = useState(false);
   const [bookmarkedQuestions, setBookmarkedQuestions] = useState<Set<string>>(new Set());
@@ -744,6 +861,36 @@ export function QuizView() {
   const { dueItems, reviewItem, overdueCount } = useSpacedRepetition();
   const [reviewShowResults, setReviewShowResults] = useState(false);
   const [reviewedCount, setReviewedCount] = useState(0);
+
+  // Adaptive difficulty: compute adaptive questions and reasoning
+  const dueConcepts = useMemo(() => new Set(dueItems.map((item) => item.questionId)), [dueItems]);
+
+  const { adaptiveQuestions, adaptiveReasoning } = useMemo(() => {
+    if (!adaptiveOn || studyMode !== 'quiz') {
+      return { adaptiveQuestions: null as Question[] | null, adaptiveReasoning: '' };
+    }
+
+    // Load additional adaptive results from localStorage for richer history
+    const localStorageResults = loadAdaptiveResults();
+    const allAdaptiveResults = [...localStorageResults, ...adaptiveResults];
+
+    const pool = selectedCourse === 'all' ? allQuestions : allQuestions.filter((q) => q.courseId === selectedCourse);
+
+    const scored = pool
+      .filter((q) => q.concept)
+      .map((q) => scoreQuestionForAdaptive({
+        question: q,
+        masteryMap,
+        adaptiveResults: allAdaptiveResults,
+        dueConcepts,
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const top10 = scored.slice(0, 10).map((s) => s.question);
+    const reasoning = getAdaptiveReasoning(scored);
+
+    return { adaptiveQuestions: top10, adaptiveReasoning: reasoning };
+  }, [adaptiveOn, studyMode, selectedCourse, allQuestions, masteryMap, adaptiveResults, dueConcepts]);
 
   // Review questions: match dueItems to actual questions by concept
   const reviewQuestions = useMemo<Question[]>(() => {
@@ -1145,12 +1292,15 @@ export function QuizView() {
 
   // Filter questions by selected course and bookmarked
   const questions = useMemo(() => {
+    if (adaptiveOn && studyMode === 'quiz' && adaptiveQuestions) {
+      return adaptiveQuestions;
+    }
     let filtered = selectedCourse === 'all' ? allQuestions : allQuestions.filter((q) => q.courseId === selectedCourse);
     if (showBookmarked) {
       filtered = filtered.filter((q) => bookmarkedQuestions.has(q.id));
     }
     return filtered;
-  }, [allQuestions, selectedCourse, showBookmarked, bookmarkedQuestions]);
+  }, [allQuestions, selectedCourse, showBookmarked, bookmarkedQuestions, adaptiveOn, studyMode, adaptiveQuestions]);
 
   const currentQ = questions[currentIndex];
   const progress = questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0;
@@ -1196,8 +1346,20 @@ export function QuizView() {
       } else {
         setStreak(0);
       }
+
+      // Track adaptive result
+      if (adaptiveOn && studyMode === 'quiz' && currentQ.concept) {
+        const result: AdaptiveResult = {
+          concept: currentQ.concept,
+          correct: isCorrect(currentQ, answer),
+          difficulty: currentQ.difficulty,
+          timestamp: Date.now(),
+        };
+        addAdaptiveResult(result);
+        saveAdaptiveResults([...adaptiveResults, result].slice(-200));
+      }
     },
-    [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted],
+    [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted, adaptiveOn, studyMode, adaptiveResults, addAdaptiveResult],
   );
 
   // Review mode answer handler
@@ -1620,6 +1782,30 @@ export function QuizView() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 <h1 className="text-xl font-bold gradient-text">{studyMode === 'quiz' ? 'Quiz Practice' : studyMode === 'flashcard' ? 'Flashcard Study' : studyMode === 'review' ? 'Spaced Review' : 'Daily Challenge'}</h1>
+                {/* Adaptive toggle */}
+                <button
+                  onClick={() => {
+                    setAdaptiveOn((prev) => !prev);
+                    setCurrentIndex(0);
+                    setAnswers({});
+                    setAnswered({});
+                    setShowExplanation(false);
+                    setShowResults(false);
+                    setStreak(0);
+                    setBestStreak(0);
+                    setTimerStarted(false);
+                    setTimerSeconds(0);
+                  }}
+                  className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all border ${
+                    adaptiveOn
+                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-400'
+                      : 'text-muted-foreground hover:text-foreground border-transparent'
+                  }`}
+                  title={adaptiveOn ? 'Disable adaptive difficulty' : 'Enable adaptive difficulty'}
+                >
+                  <Brain className="w-3.5 h-3.5" />
+                  Adaptive
+                </button>
                 {/* Mode toggle */}
                 <div className="flex items-center rounded-lg border border-border bg-background/50 p-0.5">
                   <button
@@ -1674,6 +1860,18 @@ export function QuizView() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {/* Adaptive badge */}
+                {adaptiveOn && studyMode === 'quiz' && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3 py-1"
+                  >
+                    <Brain className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Adaptive</span>
+                  </motion.div>
+                )}
                 {/* Timer display (quiz mode only) */}
                 {studyMode === 'quiz' && timerStarted && (
                   <motion.div
@@ -1755,6 +1953,16 @@ export function QuizView() {
               </motion.button>
             )}
           </div>
+            )}
+            {/* Adaptive reasoning */}
+            {adaptiveOn && studyMode === 'quiz' && adaptiveReasoning && (
+              <motion.p
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-[11px] text-muted-foreground mt-1.5 truncate max-w-full"
+              >
+                {adaptiveReasoning}
+              </motion.p>
             )}
           {studyMode !== 'daily' && studyMode !== 'review' && difficultyTotal > 0 && (
             <div className="flex items-center gap-3 mt-2">

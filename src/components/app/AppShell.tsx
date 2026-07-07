@@ -2,13 +2,15 @@
 
 import { Suspense, lazy, useState, useRef, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Keyboard, Timer } from 'lucide-react';
+import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Keyboard, Timer, Bell, Flame, Target, Lightbulb, Clock, CheckCheck } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { AppSidebar } from './AppSidebar';
 import { StoreInitializer } from './StoreInitializer';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import type { AppView } from '@/types';
+import { Button } from '@/components/ui/button';
+import { useNotifications } from '@/hooks/useNotifications';
+import type { StudyNotification, AppView } from '@/types';
 
 const LandingPage = lazy(() =>
   import('@/components/landing/LandingPage').then((m) => ({ default: m.LandingPage }))
@@ -593,6 +595,178 @@ function KeyboardShortcuts() {
   );
 }
 
+// ---------- Notification Bell ----------
+function getNotificationIcon(type: StudyNotification['type']) {
+  switch (type) {
+    case 'streak': return Flame;
+    case 'achievement': return Target;
+    case 'goal': return Target;
+    case 'review': return Clock;
+    case 'tip': return Lightbulb;
+    default: return Bell;
+  }
+}
+
+function formatRelativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHr = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
+
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+function NotificationBell() {
+  const { notifications, markNotificationRead, clearAllNotifications, navigate, currentView } = useAppStore();
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleNotificationClick = (notif: StudyNotification) => {
+    markNotificationRead(notif.id);
+    if (notif.actionView) {
+      navigate(notif.actionView);
+      setOpen(false);
+    }
+  };
+
+  // Only show bell when not on landing or onboarding
+  if (currentView === 'landing' || currentView === 'onboarding') return null;
+
+  return (
+    <div ref={dropdownRef} className="relative">
+      <motion.button
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        onClick={() => setOpen((v) => !v)}
+        className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border/60 bg-background/60 hover:bg-accent/50 transition-colors"
+        aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
+      >
+        <Bell className="h-4 w-4 text-muted-foreground" />
+        <AnimatePresence>
+          {unreadCount > 0 && (
+            <motion.span
+              key={unreadCount}
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+              className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white px-1"
+            >
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </motion.button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -8, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="absolute right-0 top-12 z-50 w-80 sm:w-96 glass rounded-xl border border-border/60 shadow-xl overflow-hidden"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
+              <h3 className="text-sm font-semibold">Notifications</h3>
+              {notifications.length > 0 && (
+                <button
+                  onClick={clearAllNotifications}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+
+            {/* Notification list */}
+            <div className="max-h-80 overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <Bell className="h-8 w-8 text-muted-foreground/30 mb-2" />
+                  <p className="text-sm text-muted-foreground">No notifications yet</p>
+                </div>
+              ) : (
+                notifications.slice(0, 20).map((notif, idx) => {
+                  const Icon = getNotificationIcon(notif.type);
+                  return (
+                    <motion.button
+                      key={notif.id}
+                      initial={{ opacity: 0, x: -12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.04, duration: 0.2 }}
+                      onClick={() => handleNotificationClick(notif)}
+                      className={`w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-accent/30 transition-colors border-b border-border/20 last:border-b-0 ${
+                        !notif.read ? 'border-l-2 border-l-emerald-500' : ''
+                      }`}
+                    >
+                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg mt-0.5 ${
+                        !notif.read ? 'bg-emerald-500/10' : 'bg-muted/50'
+                      }`}>
+                        <Icon className={`h-4 w-4 ${!notif.read ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className={`text-sm font-medium truncate ${!notif.read ? 'text-foreground' : 'text-muted-foreground'}`}>
+                            {notif.title}
+                          </p>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{notif.message}</p>
+                        <div className="flex items-center justify-between mt-1.5">
+                          <span className="text-[10px] text-muted-foreground/60">{formatRelativeTime(notif.createdAt)}</span>
+                          {notif.actionLabel && (
+                            <span className="text-[10px] font-medium text-primary">{notif.actionLabel}</span>
+                          )}
+                        </div>
+                      </div>
+                    </motion.button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            {unreadCount > 0 && (
+              <div className="border-t border-border/40 px-4 py-2.5">
+                <button
+                  onClick={() => {
+                    notifications.filter((n) => !n.read).forEach((n) => markNotificationRead(n.id));
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors w-full justify-center"
+                >
+                  <CheckCheck className="h-3.5 w-3.5" />
+                  Mark all as read
+                </button>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 const fullViewportViews: Array<string> = ['landing', 'onboarding'];
 
 // Spring transition config for view changes
@@ -603,6 +777,9 @@ export function AppShell() {
   const isFullViewport = fullViewportViews.includes(currentView);
   const [transitioning, setTransitioning] = useState(false);
   const prevViewRef = useRef(currentView);
+
+  // Generate contextual notifications
+  useNotifications();
 
   // Detect view changes to trigger transition indicator
   useEffect(() => {
@@ -687,6 +864,10 @@ export function AppShell() {
           >
             <AppSidebar />
             <main className={`relative flex-1 min-h-screen overflow-y-auto overflow-x-hidden ${currentView === 'tutor' ? '!p-0 !max-w-none' : ''}`}>
+              {/* Notification bell - top right */}
+              <div className="fixed top-4 right-4 z-40">
+                <NotificationBell />
+              </div>
               {/* Animated mesh-gradient background */}
               <div
                 className="pointer-events-none fixed inset-0 -z-10 opacity-40 dark:opacity-20"

@@ -165,3 +165,21 @@ export interface StudyGoal {
   createdAt: string;
   weekStart: string; // YYYY-MM-DD of the Monday of the current week
 }
+
+export interface StudyNotification {
+  id: string;
+  type: 'reminder' | 'achievement' | 'streak' | 'goal' | 'review' | 'tip';
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
+  actionLabel?: string;
+  actionView?: AppView;
+}
+
+export interface AdaptiveResult {
+  concept: string;
+  correct: boolean;
+  difficulty: string;
+  timestamp: number;
+}

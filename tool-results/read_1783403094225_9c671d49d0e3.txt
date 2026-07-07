@@ -1,0 +1,1053 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useMemo, useState, useEffect } from 'react';
+     4→     4→import { motion, AnimatePresence, useSpring, useMotionValue, useTransform } from 'framer-motion';
+     5→     5→import {
+     6→     6→  Mail,
+     7→     7→  Palette,
+     8→     8→  Gauge,
+     9→     9→  Eye,
+    10→    10→  BookOpen,
+    11→    11→  MessageSquare,
+    12→    12→  Brain,
+    13→    13→  LogOut,
+    14→    14→  Settings,
+    15→    15→  Lightbulb,
+    16→    16→  Target,
+    17→    17→  Zap,
+    18→    18→  Trophy,
+    19→    19→  Star,
+    20→    20→  Flame,
+    21→    21→  Rocket,
+    22→    22→  Compass,
+    23→    23→  MessageCircle,
+    24→    24→  TrendingUp,
+    25→    25→  BarChart3,
+    26→    26→  Sparkles,
+    27→    27→  Lock,
+    28→    28→  Activity,
+    29→    29→  Footprints,
+    30→    30→  GraduationCap,
+    31→    31→  Database,
+    32→    32→  Pencil,
+    33→    33→  FolderOpen,
+    34→    34→  Timer,
+    35→    35→  Sunrise,
+    36→    36→  CheckCircle2,
+    37→    37→  Users,
+    38→    38→} from 'lucide-react';
+    39→    39→import { Button } from '@/components/ui/button';
+    40→    40→import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+    41→    41→import { Separator } from '@/components/ui/separator';
+    42→    42→import { Badge } from '@/components/ui/badge';
+    43→    43→import { useAppStore } from '@/stores/appStore';
+    44→    44→import { ThemeToggle } from '@/components/shared/ThemeToggle';
+    45→    45→import { clearSessionStorage } from '@/hooks/useSessionPersistence';
+    46→    46→import { useStudyStreak, useTotalStudyTime } from '@/hooks/useStudyTracker';
+    47→    47→import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
+    48→    48→import { format, formatDistanceToNow } from 'date-fns';
+    49→    49→import type { Achievement } from '@/types';
+    50→    50→
+    51→    51→/* ── Dynamic Icon Map ── */
+    52→    52→const iconMap: Record<string, typeof Eye> = {
+    53→    53→  Footprints,
+    54→    54→  BookOpen,
+    55→    55→  GraduationCap,
+    56→    56→  Star,
+    57→    57→  Trophy,
+    58→    58→  Zap,
+    59→    59→  Flame,
+    60→    60→  Rocket,
+    61→    61→  Brain,
+    62→    62→  Database,
+    63→    63→  Pencil,
+    64→    64→  FolderOpen,
+    65→    65→  Timer,
+    66→    66→  Sunrise,
+    67→    67→};
+    68→    68→
+    69→    69→/* ── Animation Variants ── */
+    70→    70→const stagger = {
+    71→    71→  animate: { transition: { staggerChildren: 0.08 } },
+    72→    72→};
+    73→    73→const fadeUp = {
+    74→    74→  initial: { opacity: 0, y: 20 },
+    75→    75→  animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
+    76→    76→};
+    77→    77→
+    78→    78→const achievementGridStagger = {
+    79→    79→  animate: { transition: { staggerChildren: 0.06 } },
+    80→    80→};
+    81→    81→const achievementCardVariant = {
+    82→    82→  initial: { opacity: 0, scale: 0.85, y: 12 },
+    83→    83→  animate: { opacity: 1, scale: 1, y: 0, transition: { type: 'spring', stiffness: 400, damping: 25 } },
+    84→    84→};
+    85→    85→
+    86→    86→/* ── Animated Number Component ── */
+    87→    87→function AnimatedNumber({ value }: { value: string }) {
+    88→    88→  const numericValue = parseInt(value, 10);
+    89→    89→  const motionVal = useMotionValue(0);
+    90→    90→  const display = useTransform(motionVal, (v) => Math.round(v).toString());
+    91→    91→  const spring = useSpring(motionVal, { stiffness: 100, damping: 30, mass: 1 });
+    92→    92→
+    93→    93→  useEffect(() => {
+    94→    94→    if (!isNaN(numericValue)) {
+    95→    95→      motionVal.set(numericValue);
+    96→    96→    }
+    97→    97→  }, [numericValue, motionVal]);
+    98→    98→
+    99→    99→  // Subscribe to the spring value for rendering
+   100→   100→  const [displayValue, setDisplayValue] = useState('0');
+   101→   101→  useEffect(() => {
+   102→   102→    const unsubscribe = spring.on('change', (v) => {
+   103→   103→      setDisplayValue(Math.round(v).toString());
+   104→   104→    });
+   105→   105→    return unsubscribe;
+   106→   106→  }, [spring]);
+   107→   107→
+   108→   108→  if (isNaN(numericValue)) return <>{value}</>;
+   109→   109→  return <>{displayValue}</>;
+   110→   110→}
+   111→   111→
+   112→   112→/* ── Static Data ── */
+   113→   113→const styleLabels: Record<string, { icon: typeof Eye; label: string; color: string }> = {
+   114→   114→  visual: { icon: Eye, label: 'Visual', color: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' },
+   115→   115→  auditory: { icon: MessageSquare, label: 'Auditory', color: 'bg-teal-500/10 text-teal-700 dark:text-teal-400' },
+   116→   116→  reading: { icon: BookOpen, label: 'Reading/Writing', color: 'bg-amber-500/10 text-amber-700 dark:text-amber-400' },
+   117→   117→  kinesthetic: { icon: Zap, label: 'Kinesthetic', color: 'bg-orange-500/10 text-orange-700 dark:text-orange-400' },
+   118→   118→};
+   119→   119→
+   120→   120→const paceLabels: Record<string, { label: string; desc: string; icon: typeof Gauge }> = {
+   121→   121→  slow: { label: 'Slow & Steady', desc: 'Thorough explanations, extra examples', icon: Gauge },
+   122→   122→  steady: { label: 'Balanced', desc: 'Moderate pace with periodic reviews', icon: Activity },
+   123→   123→  fast: { label: 'Fast Track', desc: 'Concise explanations, quick progression', icon: Rocket },
+   124→   124→};
+   125→   125→
+   126→   126→const categoryTabs: Array<{ key: 'all' | Achievement['category']; label: string; icon?: typeof Users }> = [
+   127→   127→  { key: 'all', label: 'All' },
+   128→   128→  { key: 'study', label: 'Study' },
+   129→   129→  { key: 'quiz', label: 'Quiz' },
+   130→   130→  { key: 'streak', label: 'Streak' },
+   131→   131→  { key: 'mastery', label: 'Mastery' },
+   132→   132→  { key: 'social', label: 'Social', icon: Users },
+   133→   133→];
+   134→   134→
+   135→   135→const rarityStyles: Record<Achievement['rarity'], { border: string; bg: string; badgeBg: string; badgeText: string; text: string; glow: string }> = {
+   136→   136→  common: { border: 'border-gray-500/30', bg: 'bg-gray-500/10', badgeBg: 'bg-gray-500/10', badgeText: 'text-gray-600 dark:text-gray-400', text: 'text-gray-500', glow: '' },
+   137→   137→  rare: { border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', badgeBg: 'bg-emerald-500/10', badgeText: 'text-emerald-600 dark:text-emerald-400', text: 'text-emerald-500', glow: 'hover:shadow-[0_0_20px_rgba(16,185,129,0.15)]' },
+   138→   138→  epic: { border: 'border-blue-500/30', bg: 'bg-blue-500/10', badgeBg: 'bg-blue-500/10', badgeText: 'text-blue-600 dark:text-blue-400', text: 'text-blue-500', glow: 'hover:shadow-[0_0_20px_rgba(59,130,246,0.15)]' },
+   139→   139→  legendary: { border: 'border-purple-500/30', bg: 'bg-purple-500/10', badgeBg: 'bg-purple-500/10', badgeText: 'text-purple-600 dark:text-purple-400', text: 'text-purple-500', glow: 'hover:shadow-[0_0_25px_rgba(168,85,247,0.2)]' },
+   140→   140→};
+   141→   141→
+   142→   142→/* ── Heatmap Generator (from real study sessions) ── */
+   143→   143→function generateHeatmap(sessions: { date: string }[]): { opacity: number }[][] {
+   144→   144→  const weeks = 5;
+   145→   145→  const days = 7;
+   146→   146→
+   147→   147→  // Count sessions per date string (YYYY-MM-DD)
+   148→   148→  const dateCounts: Record<string, number> = {};
+   149→   149→  for (const s of sessions) {
+   150→   150→    const d = s.date.startsWith('T') ? s.date.split('T')[0] : s.date;
+   151→   151→    dateCounts[d] = (dateCounts[d] || 0) + 1;
+   152→   152→  }
+   153→   153→
+   154→   154→  // Build a list of the past 35 days (week 0 = this week, week 4 = 4 weeks ago)
+   155→   155→  const today = new Date();
+   156→   156→  // Find the Monday of the current week
+   157→   157→  const dayOfWeek = today.getDay(); // 0=Sun, 1=Mon...
+   158→   158→  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+   159→   159→  const thisMonday = new Date(today);
+   160→   160→  thisMonday.setDate(today.getDate() + mondayOffset);
+   161→   161→
+   162→   162→  // grid[weekIdx][dayIdx]: weekIdx 0=4w ago, 4=this week; dayIdx 0=Mon..6=Sun
+   163→   163→  const grid: { opacity: number }[][] = [];
+   164→   164→  for (let w = 0; w < weeks; w++) {
+   165→   165→    const week: { opacity: number }[] = [];
+   166→   166→    for (let d = 0; d < days; d++) {
+   167→   167→      // Date for this cell
+   168→   168→      const cellDate = new Date(thisMonday);
+   169→   169→      cellDate.setDate(thisMonday.getDate() + (w - weeks + 1) * 7 + d);
+   170→   170→      const dateStr = cellDate.toISOString().split('T')[0];
+   171→   171→      const count = dateCounts[dateStr] || 0;
+   172→   172→
+   173→   173→      // Intensity: 0=none, 1=1 session, 2=2-3, 3=4+
+   174→   174→      let intensity = 0;
+   175→   175→      if (count >= 4) intensity = 3;
+   176→   176→      else if (count >= 2) intensity = 2;
+   177→   177→      else if (count >= 1) intensity = 1;
+   178→   178→
+   179→   179→      const opacityMap = [0, 0.25, 0.5, 0.8];
+   180→   180→      week.push({ opacity: opacityMap[intensity] });
+   181→   181→    }
+   182→   182→    grid.push(week);
+   183→   183→  }
+   184→   184→  return grid;
+   185→   185→}
+   186→   186→
+   187→   187→const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+   188→   188→
+   189→   189→/* ── Heatmap Cell Component ── */
+   190→   190→function HeatmapCell({ opacity, weekIdx, dayIdx }: { opacity: number; weekIdx: number; dayIdx: number }) {
+   191→   191→  const [hovered, setHovered] = useState(false);
+   192→   192→  const hasActivity = opacity > 0;
+   193→   193→  const levelLabel = hasActivity
+   194→   194→    ? opacity >= 0.8 ? 'High' : opacity >= 0.5 ? 'Medium' : 'Low'
+   195→   195→    : 'No activity';
+   196→   196→
+   197→   197→  return (
+   198→   198→    <div className="relative flex-1">
+   199→   199→      <motion.div
+   200→   200→        className={`aspect-square rounded-sm cursor-default transition-all duration-300 ${
+   201→   201→          hasActivity ? 'hover:scale-125 hover:rounded-md' : 'bg-muted/40 dark:bg-muted/20'
+   202→   202→        }`}
+   203→   203→        style={
+   204→   204→          hasActivity
+   205→   205→            ? {
+   206→   206→                backgroundColor: `oklch(0.627 0.194 149.214 / ${opacity})`,
+   207→   207→              }
+   208→   208→            : undefined
+   209→   209→        }
+   210→   210→        whileHover={hasActivity ? { scale: 1.3, zIndex: 10 } : undefined}
+   211→   211→        onMouseEnter={() => setHovered(true)}
+   212→   212→        onMouseLeave={() => setHovered(false)}
+   213→   213→      />
+   214→   214→      <AnimatePresence>
+   215→   215→        {hovered && hasActivity && (
+   216→   216→          <motion.div
+   217→   217→            initial={{ opacity: 0, y: 4, scale: 0.9 }}
+   218→   218→            animate={{ opacity: 1, y: 0, scale: 1 }}
+   219→   219→            exit={{ opacity: 0, y: 4, scale: 0.9 }}
+   220→   220→            transition={{ duration: 0.15 }}
+   221→   221→            className="absolute -top-8 left-1/2 -translate-x-1/2 z-20 px-2 py-1 rounded-md bg-popover border border-border shadow-lg text-[10px] font-medium whitespace-nowrap pointer-events-none"
+   222→   222→          >
+   223→   223→            {levelLabel} activity
+   224→   224→          </motion.div>
+   225→   225→        )}
+   226→   226→      </AnimatePresence>
+   227→   227→    </div>
+   228→   228→  );
+   229→   229→}
+   230→   230→
+   231→   231→/* ── Achievement Card Component ── */
+   232→   232→function AchievementCard({ achievement, index }: { achievement: Achievement; index: number }) {
+   233→   233→  const isUnlocked = achievement.unlockedAt !== null;
+   234→   234→  const IconComp = iconMap[achievement.icon] || Star;
+   235→   235→  const rarity = rarityStyles[achievement.rarity];
+   236→   236→
+   237→   237→  return (
+   238→   238→    <motion.div
+   239→   239→      variants={achievementCardVariant}
+   240→   240→      className={`relative rounded-xl border ${rarity.border} overflow-hidden glass-hover transition-shadow duration-300 ${
+   241→   241→        rarity.glow
+   242→   242→      } ${
+   243→   243→        isUnlocked ? rarity.bg : 'bg-muted/30 dark:bg-muted/20 border-border/50'
+   244→   244→      }`}
+   245→   245→    >
+   246→   246→      {/* Shimmer overlay for unlocked */}
+   247→   247→      {isUnlocked && (
+   248→   248→        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+   249→   249→          <motion.div
+   250→   250→            className="absolute inset-0 -translate-x-full"
+   251→   251→            animate={{ translateX: ['0%', '100%', '200%'] }}
+   252→   252→            transition={{ duration: 3, repeat: Infinity, ease: 'linear', delay: index * 0.2 }}
+   253→   253→            style={{
+   254→   254→              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)',
+   255→   255→            }}
+   256→   256→          />
+   257→   257→        </div>
+   258→   258→      )}
+   259→   259→
+   260→   260→      <div className="relative p-3 sm:p-4 space-y-2.5">
+   261→   261→        {/* Icon + Rarity Badge */}
+   262→   262→        <div className="flex items-start justify-between gap-2">
+   263→   263→          <div
+   264→   264→            className={`flex items-center justify-center h-10 w-10 sm:h-12 sm:w-12 rounded-xl transition-all duration-300 ${
+   265→   265→              isUnlocked
+   266→   266→                ? `${rarity.bg} ring-2 ${rarity.border}`
+   267→   267→                : 'bg-muted/50 dark:bg-muted/30'
+   268→   268→            }`}
+   269→   269→          >
+   270→   270→            {isUnlocked ? (
+   271→   271→              <IconComp className={`h-5 w-5 sm:h-6 sm:w-6 ${rarity.text}`} />
+   272→   272→            ) : (
+   273→   273→              <Lock className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground/30" />
+   274→   274→            )}
+   275→   275→          </div>
+   276→   276→          <Badge
+   277→   277→            variant="outline"
+   278→   278→            className={`text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider border-0 ${rarity.badgeBg} ${rarity.badgeText} shrink-0`}
+   279→   279→          >
+   280→   280→            {achievement.rarity}
+   281→   281→          </Badge>
+   282→   282→        </div>
+   283→   283→
+   284→   284→        {/* Title + Description */}
+   285→   285→        <div className="min-w-0 space-y-0.5">
+   286→   286→          <h4 className={`text-xs sm:text-sm font-semibold truncate ${isUnlocked ? 'text-foreground' : 'text-muted-foreground/60'}`}>
+   287→   287→            {achievement.title}
+   288→   288→          </h4>
+   289→   289→          <p className={`text-[10px] sm:text-xs leading-relaxed line-clamp-2 ${isUnlocked ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>
+   290→   290→            {achievement.description}
+   291→   291→          </p>
+   292→   292→        </div>
+   293→   293→
+   294→   294→        {/* Progress / Unlock Date */}
+   295→   295→        {isUnlocked ? (
+   296→   296→          <motion.p
+   297→   297→            initial={{ opacity: 0 }}
+   298→   298→            animate={{ opacity: 1 }}
+   299→   299→            className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1"
+   300→   300→          >
+   301→   301→            <CheckCircle2 className="h-3 w-3" />
+   302→   302→            {format(new Date(achievement.unlockedAt!), 'MMM d, yyyy')}
+   303→   303→          </motion.p>
+   304→   304→        ) : (
+   305→   305→          <div className="space-y-1">
+   306→   306→            <div className="h-1.5 w-full rounded-full bg-muted/60 dark:bg-muted/40 overflow-hidden">
+   307→   307→              <motion.div
+   308→   308→                className="h-full rounded-full bg-gradient-to-r from-muted-foreground/30 to-muted-foreground/50"
+   309→   309→                initial={{ width: 0 }}
+   310→   310→                animate={{ width: `${Math.max(2, achievement.progress)}%` }}
+   311→   311→                transition={{ duration: 0.6, delay: index * 0.04, ease: 'easeOut' }}
+   312→   312→              />
+   313→   313→            </div>
+   314→   314→            <p className="text-[9px] sm:text-[10px] text-muted-foreground/50">
+   315→   315→              {Math.round(achievement.progress)}% complete
+   316→   316→            </p>
+   317→   317→          </div>
+   318→   318→        )}
+   319→   319→      </div>
+   320→   320→    </motion.div>
+   321→   321→  );
+   322→   322→}
+   323→   323→
+   324→   324→/* ── Component ── */
+   325→   325→export function ProfileView() {
+   326→   326→  const { userName, userEmail, learnerProfile, hardSubjects, alwaysConfuses, bestTeachingStyle, navigate, setOnboardingComplete, achievements, studySessions, masteryMap, quizScore, quizTotal } = useAppStore();
+   327→   327→  const { current: currentStreak, best: bestStreak } = useStudyStreak();
+   328→   328→  const totalStudyTime = useTotalStudyTime();
+   329→   329→  const { items: srItems, getStudyPlan } = useSpacedRepetition();
+   330→   330→  const calendarPlan = getStudyPlan(14);
+   331→   331→  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+   332→   332→  const totalTrackedItems = srItems.length;
+   333→   333→  const nextReviewTime = srItems.length > 0
+   334→   334→    ? new Date(Math.min(...srItems.map((item) => item.nextReview)))
+   335→   335→    : null;
+   336→   336→
+   337→   337→  const [activeCategory, setActiveCategory] = useState<'all' | Achievement['category']>('all');
+   338→   338→
+   339→   339→  const initials = userName
+   340→   340→    ? userName
+   341→   341→        .split(' ')
+   342→   342→        .map((n) => n[0])
+   343→   343→        .join('')
+   344→   344→        .toUpperCase()
+   345→   345→        .slice(0, 2)
+   346→   346→    : 'SL';
+   347→   347→
+   348→   348→  const heatmap = useMemo(() => generateHeatmap(studySessions), [studySessions]);
+   349→   349→  const weekLabels = ['4w ago', '3w ago', '2w ago', 'Last week', 'This week'];
+   350→   350→
+   351→   351→  // Filtered achievements
+   352→   352→  const filteredAchievements = useMemo(() => {
+   353→   353→    if (activeCategory === 'all') return achievements;
+   354→   354→    return achievements.filter((a) => a.category === activeCategory);
+   355→   355→  }, [achievements, activeCategory]);
+   356→   356→
+   357→   357→  const unlockedCount = achievements.filter((a) => a.unlockedAt !== null).length;
+   358→   358→
+   359→   359→  // Real stats data
+   360→   360→  const statsData = useMemo(() => {
+   361→   361→    const hours = Math.floor(totalStudyTime / 60);
+   362→   362→    const mins = totalStudyTime % 60;
+   363→   363→    const totalMastery = Object.values(useAppStore.getState().masteryMap);
+   364→   364→    const avgMastery = totalMastery.length > 0
+   365→   365→      ? Math.round(totalMastery.reduce((s, c) => s + c.level, 0) / totalMastery.length)
+   366→   366→      : 0;
+   367→   367→    const totalMessages = studySessions.reduce((s, ses) => s + ses.messagesCount, 0);
+   368→   368→    return [
+   369→   369→      { label: 'Total Sessions', value: String(studySessions.length), icon: BookOpen, change: `${hours}h ${mins}m studied` },
+   370→   370→      { label: 'Mastery Rate', value: avgMastery > 0 ? `${avgMastery}%` : 'N/A', icon: Target, change: `${totalMastery.length} concepts tracked` },
+   371→   371→      { label: 'Messages Sent', value: String(totalMessages), icon: MessageCircle, change: `${studySessions.length} sessions` },
+   372→   372→      { label: 'Study Streak', value: currentStreak > 0 ? `${currentStreak} days` : '0 days', icon: Flame, change: bestStreak > 0 ? `Best: ${bestStreak} days` : 'Start studying!' },
+   373→   373→    ];
+   374→   374→  }, [studySessions, currentStreak, bestStreak, totalStudyTime]);
+   375→   375→
+   376→   376→  // Dynamic skill bars from real data
+   377→   377→  const computedSkillBars = useMemo(() => {
+   378→   378→    const masteryValues = Object.values(masteryMap);
+   379→   379→    const conceptCount = masteryValues.length;
+   380→   380→
+   381→   381→    // Comprehension: average mastery level (0-100, level is 1-5 so multiply by 20)
+   382→   382→    const comprehension = masteryValues.length > 0
+   383→   383→      ? Math.min(100, Math.round(masteryValues.reduce((s, c) => s + c.level, 0) / masteryValues.length * 20))
+   384→   384→      : 0;
+   385→   385→
+   386→   386→    // Problem Solving: quiz performance or fallback to mastery average
+   387→   387→    const problemSolving = quizScore !== null && quizTotal !== null && quizTotal > 0
+   388→   388→      ? Math.min(100, Math.round((quizScore / quizTotal) * 100))
+   389→   389→      : comprehension;
+   390→   390→
+   391→   391→    // Knowledge Base: (concepts learned / 50) * 100
+   392→   392→    const knowledgeBase = Math.min(100, Math.round((conceptCount / 50) * 100));
+   393→   393→
+   394→   394→    // Consistency: based on streak (max streak of 14+ = 100)
+   395→   395→    const consistency = Math.min(100, Math.round((currentStreak / 14) * 100));
+   396→   396→
+   397→   397→    // Engagement: total study sessions / 20 * 100
+   398→   398→    const engagement = Math.min(100, Math.round((studySessions.length / 20) * 100));
+   399→   399→
+   400→   400→    return [
+   401→   401→      { name: 'Comprehension', value: comprehension },
+   402→   402→      { name: 'Problem Solving', value: problemSolving },
+   403→   403→      { name: 'Knowledge Base', value: knowledgeBase },
+   404→   404→      { name: 'Consistency', value: consistency },
+   405→   405→      { name: 'Engagement', value: engagement },
+   406→   406→    ];
+   407→   407→  }, [masteryMap, quizScore, quizTotal, currentStreak, studySessions.length]);
+   408→   408→
+   409→   409→  const handleReconfigure = () => {
+   410→   410→    setOnboardingComplete(false);
+   411→   411→    navigate('onboarding');
+   412→   412→  };
+   413→   413→
+   414→   414→  const handleSignOut = () => {
+   415→   415→    clearSessionStorage();
+   416→   416→    navigate('landing');
+   417→   417→  };
+   418→   418→
+   419→   419→  const styleInfo = learnerProfile ? styleLabels[learnerProfile.learningStyle] : null;
+   420→   420→  const paceInfo = learnerProfile ? paceLabels[learnerProfile.pace] : null;
+   421→   421→
+   422→   422→  return (
+   423→   423→    <motion.div
+   424→   424→      variants={stagger}
+   425→   425→      initial="initial"
+   426→   426→      animate="animate"
+   427→   427→      className="space-y-6 pt-2 lg:pt-4 max-w-3xl mx-auto pl-14 lg:pl-0 pb-8"
+   428→   428→    >
+   429→   429→      {/* ════════════════════════════════════════════
+   430→   430→          1. Profile Header
+   431→   431→      ════════════════════════════════════════════ */}
+   432→   432→      <motion.div variants={fadeUp} className="glass rounded-2xl overflow-hidden gradient-border card-shadow">
+   433→   433→        {/* Animated gradient header strip */}
+   434→   434→        <div className="h-24 sm:h-28 mesh-gradient relative overflow-hidden">
+   435→   435→          <motion.div
+   436→   436→            className="absolute inset-0"
+   437→   437→            animate={{
+   438→   438→              background: [
+   439→   439→                'radial-gradient(ellipse 80% 50% at 20% 40%, rgba(16,185,129,0.12) 0%, transparent 50%), radial-gradient(ellipse 60% 40% at 80% 20%, rgba(20,184,166,0.1) 0%, transparent 50%)',
+   440→   440→                'radial-gradient(ellipse 80% 50% at 60% 60%, rgba(16,185,129,0.15) 0%, transparent 50%), radial-gradient(ellipse 60% 40% at 30% 30%, rgba(20,184,166,0.12) 0%, transparent 50%)',
+   441→   441→                'radial-gradient(ellipse 80% 50% at 20% 40%, rgba(16,185,129,0.12) 0%, transparent 50%), radial-gradient(ellipse 60% 40% at 80% 20%, rgba(20,184,166,0.1) 0%, transparent 50%)',
+   442→   442→              ],
+   443→   443→            }}
+   444→   444→            transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+   445→   445→          />
+   446→   446→          <div className="absolute inset-0 grid-pattern opacity-30" />
+   447→   447→        </div>
+   448→   448→        <div className="px-6 sm:px-8 pb-6 sm:pb-8 -mt-12 relative z-10">
+   449→   449→          <div className="flex items-start gap-5">
+   450→   450→            {/* Avatar with pulsing glow ring */}
+   451→   451→            <div className="relative">
+   452→   452→              <motion.div
+   453→   453→                className="absolute -inset-1 rounded-full"
+   454→   454→                animate={{
+   455→   455→                  boxShadow: [
+   456→   456→                    '0 0 8px rgba(16,185,129,0.2), 0 0 16px rgba(16,185,129,0.1)',
+   457→   457→                    '0 0 16px rgba(16,185,129,0.4), 0 0 32px rgba(16,185,129,0.2)',
+   458→   458→                    '0 0 8px rgba(16,185,129,0.2), 0 0 16px rgba(16,185,129,0.1)',
+   459→   459→                  ],
+   460→   460→                }}
+   461→   461→                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+   462→   462→              />
+   463→   463→              <Avatar className="h-20 w-20 ring-2 ring-emerald-500/30 ring-offset-2 ring-offset-background shrink-0 relative z-10">
+   464→   464→                <AvatarFallback className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xl font-bold">
+   465→   465→                  {initials}
+   466→   466→                </AvatarFallback>
+   467→   467→              </Avatar>
+   468→   468→            </div>
+   469→   469→            <div className="flex-1 min-w-0 space-y-1.5 pt-2">
+   470→   470→              <div className="flex items-center gap-3 flex-wrap">
+   471→   471→                <h1 className="text-2xl sm:text-3xl font-bold gradient-text truncate">
+   472→   472→                  {userName || 'Student'}
+   473→   473→                </h1>
+   474→   474→                <ThemeToggle />
+   475→   475→              </div>
+   476→   476→              <div className="flex items-center gap-2 text-muted-foreground">
+   477→   477→                <Mail className="h-4 w-4 shrink-0" />
+   478→   478→                <p className="text-sm truncate">{userEmail || 'student@synapselearn.ai'}</p>
+   479→   479→              </div>
+   480→   480→              <div className="flex items-center gap-3 pt-1">
+   481→   481→                <Badge
+   482→   482→                  variant="secondary"
+   483→   483→                  className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15"
+   484→   484→                >
+   485→   485→                  <Sparkles className="h-3 w-3 mr-1" />
+   486→   486→                  Free Plan
+   487→   487→                </Badge>
+   488→   488→                {unlockedCount > 0 && (
+   489→   489→                  <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400 border-amber-500/20">
+   490→   490→                    <Trophy className="h-3 w-3 mr-1" />
+   491→   491→                    {unlockedCount} unlocked
+   492→   492→                  </Badge>
+   493→   493→                )}
+   494→   494→              </div>
+   495→   495→            </div>
+   496→   496→          </div>
+   497→   497→        </div>
+   498→   498→      </motion.div>
+   499→   499→
+   500→   500→      {/* ════════════════════════════════════════════
+   501→   501→          2. Learning Profile
+   502→   502→      ════════════════════════════════════════════ */}
+   503→   503→      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-5 card-shadow">
+   504→   504→        <div className="flex items-center justify-between">
+   505→   505→          <div className="flex items-center gap-2">
+   506→   506→            <motion.div
+   507→   507→              animate={{ y: [0, -2, 0] }}
+   508→   508→              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+   509→   509→            >
+   510→   510→              <Brain className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+   511→   511→            </motion.div>
+   512→   512→            <h2 className="text-lg font-semibold gradient-text">Learning Profile</h2>
+   513→   513→          </div>
+   514→   514→          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+   515→   515→            <Button variant="ghost" size="sm" onClick={handleReconfigure} className="text-muted-foreground hover:text-foreground transition-colors">
+   516→   516→              <Settings className="h-4 w-4 mr-1" />
+   517→   517→              Reconfigure
+   518→   518→            </Button>
+   519→   519→          </motion.div>
+   520→   520→        </div>
+   521→   521→
+   522→   522→        {learnerProfile ? (
+   523→   523→          <div className="space-y-4">
+   524→   524→            {/* Learning Style */}
+   525→   525→            <div className="flex items-center gap-3 flex-wrap">
+   526→   526→              {styleInfo && (
+   527→   527→                <div
+   528→   528→                  className={`flex items-center gap-2 rounded-xl px-4 py-2.5 font-medium ${styleInfo.color}`}
+   529→   529→                >
+   530→   530→                  <styleInfo.icon className="h-4 w-4" />
+   531→   531→                  <span className="text-sm">{styleInfo.label} Learner</span>
+   532→   532→                </div>
+   533→   533→              )}
+   534→   534→              {bestTeachingStyle && (
+   535→   535→                <Badge variant="outline" className="rounded-xl px-3 py-1.5 text-xs">
+   536→   536→                  <Lightbulb className="h-3 w-3 mr-1" />
+   537→   537→                  Best style: {bestTeachingStyle}
+   538→   538→                </Badge>
+   539→   539→              )}
+   540→   540→              {learnerProfile.masteryApproach && (
+   541→   541→                <Badge variant="outline" className="rounded-xl px-3 py-1.5 text-xs">
+   542→   542→                  <Target className="h-3 w-3 mr-1" />
+   543→   543→                  Mastery: {learnerProfile.masteryApproach}
+   544→   544→                </Badge>
+   545→   545→              )}
+   546→   546→            </div>
+   547→   547→
+   548→   548→            <Separator />
+   549→   549→
+   550→   550→            {/* Pace */}
+   551→   551→            <div className="space-y-2">
+   552→   552→              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+   553→   553→                {paceInfo && <paceInfo.icon className="h-4 w-4" />}
+   554→   554→                {!paceInfo && <Gauge className="h-4 w-4" />}
+   555→   555→                <span>Learning Pace</span>
+   556→   556→              </div>
+   557→   557→              {paceInfo ? (
+   558→   558→                <div>
+   559→   559→                  <p className="font-medium text-sm">{paceInfo.label}</p>
+   560→   560→                  <p className="text-xs text-muted-foreground">{paceInfo.desc}</p>
+   561→   561→                </div>
+   562→   562→              ) : (
+   563→   563→                <p className="text-sm text-muted-foreground">Not configured</p>
+   564→   564→              )}
+   565→   565→            </div>
+   566→   566→
+   567→   567→            <Separator />
+   568→   568→
+   569→   569→            {/* Preferences */}
+   570→   570→            <div className="space-y-3">
+   571→   571→              <p className="text-sm text-muted-foreground flex items-center gap-2">
+   572→   572→                <Lightbulb className="h-4 w-4" />
+   573→   573→                Preferences
+   574→   574→              </p>
+   575→   575→              <div className="flex flex-wrap gap-2">
+   576→   576→                {learnerProfile.prefersStory && (
+   577→   577→                  <Badge
+   578→   578→                    variant="outline"
+   579→   579→                    className="rounded-lg border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 text-xs"
+   580→   580→                  >
+   581→   581→                    Stories &amp; Analogies
+   582→   582→                  </Badge>
+   583→   583→                )}
+   584→   584→                {learnerProfile.prefersBigPicture && (
+   585→   585→                  <Badge
+   586→   586→                    variant="outline"
+   587→   587→                    className="rounded-lg border-teal-500/20 bg-teal-500/5 text-teal-700 dark:text-teal-400 text-xs"
+   588→   588→                  >
+   589→   589→                    Big Picture First
+   590→   590→                  </Badge>
+   591→   591→                )}
+   592→   592→                {learnerProfile.vocabularySensitive && (
+   593→   593→                  <Badge
+   594→   594→                    variant="outline"
+   595→   595→                    className="rounded-lg border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-400 text-xs"
+   596→   596→                  >
+   597→   597→                    Simple Vocabulary
+   598→   598→                  </Badge>
+   599→   599→                )}
+   600→   600→                {learnerProfile.simpleGrammar && (
+   601→   601→                  <Badge
+   602→   602→                    variant="outline"
+   603→   603→                    className="rounded-lg border-rose-500/20 bg-rose-500/5 text-rose-700 dark:text-rose-400 text-xs"
+   604→   604→                  >
+   605→   605→                    Simple Grammar
+   606→   606→                  </Badge>
+   607→   607→                )}
+   608→   608→                {learnerProfile.masteryApproach === 'evidence' && (
+   609→   609→                  <Badge
+   610→   610→                    variant="outline"
+   611→   611→                    className="rounded-lg border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 text-xs"
+   612→   612→                  >
+   613→   613→                    Evidence-Based Mastery
+   614→   614→                  </Badge>
+   615→   615→                )}
+   616→   616→                <Badge variant="outline" className="rounded-lg text-xs">
+   617→   617→                  Jargon Tolerance: {learnerProfile.jargonTolerance}/10
+   618→   618→                </Badge>
+   619→   619→              </div>
+   620→   620→            </div>
+   621→   621→
+   622→   622→            {/* Hard Subjects & Confusion */}
+   623→   623→            {(hardSubjects.length || alwaysConfuses) && (
+   624→   624→              <>
+   625→   625→                <Separator />
+   626→   626→                <div className="space-y-2">
+   627→   627→                  <p className="text-sm text-muted-foreground flex items-center gap-2">
+   628→   628→                    <Target className="h-4 w-4" />
+   629→   629→                    Focus Areas
+   630→   630→                  </p>
+   631→   631→                  <div className="flex flex-wrap gap-2">
+   632→   632→                    {hardSubjects.map((s) => (
+   633→   633→                      <Badge key={s} variant="secondary" className="text-xs">
+   634→   634→                        {s}
+   635→   635→                      </Badge>
+   636→   636→                    ))}
+   637→   637→                    {alwaysConfuses && (
+   638→   638→                      <Badge variant="secondary" className="text-xs">
+   639→   639→                        Confused by: {alwaysConfuses}
+   640→   640→                      </Badge>
+   641→   641→                    )}
+   642→   642→                  </div>
+   643→   643→                </div>
+   644→   644→              </>
+   645→   645→            )}
+   646→   646→          </div>
+   647→   647→        ) : (
+   648→   648→          <div className="text-center py-10">
+   649→   649→            <Palette className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+   650→   650→            <p className="text-sm text-muted-foreground mb-1">No learning profile configured yet.</p>
+   651→   651→            <p className="text-xs text-muted-foreground/70 mb-4">
+   652→   652→              Set up your preferences for a personalized learning experience.
+   653→   653→            </p>
+   654→   654→            <Button variant="outline" size="sm" onClick={handleReconfigure}>
+   655→   655→              <Target className="h-4 w-4 mr-2" />
+   656→   656→              Configure Learning Profile
+   657→   657→            </Button>
+   658→   658→          </div>
+   659→   659→        )}
+   660→   660→      </motion.div>
+   661→   661→
+   662→   662→      {/* ════════════════════════════════════════════
+   663→   663→          3. Stats Overview (Real Data)
+   664→   664→      ════════════════════════════════════════════ */}
+   665→   665→      <motion.div variants={fadeUp}>
+   666→   666→        <h2 className="text-lg font-semibold gradient-text mb-4 flex items-center gap-2">
+   667→   667→          <motion.div
+   668→   668→            animate={{ rotate: [0, 5, -5, 0] }}
+   669→   669→            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+   670→   670→          >
+   671→   671→            <BarChart3 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+   672→   672→          </motion.div>
+   673→   673→          Stats Overview
+   674→   674→        </h2>
+   675→   675→        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+   676→   676→          {statsData.map((stat, idx) => (
+   677→   677→            <motion.div
+   678→   678→              key={stat.label}
+   679→   679→              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+   680→   680→              animate={{ opacity: 1, y: 0, scale: 1 }}
+   681→   681→              transition={{ delay: idx * 0.1, type: 'spring', stiffness: 300, damping: 25 }}
+   682→   682→              className="glass rounded-2xl p-4 sm:p-5 space-y-3 hover:glow-emerald-strong transition-shadow duration-500 card-shadow"
+   683→   683→              whileHover={{ y: -4, transition: { duration: 0.2 } }}
+   684→   684→            >
+   685→   685→              <div className="flex items-center justify-between">
+   686→   686→                <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-emerald-500/10">
+   687→   687→                  <stat.icon className="h-4.5 w-4.5 text-emerald-600 dark:text-emerald-400" />
+   688→   688→                </div>
+   689→   689→              </div>
+   690→   690→              <div>
+   691→   691→                <p className="text-2xl sm:text-3xl font-bold tracking-tight">
+   692→   692→                  <AnimatedNumber value={stat.value} />
+   693→   693→                </p>
+   694→   694→                <p className="text-xs text-muted-foreground mt-0.5">{stat.label}</p>
+   695→   695→              </div>
+   696→   696→              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+   697→   697→                {stat.change}
+   698→   698→              </p>
+   699→   699→            </motion.div>
+   700→   700→          ))}
+   701→   701→        </div>
+   702→   702→      </motion.div>
+   703→   703→
+   704→   704→      {/* ════════════════════════════════════════════
+   705→   705→          4. Achievements (Enhanced)
+   706→   706→      ════════════════════════════════════════════ */}
+   707→   707→      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-5 card-shadow">
+   708→   708→        <div className="space-y-4">
+   709→   709→          {/* Header + Progress */}
+   710→   710→          <div className="flex items-center justify-between flex-wrap gap-3">
+   711→   711→            <div className="flex items-center gap-2">
+   712→   712→              <motion.div
+   713→   713→                animate={{ rotate: [0, 10, -10, 0] }}
+   714→   714→                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+   715→   715→              >
+   716→   716→                <Trophy className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+   717→   717→              </motion.div>
+   718→   718→              <h2 className="text-lg font-semibold gradient-text">Achievements</h2>
+   719→   719→            </div>
+   720→   720→            <span className="text-sm text-muted-foreground font-medium">
+   721→   721→              {unlockedCount}/{achievements.length} unlocked
+   722→   722→            </span>
+   723→   723→          </div>
+   724→   724→
+   725→   725→          {/* Overall progress bar */}
+   726→   726→          <div className="space-y-1.5">
+   727→   727→            <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
+   728→   728→              <motion.div
+   729→   729→                className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500 relative overflow-hidden"
+   730→   730→                initial={{ width: 0 }}
+   731→   731→                animate={{ width: `${achievements.length > 0 ? (unlockedCount / achievements.length) * 100 : 0}%` }}
+   732→   732→                transition={{ duration: 0.8, ease: 'easeOut', delay: 0.2 }}
+   733→   733→              >
+   734→   734→                <div className="absolute inset-0 shimmer" />
+   735→   735→              </motion.div>
+   736→   736→            </div>
+   737→   737→          </div>
+   738→   738→
+   739→   739→          {/* Category Filter Tabs */}
+   740→   740→          <div className="flex items-center gap-1.5 flex-wrap">
+   741→   741→            {categoryTabs.map((tab) => {
+   742→   742→              const count = tab.key === 'all'
+   743→   743→                ? achievements.length
+   744→   744→                : achievements.filter((a) => a.category === tab.key).length;
+   745→   745→              const isActive = activeCategory === tab.key;
+   746→   746→              return (
+   747→   747→                <motion.button
+   748→   748→                  key={tab.key}
+   749→   749→                  whileHover={{ scale: 1.05 }}
+   750→   750→                  whileTap={{ scale: 0.95 }}
+   751→   751→                  onClick={() => setActiveCategory(tab.key)}
+   752→   752→                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+   753→   753→                    isActive
+   754→   754→                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 glow-emerald'
+   755→   755→                      : 'text-muted-foreground hover:bg-muted/50 border border-transparent'
+   756→   756→                  }`}
+   757→   757→                >
+   758→   758→                  {tab.label}
+   759→   759→                  <span className="ml-1 text-[10px] opacity-60">({count})</span>
+   760→   760→                </motion.button>
+   761→   761→              );
+   762→   762→            })}
+   763→   763→          </div>
+   764→   764→        </div>
+   765→   765→
+   766→   766→        {/* Achievement Grid */}
+   767→   767→        <AnimatePresence mode="wait">
+   768→   768→          <motion.div
+   769→   769→            key={activeCategory}
+   770→   770→            variants={achievementGridStagger}
+   771→   771→            initial="initial"
+   772→   772→            animate="animate"
+   773→   773→            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"
+   774→   774→          >
+   775→   775→            {filteredAchievements.map((ach, idx) => (
+   776→   776→              <AchievementCard key={ach.id} achievement={ach} index={idx} />
+   777→   777→            ))}
+   778→   778→          </motion.div>
+   779→   779→        </AnimatePresence>
+   780→   780→
+   781→   781→        {filteredAchievements.length === 0 && (
+   782→   782→          <div className="text-center py-8">
+   783→   783→            <Lock className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+   784→   784→            <p className="text-sm text-muted-foreground">No achievements in this category yet.</p>
+   785→   785→          </div>
+   786→   786→        )}
+   787→   787→      </motion.div>
+   788→   788→
+   789→   789→      {/* ════════════════════════════════════════════
+   790→   790→          5. Activity Heatmap
+   791→   791→      ════════════════════════════════════════════ */}
+   792→   792→      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-4 card-shadow">
+   793→   793→        <div className="flex items-center gap-2">
+   794→   794→          <motion.div
+   795→   795→            animate={{ y: [0, -2, 0] }}
+   796→   796→            transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+   797→   797→          >
+   798→   798→            <TrendingUp className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+   799→   799→          </motion.div>
+   800→   800→          <h2 className="text-lg font-semibold gradient-text">Activity</h2>
+   801→   801→        </div>
+   802→   802→
+   803→   803→        {/* Heatmap Grid */}
+   804→   804→        {studySessions.length === 0 ? (
+   805→   805→          <div className="text-center py-6">
+   806→   806→            <Activity className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+   807→   807→            <p className="text-sm text-muted-foreground">No activity yet. Start a study session to see your heatmap!</p>
+   808→   808→          </div>
+   809→   809→        ) : (
+   810→   810→        <div className="overflow-x-auto -mx-2 px-2">
+   811→   811→          <div className="min-w-[280px]">
+   812→   812→            {/* Day labels */}
+   813→   813→            <div className="flex gap-1.5 mb-1.5 pl-8">
+   814→   814→              {weekLabels.map((label) => (
+   815→   815→                <div
+   816→   816→                  key={label}
+   817→   817→                  className="flex-1 text-center text-[10px] text-muted-foreground/60"
+   818→   818→                >
+   819→   819→                  {label}
+   820→   820→                </div>
+   821→   821→              ))}
+   822→   822→            </div>
+   823→   823→
+   824→   824→            {/* Rows (days) */}
+   825→   825→            {dayLabels.map((day, dayIdx) => (
+   826→   826→              <div key={day} className="flex items-center gap-1.5">
+   827→   827→                <span className="w-7 text-right text-[10px] text-muted-foreground/60 shrink-0 pr-1">
+   828→   828→                  {day}
+   829→   829→                </span>
+   830→   830→                {heatmap.map((week, weekIdx) => {
+   831→   831→                  const cell = week[dayIdx];
+   832→   832→                  return (
+   833→   833→                    <HeatmapCell
+   834→   834→                      key={`${weekIdx}-${dayIdx}`}
+   835→   835→                      opacity={cell.opacity}
+   836→   836→                      weekIdx={weekIdx}
+   837→   837→                      dayIdx={dayIdx}
+   838→   838→                    />
+   839→   839→                  );
+   840→   840→                })}
+   841→   841→              </div>
+   842→   842→            ))}
+   843→   843→
+   844→   844→            {/* Legend */}
+   845→   845→            <div className="flex items-center justify-end gap-1.5 mt-3">
+   846→   846→              <span className="text-[10px] text-muted-foreground/60 mr-1">Less</span>
+   847→   847→              {[0.25, 0.5, 0.8].map((op) => (
+   848→   848→                <div
+   849→   849→                  key={op}
+   850→   850→                  className="h-3 w-3 rounded-sm transition-transform hover:scale-125 cursor-default"
+   851→   851→                  style={{ backgroundColor: `oklch(0.627 0.194 149.214 / ${op})` }}
+   852→   852→                />
+   853→   853→              ))}
+   854→   854→              <span className="text-[10px] text-muted-foreground/60 ml-1">More</span>
+   855→   855→            </div>
+   856→   856→          </div>
+   857→   857→        </div>
+   858→   858→        )}
+   859→   859→
+   860→   860→        <p className="text-sm text-muted-foreground">
+   861→   861→          <span className="font-semibold text-emerald-600 dark:text-emerald-400">{studySessions.length} session{studySessions.length !== 1 ? 's' : ''}</span>{' '}
+   862→   862→          total &middot;{' '}
+   863→   863→          {currentStreak > 0 ? (
+   864→   864→            <>
+   865→   865→              <span className="font-semibold text-emerald-600 dark:text-emerald-400">{currentStreak} day streak</span> active
+   866→   866→            </>
+   867→   867→          ) : (
+   868→   868→            'Start your streak today!'
+   869→   869→          )}
+   870→   870→        </p>
+   871→   871→      </motion.div>
+   872→   872→
+   873→   873→      {/* ════════════════════════════════════════════
+   874→   874→          6. Skill Radar (horizontal bars)
+   875→   875→      ════════════════════════════════════════════ */}
+   876→   876→      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-5 card-shadow">
+   877→   877→        <div className="flex items-center gap-2">
+   878→   878→          <motion.div
+   879→   879→            animate={{ rotate: [0, 3, -3, 0] }}
+   880→   880→            transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+   881→   881→          >
+   882→   882→            <BarChart3 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+   883→   883→          </motion.div>
+   884→   884→          <h2 className="text-lg font-semibold gradient-text">Skill Radar</h2>
+   885→   885→        </div>
+   886→   886→        <div className="space-y-4">
+   887→   887→          {computedSkillBars.map((skill, idx) => (
+   888→   888→            <div key={skill.name} className="space-y-1.5">
+   889→   889→              <div className="flex items-center justify-between text-sm">
+   890→   890→                <span className="font-medium">{skill.name}</span>
+   891→   891→                <motion.span
+   892→   892→                  className="text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums"
+   893→   893→                  initial={{ opacity: 0, x: -10 }}
+   894→   894→                  animate={{ opacity: 1, x: 0 }}
+   895→   895→                  transition={{ delay: 0.8 + idx * 0.1 }}
+   896→   896→                >
+   897→   897→                  {skill.value}%
+   898→   898→                </motion.span>
+   899→   899→              </div>
+   900→   900→              <div className="h-2.5 w-full rounded-full bg-muted/60 dark:bg-muted/30 overflow-hidden">
+   901→   901→                <motion.div
+   902→   902→                  className="h-full rounded-full relative overflow-hidden"
+   903→   903→                  style={{
+   904→   904→                    background:
+   905→   905→                      'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))',
+   906→   906→                  }}
+   907→   907→                  initial={{ width: 0 }}
+   908→   908→                  animate={{ width: `${skill.value}%` }}
+   909→   909→                  transition={{ duration: 1.2, ease: 'easeOut', delay: 0.2 + idx * 0.08 }}
+   910→   910→                >
+   911→   911→                  {/* Shimmer effect while loading */}
+   912→   912→                  <motion.div
+   913→   913→                    className="absolute inset-0 -translate-x-full"
+   914→   914→                    animate={{ translateX: ['-100%', '100%', '200%'] }}
+   915→   915→                    transition={{ duration: 2, repeat: Infinity, ease: 'linear', delay: idx * 0.3 }}
+   916→   916→                    style={{
+   917→   917→                      background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent)',
+   918→   918→                    }}
+   919→   919→                  />
+   920→   920→                </motion.div>
+   921→   921→              </div>
+   922→   922→            </div>
+   923→   923→          ))}
+   924→   924→        </div>
+   925→   925→      </motion.div>
+   926→   926→
+   927→   927→      {/* ════════════════════════════════════════════
+   928→   928→          Upcoming Reviews (2-week calendar)
+   929→   929→      ════════════════════════════════════════════ */}
+   930→   930→      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-5 card-shadow">
+   931→   931→        <div className="flex items-center gap-2">
+   932→   932→          <motion.div
+   933→   933→            animate={{ rotate: [0, 5, -5, 0] }}
+   934→   934→            transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+   935→   935→          >
+   936→   936→            <Brain className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+   937→   937→          </motion.div>
+   938→   938→          <h2 className="text-lg font-semibold gradient-text">Upcoming Reviews</h2>
+   939→   939→        </div>
+   940→   940→
+   941→   941→        {/* 2-week calendar grid */}
+   942→   942→        <div className="space-y-1">
+   943→   943→          <div className="grid grid-cols-[40px_repeat(14,1fr)] gap-1">
+   944→   944→            {/* Header row with date numbers */}
+   945→   945→            <div /> {/* Empty corner cell */}
+   946→   946→            {calendarPlan.slice(0, 14).map((day, i) => {
+   947→   947→              const date = new Date(day.date);
+   948→   948→              const isToday = i === 0;
+   949→   949→              return (
+   950→   950→                <div key={day.date} className="text-center">
+   951→   951→                  <span className={`text-[9px] font-medium ${isToday ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60'}`}>
+   952→   952→                    {format(date, 'd')}
+   953→   953→                  </span>
+   954→   954→                </div>
+   955→   955→              );
+   956→   956→            })}
+   957→   957→
+   958→   958→            {/* Day label rows (Mon-Sun) — each shows 14 columns across 2 weeks */}
+   959→   959→            {dayLabels.map((label, rowIdx) => (
+   960→   960→              <>
+   961→   961→                <div key={label} className="flex items-center text-[10px] text-muted-foreground/60 font-medium pr-1">
+   962→   962→                  {label}
+   963→   963→                </div>
+   964→   964→                {calendarPlan.slice(0, 14).map((day, colIdx) => {
+   965→   965→                  const date = new Date(day.date);
+   966→   966→                  const dayOfWeek = date.getDay();
+   967→   967→                  // Map rowIdx (0-6) to JS day (0=Sun, 1=Mon, ...)
+   968→   968→                  // We use Mon=0, Tue=1, ..., Sun=6
+   969→   969→                  const mappedDay = (dayOfWeek + 6) % 7;
+   970→   970→                  const isThisRow = mappedDay === rowIdx;
+   971→   971→                  const count = isThisRow ? day.count : -1;
+   972→   972→
+   973→   973→                  return (
+   974→   974→                    <motion.div
+   975→   975→                      key={`${rowIdx}-${colIdx}`}
+   976→   976→                      initial={{ opacity: 0, scale: 0.5 }}
+   977→   977→                      animate={{ opacity: 1, scale: 1 }}
+   978→   978→                      transition={{ delay: rowIdx * 0.04 + colIdx * 0.02 }}
+   979→   979→                      className={`h-6 rounded-sm transition-all ${
+   980→   980→                        count < 0
+   981→   981→                          ? 'bg-transparent'
+   982→   982→                          : count === 0
+   983→   983→                            ? 'bg-muted/30'
+   984→   984→                            : count <= 2
+   985→   985→                              ? 'bg-emerald-500/40'
+   986→   986→                              : 'bg-emerald-500/80'
+   987→   987→                      }`}
+   988→   988→                      title={count >= 0 ? `${count} review${count !== 1 ? 's' : ''}` : ''}
+   989→   989→                    />
+   990→   990→                  );
+   991→   991→                })}
+   992→   992→              </>
+   993→   993→            ))}
+   994→   994→          </div>
+   995→   995→
+   996→   996→          {/* Legend */}
+   997→   997→          <div className="flex items-center gap-3 mt-3">
+   998→   998→            <div className="flex items-center gap-1.5">
+   999→   999→              <div className="h-3 w-3 rounded-sm bg-muted/30" />
+  1000→  1000→              <span className="text-[10px] text-muted-foreground">None</span>
+  1001→  1001→            </div>
+  1002→  1002→            <div className="flex items-center gap-1.5">
+  1003→  1003→              <div className="h-3 w-3 rounded-sm bg-emerald-500/40" />
+  1004→  1004→              <span className="text-[10px] text-muted-foreground">1-2</span>
+  1005→  1005→            </div>
+  1006→  1006→            <div className="flex items-center gap-1.5">
+  1007→  1007→              <div className="h-3 w-3 rounded-sm bg-emerald-500/80" />
+  1008→  1008→              <span className="text-[10px] text-muted-foreground">3+</span>
+  1009→  1009→            </div>
+  1010→  1010→          </div>
+  1011→  1011→        </div>
+  1012→  1012→
+  1013→  1013→        {/* Summary stats */}
+  1014→  1014→        <div className="flex items-center justify-between text-sm border-t border-border/50 pt-3">
+  1015→  1015→          <span className="text-muted-foreground">
+  1016→  1016→            Total items tracked: <span className="font-semibold text-foreground">{totalTrackedItems}</span>
+  1017→  1017→          </span>
+  1018→  1018→          {nextReviewTime && (
+  1019→  1019→            <span className="text-muted-foreground">
+  1020→  1020→              Next review: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatDistanceToNow(nextReviewTime, { addSuffix: true })}</span>
+  1021→  1021→            </span>
+  1022→  1022→          )}
+  1023→  1023→        </div>
+  1024→  1024→      </motion.div>
+  1025→  1025→
+  1026→  1026→      {/* ════════════════════════════════════════════
+  1027→  1027→          7. Action Buttons
+  1028→  1028→      ════════════════════════════════════════════ */}
+  1029→  1029→      <motion.div variants={fadeUp} className="flex flex-wrap gap-3 pt-2">
+  1030→  1030→        <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+  1031→  1031→          <Button
+  1032→  1032→            variant="outline"
+  1033→  1033→            className="border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300 hover:border-emerald-500/40 transition-all"
+  1034→  1034→            onClick={handleReconfigure}
+  1035→  1035→          >
+  1036→  1036→            <Settings className="h-4 w-4 mr-2" />
+  1037→  1037→            Reconfigure Learning Profile
+  1038→  1038→          </Button>
+  1039→  1039→        </motion.div>
+  1040→  1040→        <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+  1041→  1041→          <Button
+  1042→  1042→            variant="outline"
+  1043→  1043→            className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/20 hover:border-destructive/40 transition-all"
+  1044→  1044→            onClick={handleSignOut}
+  1045→  1045→          >
+  1046→  1046→            <LogOut className="h-4 w-4 mr-2" />
+  1047→  1047→            Sign Out
+  1048→  1048→          </Button>
+  1049→  1049→        </motion.div>
+  1050→  1050→      </motion.div>
+  1051→  1051→    </motion.div>
+  1052→  1052→  );
+  1053→  1053→}

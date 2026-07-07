@@ -48,6 +48,49 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Loader2 } from 'lucide-react'
+
+// ---------- SpeechRecognition Types ----------
+type SpeechRecognitionResultType = {
+  isFinal: boolean
+  readonly length: number
+  item(index: number): SpeechRecognitionAlternativeType
+  [index: number]: SpeechRecognitionAlternativeType
+}
+type SpeechRecognitionAlternativeType = {
+  readonly transcript: string
+  readonly confidence: number
+}
+type SpeechRecognitionEventType = {
+  readonly resultIndex: number
+  readonly results: SpeechRecognitionResultListType
+}
+type SpeechRecognitionResultListType = {
+  readonly length: number
+  item(index: number): SpeechRecognitionResultType
+  [index: number]: SpeechRecognitionResultType
+}
+type SpeechRecognitionInstance = {
+  lang: string
+  continuous: boolean
+  interimResults: boolean
+  maxAlternatives: number
+  start(): void
+  stop(): void
+  abort(): void
+  onresult: ((event: SpeechRecognitionEventType) => void) | null
+  onerror: ((event: { error: string }) => void) | null
+  onend: (() => void) | null
+  onstart: (() => void) | null
+}
+
+function getSpeechRecognition(): (new () => SpeechRecognitionInstance) | null {
+  if (typeof window === 'undefined') return null
+  return (
+    (window as unknown as Record<string, unknown>).SpeechRecognition ||
+    (window as unknown as Record<string, unknown>).webkitSpeechRecognition
+  ) as (new () => SpeechRecognitionInstance) | null
+}
 
 import { ChatBubble, stopAllTTS } from './ChatBubble'
 import { TypingIndicator } from './TypingIndicator'
@@ -181,6 +224,9 @@ export function TutorView() {
   const [input, setInput] = useState('')
   const [inputFocused, setInputFocused] = useState(false)
   const [inputSize, setInputSize] = useState<InputSize>('medium')
+  const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'processing' | 'error'>('idle')
+  const speechRef = useRef<SpeechRecognitionInstance | null>(null)
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
   const [timerSeconds, setTimerSeconds] = useState(0)
   const timerStarted = useRef(false)
@@ -429,6 +475,130 @@ export function TutorView() {
 
   const charCount = input.length
   const charColorClass = charCount < 350 ? 'text-emerald-600 dark:text-emerald-400' : charCount < 450 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'
+
+  // ── Voice Input ──
+  const resetSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current)
+    }
+    silenceTimerRef.current = setTimeout(() => {
+      if (speechRef.current && voiceState === 'listening') {
+        speechRef.current.stop()
+      }
+    }, 5000)
+  }, [voiceState])
+
+  const stopVoice = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+    if (speechRef.current) {
+      speechRef.current.abort()
+      speechRef.current = null
+    }
+    setVoiceState('idle')
+  }, [])
+
+  const toggleVoice = useCallback(() => {
+    if (voiceState === 'listening') {
+      stopVoice()
+      return
+    }
+
+    const SpeechRecognition = getSpeechRecognition()
+    if (!SpeechRecognition) {
+      toast.error('Voice input is not supported in this browser')
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognition.lang = document.documentElement.lang || navigator.language || 'en-US'
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.maxAlternatives = 1
+
+    recognition.onstart = () => {
+      setVoiceState('listening')
+      resetSilenceTimer()
+    }
+
+    recognition.onresult = (event: SpeechRecognitionEventType) => {
+      resetSilenceTimer()
+      let finalTranscript = ''
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i]
+        if (result.isFinal) {
+          finalTranscript += result[0].transcript + ' '
+        }
+      }
+      if (finalTranscript) {
+        setVoiceState('processing')
+        setInput((prev) => {
+          const base = prev.endsWith(' ') ? prev : prev ? prev + ' ' : ''
+          const combined = base + finalTranscript.trim()
+          return combined.length > MAX_INPUT_CHARS ? combined.slice(0, MAX_INPUT_CHARS) : combined
+        })
+        setTimeout(() => {
+          if (voiceState === 'processing') {
+            setVoiceState('listening')
+          }
+        }, 300)
+      }
+    }
+
+    recognition.onerror = (event: { error: string }) => {
+      if (event.error === 'no-speech' || event.error === 'aborted') {
+        setVoiceState('idle')
+      } else {
+        setVoiceState('error')
+        toast.error(`Voice input error: ${event.error}`)
+        setTimeout(() => setVoiceState('idle'), 2000)
+      }
+    }
+
+    recognition.onend = () => {
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current)
+        silenceTimerRef.current = null
+      }
+      speechRef.current = null
+      setVoiceState('idle')
+    }
+
+    speechRef.current = recognition
+    try {
+      recognition.start()
+    } catch {
+      toast.error('Failed to start voice input')
+      setVoiceState('idle')
+    }
+  }, [voiceState, stopVoice, resetSilenceTimer])
+
+  // Stop voice on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && voiceState === 'listening') {
+        stopVoice()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [voiceState, stopVoice])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (speechRef.current) {
+        speechRef.current.abort()
+      }
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current)
+      }
+    }
+  }, [])
+
+  const speechSupported = useMemo(() => typeof window !== 'undefined' && !!getSpeechRecognition(), [])
 
   const handleSend = useCallback(async (text?: string) => {
     const content = (text || input).trim()
@@ -1062,20 +1232,116 @@ export function TutorView() {
                         </motion.span>
                       )}
 
-                      {/* Microphone placeholder */}
-                      <motion.div
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.95 }}
-                        className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground/50 hover:text-muted-foreground cursor-not-allowed"
-                        title="Voice input coming soon"
-                      >
-                        <motion.div
-                          animate={{ scale: [1, 1.05, 1] }}
-                          transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+                      {/* Voice Input (Mic) Button */}
+                      <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`h-7 w-7 rounded-lg transition-all ${
+                            voiceState === 'listening'
+                              ? 'text-red-500 dark:text-red-400'
+                              : voiceState === 'error'
+                                ? 'text-red-500 dark:text-red-400'
+                                : voiceState === 'processing'
+                                  ? 'text-amber-500 dark:text-amber-400'
+                                  : speechSupported
+                                    ? 'text-muted-foreground hover:text-foreground'
+                                    : 'text-muted-foreground/30 cursor-not-allowed'
+                          }`}
+                          onClick={toggleVoice}
+                          disabled={!speechSupported || voiceState === 'processing'}
+                          aria-label={
+                            voiceState === 'listening'
+                              ? 'Stop voice input'
+                              : voiceState === 'processing'
+                                ? 'Processing voice...'
+                                : speechSupported
+                                  ? 'Start voice input'
+                                  : 'Voice input not supported'
+                          }
+                          title={
+                            !speechSupported
+                              ? 'Voice input not supported in this browser'
+                              : voiceState === 'listening'
+                                ? 'Click to stop'
+                                : 'Voice input'
+                          }
                         >
-                          <Mic className="w-3.5 h-3.5" />
-                        </motion.div>
+                          <AnimatePresence mode="wait">
+                            {voiceState === 'listening' ? (
+                              <motion.span
+                                key="listening"
+                                initial={{ scale: 0.8, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.8, opacity: 0 }}
+                                className="relative flex items-center justify-center"
+                              >
+                                {/* Pulsing ring */}
+                                <motion.span
+                                  className="absolute inset-0 rounded-full bg-red-500/20"
+                                  animate={{ scale: [1, 1.8], opacity: [0.6, 0] }}
+                                  transition={{ duration: 1.2, repeat: Infinity, ease: 'easeOut' }}
+                                />
+                                <motion.span
+                                  className="absolute inset-0 rounded-full bg-red-500/15"
+                                  animate={{ scale: [1, 2.2], opacity: [0.4, 0] }}
+                                  transition={{ duration: 1.2, repeat: Infinity, ease: 'easeOut', delay: 0.4 }}
+                                />
+                                <Mic className="w-3.5 h-3.5 relative z-10" />
+                              </motion.span>
+                            ) : voiceState === 'processing' ? (
+                              <motion.span
+                                key="processing"
+                                initial={{ scale: 0.8, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.8, opacity: 0 }}
+                              >
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              </motion.span>
+                            ) : (
+                              <motion.span
+                                key="idle"
+                                initial={{ scale: 0.8, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.8, opacity: 0 }}
+                              >
+                                <Mic className="w-3.5 h-3.5" />
+                              </motion.span>
+                            )}
+                          </AnimatePresence>
+                        </Button>
                       </motion.div>
+
+                      {/* Waveform animation when listening */}
+                      <AnimatePresence>
+                        {voiceState === 'listening' && (
+                          <motion.div
+                            initial={{ opacity: 0, width: 0 }}
+                            animate={{ opacity: 1, width: 'auto' }}
+                            exit={{ opacity: 0, width: 0 }}
+                            className="flex items-center gap-0.5 overflow-hidden"
+                          >
+                            {[0, 1, 2].map((i) => (
+                              <motion.div
+                                key={i}
+                                className="w-0.5 bg-red-500 dark:bg-red-400 rounded-full"
+                                animate={{
+                                  height: [4, 12 + i * 4, 4],
+                                }}
+                                transition={{
+                                  duration: 0.6,
+                                  repeat: Infinity,
+                                  ease: 'easeInOut',
+                                  delay: i * 0.15,
+                                }}
+                              />
+                            ))}
+                            <span className="text-[10px] text-red-500 dark:text-red-400 font-medium ml-1 whitespace-nowrap">
+                              Listening...
+                            </span>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
 
                       {/* Expand/Collapse button */}
                       <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
