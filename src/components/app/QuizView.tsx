@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import {
   CheckCircle2,
   XCircle,
@@ -20,6 +20,7 @@ import {
   Layers,
   HelpCircle,
   Lightbulb,
+  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -63,6 +64,13 @@ function isFuzzyMatch(userAnswer: string, correctAnswer: string, maxDistance: nu
   const userWords = ua.split(/\s+/);
   if (correctWords.every((w) => userWords.some((uw) => uw.includes(w) || w.includes(uw)))) return true;
   return false;
+}
+
+// ---------- Timer helper ----------
+function formatTimer(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
 // ---------- Mock questions for all 6 types ----------
@@ -271,7 +279,7 @@ function ErrorCorrectionInput({
   );
 }
 
-// ---------- Matching question component (drag-and-drop) ----------
+// ---------- Matching question component (drag-and-drop with SVG connectors) ----------
 function MatchingInput({
   pairs,
   onAnswer,
@@ -290,8 +298,86 @@ function MatchingInput({
 
   const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
   const [matches, setMatches] = useState<Record<string, string>>({});
+  const [dragItem, setDragItem] = useState<string | null>(null);
+  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
+  const [linePositions, setLinePositions] = useState<Array<{ id: string; x1: number; y1: number; x2: number; y2: number }>>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Build index maps for safe DOM queries
+  const leftIdxMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    pairs.forEach((p, i) => { map[p.left] = i; });
+    return map;
+  }, [pairs]);
+
+  const rightIdxMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    shuffledRight.forEach((r, i) => { map[r] = i; });
+    return map;
+  }, [shuffledRight]);
+
+  // Compute SVG connector line positions
+  const updateLinePositions = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    requestAnimationFrame(() => {
+      if (!container) return;
+      const containerRect = container.getBoundingClientRect();
+      const positions: Array<{ id: string; x1: number; y1: number; x2: number; y2: number }> = [];
+
+      for (const [left, right] of Object.entries(matches)) {
+        const lIdx = leftIdxMap[left];
+        const rIdx = rightIdxMap[right];
+        if (lIdx === undefined || rIdx === undefined) continue;
+
+        const leftEl = container.querySelector(`[data-left-idx="${lIdx}"]`);
+        const rightEl = container.querySelector(`[data-right-idx="${rIdx}"]`);
+
+        if (leftEl && rightEl) {
+          const leftRect = leftEl.getBoundingClientRect();
+          const rightRect = rightEl.getBoundingClientRect();
+
+          positions.push({
+            id: `${left}-${right}`,
+            x1: leftRect.right - containerRect.left,
+            y1: leftRect.top + leftRect.height / 2 - containerRect.top,
+            x2: rightRect.left - containerRect.left,
+            y2: rightRect.top + rightRect.height / 2 - containerRect.top,
+          });
+        }
+      }
+
+      setLinePositions(positions);
+    });
+  }, [matches, leftIdxMap, rightIdxMap]);
+
+  // Recalculate on matches change
+  useEffect(() => {
+    updateLinePositions();
+  }, [updateLinePositions]);
+
+  // Recalculate on resize
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver(updateLinePositions);
+    observer.observe(container);
+
+    return () => observer.disconnect();
+  }, [updateLinePositions]);
 
   const handleLeftClick = (left: string) => {
+    if (matches[left]) {
+      // Remove match by clicking connected left item
+      setMatches((prev) => {
+        const next = { ...prev };
+        delete next[left];
+        return next;
+      });
+      return;
+    }
     setSelectedLeft(left);
   };
 
@@ -301,12 +387,46 @@ function MatchingInput({
     setSelectedLeft(null);
   };
 
-  const handleRemoveMatch = (left: string) => {
-    setMatches((prev) => {
-      const next = { ...prev };
-      delete next[left];
-      return next;
-    });
+  const handleDragStart = (e: React.DragEvent, left: string) => {
+    setDragItem(left);
+    e.dataTransfer.setData('text/plain', left);
+    e.dataTransfer.effectAllowed = 'link';
+  };
+
+  const handleDragOver = (e: React.DragEvent, right: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'link';
+    const isUsedByOther = Object.entries(matches).some(
+      ([k, v]) => v === right && k !== dragItem,
+    );
+    if (dragItem && !isUsedByOther) {
+      setDragOverTarget(right);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverTarget(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, right: string) => {
+    e.preventDefault();
+    const left = e.dataTransfer.getData('text/plain') || dragItem;
+    if (left) {
+      // Remove any existing match for this left item first
+      setMatches((prev) => {
+        const next = { ...prev };
+        delete next[left];
+        next[left] = right;
+        return next;
+      });
+    }
+    setDragItem(null);
+    setDragOverTarget(null);
+  };
+
+  const handleDragEnd = () => {
+    setDragItem(null);
+    setDragOverTarget(null);
   };
 
   const handleSubmit = () => {
@@ -322,65 +442,108 @@ function MatchingInput({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Click a left item, then click its match on the right. Click a matched item to remove it.
+        Drag left items to their match on the right, or click to select. Click a connected left item to remove it.
       </p>
-      <div className="grid grid-cols-2 gap-4">
+      <div ref={containerRef} className="relative grid grid-cols-2 gap-4">
+        {/* SVG Connector Overlay */}
+        <svg className="absolute inset-0 pointer-events-none z-10" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+          <defs>
+            <linearGradient id="connectorGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#10b981" />
+              <stop offset="50%" stopColor="#14b8a6" />
+              <stop offset="100%" stopColor="#0d9488" />
+            </linearGradient>
+          </defs>
+          <AnimatePresence>
+            {linePositions.map((pos) => {
+              const midX = (pos.x1 + pos.x2) / 2;
+              return (
+                <motion.path
+                  key={pos.id}
+                  d={`M ${pos.x1} ${pos.y1} C ${midX} ${pos.y1}, ${midX} ${pos.y2}, ${pos.x2} ${pos.y2}`}
+                  fill="none"
+                  stroke="url(#connectorGrad)"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  initial={{ pathLength: 0, opacity: 0 }}
+                  animate={{ pathLength: 1, opacity: 0.85 }}
+                  exit={{ pathLength: 0, opacity: 0 }}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                />
+              );
+            })}
+          </AnimatePresence>
+        </svg>
+
         {/* Left column */}
         <div className="flex flex-col gap-2">
-          {pairs.map((p) => (
-            <motion.button
-              key={p.left}
-              whileTap={{ scale: 0.98 }}
-              onClick={() =>
-                matches[p.left]
-                  ? handleRemoveMatch(p.left)
-                  : handleLeftClick(p.left)
-              }
-              className={`rounded-lg border p-3 text-left text-sm font-medium transition-all ${
-                selectedLeft === p.left
-                  ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary/30 shadow-sm shadow-primary/10'
-                  : matches[p.left]
-                    ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 shadow-sm shadow-emerald-500/5'
-                    : 'border-border hover:border-primary/30 hover:bg-primary/5'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40" />
-                <span className="flex-1">{p.left}</span>
-                {matches[p.left] && (
-                  <motion.span
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="text-xs opacity-70 truncate max-w-[120px] text-emerald-600 dark:text-emerald-400"
-                  >
-                    {matches[p.left]}
-                  </motion.span>
-                )}
-              </div>
-            </motion.button>
-          ))}
+          {pairs.map((p) => {
+            const isMatched = !!matches[p.left];
+            const isDragging = dragItem === p.left;
+            return (
+              <motion.button
+                key={p.left}
+                data-left-idx={leftIdxMap[p.left]}
+                draggable={!isMatched}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => handleLeftClick(p.left)}
+                onDragStart={(e) => handleDragStart(e, p.left)}
+                onDragEnd={handleDragEnd}
+                className={`rounded-lg border p-3 text-left text-sm font-medium transition-all ${
+                  isDragging
+                    ? 'border-primary/50 bg-primary/5 opacity-50 scale-95'
+                    : selectedLeft === p.left
+                      ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary/30 shadow-sm shadow-primary/10'
+                      : isMatched
+                        ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 shadow-sm shadow-emerald-500/5'
+                        : 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-grab active:cursor-grabbing'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                  <span className="flex-1">{p.left}</span>
+                  {isMatched && (
+                    <motion.span
+                      initial={{ opacity: 0, x: 10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="text-xs opacity-70 truncate max-w-[120px] text-emerald-600 dark:text-emerald-400"
+                    >
+                      {matches[p.left]}
+                    </motion.span>
+                  )}
+                </div>
+              </motion.button>
+            );
+          })}
         </div>
         {/* Right column */}
         <div className="flex flex-col gap-2">
           {shuffledRight.map((r) => {
             const isUsed = usedRights.has(r);
+            const isDragOver = dragOverTarget === r && !isUsed;
             return (
               <motion.button
                 key={r}
+                data-right-idx={rightIdxMap[r]}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => !isUsed && handleRightClick(r)}
-                disabled={isUsed || !selectedLeft}
+                onDragOver={(e) => handleDragOver(e, r)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, r)}
+                disabled={isUsed}
                 className={`rounded-lg border p-3 text-left text-sm transition-all ${
-                  isUsed
-                    ? 'border-border bg-muted/50 text-muted-foreground line-through opacity-50'
-                    : selectedLeft
-                      ? 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-pointer hover:shadow-sm hover:shadow-primary/5'
-                      : 'border-border opacity-60'
+                  isDragOver
+                    ? 'border-emerald-500/60 bg-emerald-500/10 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-500/20 scale-[1.02]'
+                    : isUsed
+                      ? 'border-border bg-muted/50 text-muted-foreground line-through opacity-50'
+                      : selectedLeft
+                        ? 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-pointer hover:shadow-sm hover:shadow-primary/5'
+                        : 'border-border opacity-60'
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40" />
-                  {r}
+                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                  <span className="flex-1">{r}</span>
                 </div>
               </motion.button>
             );
@@ -433,12 +596,32 @@ export function QuizView() {
   const [showStreakPopup, setShowStreakPopup] = useState(false);
   const animatedScore = useAnimatedCounter(showResults ? score : 0, 1500);
 
+  // Timer state
+  const [timerStarted, setTimerStarted] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+
   // Flashcard state
   const [flipped, setFlipped] = useState(false);
   const [knownCards, setKnownCards] = useState<Set<string>>(new Set());
   const [stillLearningCards, setStillLearningCards] = useState<Set<string>>(new Set());
   const [flashcardReviewed, setFlashcardReviewed] = useState<Set<string>>(new Set());
   const [showFlashcardSummary, setShowFlashcardSummary] = useState(false);
+  const [hasEverFlipped, setHasEverFlipped] = useState(false);
+
+  // Swipe motion values for flashcard (no re-renders)
+  const dragXMotion = useMotionValue(0);
+  const checkOpacity = useTransform(dragXMotion, [0, 100], [0, 0.7]);
+  const crossOpacity = useTransform(dragXMotion, [-100, 0], [0.7, 0]);
+  const hasDraggedRef = useRef(false);
+
+  // Timer effect
+  useEffect(() => {
+    if (!timerStarted || showResults) return;
+    const interval = setInterval(() => {
+      setTimerSeconds((s) => s + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [timerStarted, showResults]);
 
   const flashcardQuestions = useMemo(() => {
     if (selectedCourse === 'all') return allQuestions;
@@ -448,6 +631,16 @@ export function QuizView() {
   const flashcardProgress = flashcardQuestions.length > 0
     ? (flashcardReviewed.size / flashcardQuestions.length) * 100
     : 0;
+
+  // Difficulty distribution
+  const difficultyCounts = useMemo(() => {
+    const targetQuestions = studyMode === 'quiz' ? questions : flashcardQuestions;
+    return {
+      easy: targetQuestions.filter((q) => q.difficulty === 'easy').length,
+      medium: targetQuestions.filter((q) => q.difficulty === 'medium').length,
+      hard: targetQuestions.filter((q) => q.difficulty === 'hard').length,
+    };
+  }, [studyMode === 'quiz' ? questions : flashcardQuestions, studyMode]);
 
   const handleShuffle = useCallback(() => {
     setCurrentIndex(0);
@@ -504,6 +697,7 @@ export function QuizView() {
     setStillLearningCards(new Set());
     setFlashcardReviewed(new Set());
     setShowFlashcardSummary(false);
+    setHasEverFlipped(false);
   }, []);
 
   const handleCourseChange = (courseId: string) => {
@@ -520,6 +714,9 @@ export function QuizView() {
     setStillLearningCards(new Set());
     setFlashcardReviewed(new Set());
     setShowFlashcardSummary(false);
+    setHasEverFlipped(false);
+    setTimerStarted(false);
+    setTimerSeconds(0);
   };
 
   const handleModeChange = (mode: StudyMode) => {
@@ -536,6 +733,9 @@ export function QuizView() {
     setStillLearningCards(new Set());
     setFlashcardReviewed(new Set());
     setShowFlashcardSummary(false);
+    setHasEverFlipped(false);
+    setTimerStarted(false);
+    setTimerSeconds(0);
   };
 
   // Filter questions by selected course
@@ -566,6 +766,9 @@ export function QuizView() {
     (answer: string) => {
       if (!currentQ || answered[currentQ.id]) return;
 
+      // Start timer on first answer
+      if (!timerStarted) setTimerStarted(true);
+
       const newAnswers = { ...answers, [currentQ.id]: answer };
       const newAnswered = { ...answered, [currentQ.id]: true };
       setAnswers(newAnswers);
@@ -586,7 +789,7 @@ export function QuizView() {
         setStreak(0);
       }
     },
-    [answered, answers, currentQ, isCorrect, streak, bestStreak],
+    [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted],
   );
 
   const handleNext = () => {
@@ -607,6 +810,8 @@ export function QuizView() {
     setShowConfetti(false);
     setStreak(0);
     setBestStreak(0);
+    setTimerStarted(false);
+    setTimerSeconds(0);
   };
 
   const score = useMemo(() => {
@@ -616,6 +821,8 @@ export function QuizView() {
   const circumference = 2 * Math.PI * 62;
   const scorePercent = questions.length > 0 ? score / questions.length : 0;
   const strokeDashoffset = circumference * (1 - scorePercent);
+
+  const difficultyTotal = difficultyCounts.easy + difficultyCounts.medium + difficultyCounts.hard;
 
   // ---------- Empty State ----------
   if (questions.length === 0 && flashcardQuestions.length === 0) {
@@ -967,17 +1174,35 @@ export function QuizView() {
                   </button>
                 </div>
               </div>
-              {studyMode === 'quiz' && streak >= 2 && (
-                <motion.div
-                  key={streak}
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20"
-                >
-                  <Flame className="h-4 w-4 text-orange-500" />
-                  <span className="text-xs font-bold text-orange-600 dark:text-orange-400">{streak} streak</span>
-                </motion.div>
-              )}
+              <div className="flex items-center gap-2">
+                {/* Timer display (quiz mode only) */}
+                {studyMode === 'quiz' && timerStarted && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-background/60 border border-border text-xs font-mono text-muted-foreground"
+                  >
+                    <motion.div
+                      animate={showResults ? {} : { opacity: [1, 0.5, 1] }}
+                      transition={showResults ? {} : { duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                    >
+                      <Clock className="h-3.5 w-3.5 text-primary/60" />
+                    </motion.div>
+                    <span>{formatTimer(timerSeconds)}</span>
+                  </motion.div>
+                )}
+                {studyMode === 'quiz' && streak >= 2 && (
+                  <motion.div
+                    key={streak}
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20"
+                  >
+                    <Flame className="h-4 w-4 text-orange-500" />
+                    <span className="text-xs font-bold text-orange-600 dark:text-orange-400">{streak} streak</span>
+                  </motion.div>
+                )}
+              </div>
             </div>
             {/* Course filter tabs */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -1001,7 +1226,58 @@ export function QuizView() {
               </button>
             ))}
           </div>
-          <div className="flex items-center justify-between mb-2">
+          {/* Difficulty Progress Tracker */}
+          {difficultyTotal > 0 && (
+            <div className="flex items-center gap-3 mt-2">
+              <div className="flex-1 flex h-1.5 rounded-full overflow-hidden bg-muted/40">
+                {difficultyCounts.easy > 0 && (
+                  <motion.div
+                    className="bg-emerald-500"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(difficultyCounts.easy / difficultyTotal) * 100}%` }}
+                    transition={{ duration: 0.5, ease: 'easeOut' }}
+                  />
+                )}
+                {difficultyCounts.medium > 0 && (
+                  <motion.div
+                    className="bg-amber-500"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(difficultyCounts.medium / difficultyTotal) * 100}%` }}
+                    transition={{ duration: 0.5, ease: 'easeOut', delay: 0.1 }}
+                  />
+                )}
+                {difficultyCounts.hard > 0 && (
+                  <motion.div
+                    className="bg-rose-500"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(difficultyCounts.hard / difficultyTotal) * 100}%` }}
+                    transition={{ duration: 0.5, ease: 'easeOut', delay: 0.2 }}
+                  />
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground shrink-0">
+                {difficultyCounts.easy > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block" />
+                    {difficultyCounts.easy} Easy
+                  </span>
+                )}
+                {difficultyCounts.medium > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500 inline-block" />
+                    {difficultyCounts.medium} Med
+                  </span>
+                )}
+                {difficultyCounts.hard > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500 inline-block" />
+                    {difficultyCounts.hard} Hard
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="flex items-center justify-between mb-2 mt-1">
             <span className="text-sm font-medium">
               {studyMode === 'quiz'
                 ? `Question ${currentIndex + 1} of ${questions.length}`
@@ -1348,65 +1624,164 @@ export function QuizView() {
         </AnimatePresence>
         )}
 
-        {/* Flashcard Mode */}
+        {/* Flashcard Mode - 3D Flip with Swipe */}
         {studyMode === 'flashcard' && flashcardQuestions[currentIndex] && (
           <div className="space-y-6">
-            <div
-              className="relative w-full cursor-pointer mx-auto"
-              style={{ perspective: '1000px' }}
-              onClick={() => setFlipped(!flipped)}
-            >
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={flashcardQuestions[currentIndex].id + (flipped ? '-back' : '-front')}
-                  initial={{ opacity: 0, rotateY: flipped ? -90 : 90 }}
-                  animate={{ opacity: 1, rotateY: 0 }}
-                  exit={{ opacity: 0, rotateY: flipped ? 90 : -90 }}
-                  transition={{ duration: 0.4, ease: 'easeInOut' }}
-                  style={{ transformStyle: 'preserve-3d' }}
+            <div className="relative w-full mx-auto" style={{ perspective: '1000px' }}>
+              {/* Card stack effect - hint of next card behind */}
+              {currentIndex < flashcardQuestions.length - 1 && (
+                <div
+                  className="absolute inset-x-3 top-3 glass rounded-2xl pointer-events-none"
+                  style={{
+                    transform: 'scale(0.97)',
+                    opacity: 0.3,
+                    zIndex: 0,
+                  }}
                 >
-                  <div
-                    className={`glass rounded-2xl p-8 min-h-[280px] sm:min-h-[320px] flex flex-col items-center justify-center text-center transition-all ${
-                      flipped
-                        ? 'bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent border-emerald-500/20'
-                        : 'bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent'
-                    }`}
+                  <div className="p-8 min-h-[280px] sm:min-h-[320px]" />
+                </div>
+              )}
+
+              {/* Main card with swipe gesture */}
+              <motion.div
+                key={flashcardQuestions[currentIndex].id}
+                initial={{ opacity: 0.5, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+                style={{ zIndex: 1, position: 'relative' }}
+              >
+                <motion.div
+                  drag={flipped ? 'x' : false}
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.8}
+                  onDragStart={() => { hasDraggedRef.current = true; }}
+                  onDrag={(_, info) => { dragXMotion.set(info.offset.x); }}
+                  onDragEnd={(_, info) => {
+                    dragXMotion.set(0);
+                    setTimeout(() => { hasDraggedRef.current = false; }, 100);
+                    if (flipped) {
+                      if (info.offset.x > 100) {
+                        handleFlashcardMark('known');
+                        return;
+                      }
+                      if (info.offset.x < -100) {
+                        handleFlashcardMark('learning');
+                        return;
+                      }
+                    }
+                  }}
+                  onClick={() => {
+                    if (hasDraggedRef.current) return;
+                    setFlipped(!flipped);
+                    if (!flipped) setHasEverFlipped(true);
+                  }}
+                  whileTap={!flipped ? { scale: 0.98 } : undefined}
+                  className="relative cursor-pointer select-none"
+                >
+                  {/* Swipe direction hint icons */}
+                  {flipped && (
+                    <>
+                      <motion.div
+                        style={{ opacity: checkOpacity }}
+                        className="absolute right-5 top-1/2 -translate-y-1/2 z-20 pointer-events-none"
+                      >
+                        <div className="flex flex-col items-center gap-1">
+                          <CheckCircle2 className="h-14 w-14 text-emerald-500" />
+                          <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">I know this</span>
+                        </div>
+                      </motion.div>
+                      <motion.div
+                        style={{ opacity: crossOpacity }}
+                        className="absolute left-5 top-1/2 -translate-y-1/2 z-20 pointer-events-none"
+                      >
+                        <div className="flex flex-col items-center gap-1">
+                          <XCircle className="h-14 w-14 text-rose-500" />
+                          <span className="text-xs font-medium text-rose-600 dark:text-rose-400">Still learning</span>
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
+
+                  {/* 3D flip container */}
+                  <motion.div
+                    animate={{ rotateY: flipped ? 180 : 0 }}
+                    transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
+                    style={{ transformStyle: 'preserve-3d' }}
+                    className="relative"
                   >
-                    {!flipped ? (
-                      <>
-                        <div className="flex items-center gap-2 mb-4">
-                          <HelpCircle className="w-5 h-5 text-primary/60" />
-                          <Badge variant="secondary" className="text-xs bg-primary/10 border-primary/10">
-                            {flashcardQuestions[currentIndex].concept || flashcardQuestions[currentIndex].type.replace('_', ' ')}
-                          </Badge>
-                        </div>
-                        <h2 className="text-lg sm:text-xl font-semibold leading-relaxed max-w-lg">
-                          {flashcardQuestions[currentIndex].question}
-                        </h2>
-                        <p className="text-xs text-muted-foreground mt-6">Click to reveal the answer</p>
-                      </>
-                    ) : (
-                      <>
-                        <div className="flex items-center gap-2 mb-4">
-                          <Lightbulb className="w-5 h-5 text-emerald-500" />
-                          <Badge variant="secondary" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/10">
-                            Answer
-                          </Badge>
-                        </div>
-                        <p className="text-base sm:text-lg font-medium leading-relaxed max-w-lg">
-                          {flashcardQuestions[currentIndex].answer}
-                        </p>
-                        {flashcardQuestions[currentIndex].explanation && (
-                          <p className="text-sm text-muted-foreground mt-4 max-w-lg leading-relaxed">
-                            {flashcardQuestions[currentIndex].explanation}
-                          </p>
+                    {/* Front face */}
+                    <div
+                      className="glass rounded-2xl p-8 min-h-[280px] sm:min-h-[320px] flex flex-col items-center justify-center text-center bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent"
+                      style={{ backfaceVisibility: 'hidden', position: 'relative' }}
+                    >
+                      <div className="flex items-center gap-2 mb-4 flex-wrap justify-center">
+                        <HelpCircle className="w-5 h-5 text-primary/60" />
+                        <Badge variant="secondary" className="text-xs bg-primary/10 border-primary/10">
+                          {flashcardQuestions[currentIndex].concept || flashcardQuestions[currentIndex].type.replace('_', ' ')}
+                        </Badge>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${
+                          flashcardQuestions[currentIndex].difficulty === 'easy'
+                            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+                            : flashcardQuestions[currentIndex].difficulty === 'medium'
+                              ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
+                              : 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20'
+                        }`}>
+                          {flashcardQuestions[currentIndex].difficulty}
+                        </span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${TYPE_BADGE_GRADIENT[flashcardQuestions[currentIndex].type] || 'bg-muted text-muted-foreground border-border'}`}>
+                          {flashcardQuestions[currentIndex].type.replace('_', ' ')}
+                        </span>
+                        {flashcardQuestions[currentIndex].courseId && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium border border-border bg-muted/50 text-muted-foreground">
+                            {COURSE_QUIZ_GROUPS.find((g) => g.id === flashcardQuestions[currentIndex].courseId)?.label || flashcardQuestions[currentIndex].courseId}
+                          </span>
                         )}
-                        <p className="text-xs text-muted-foreground mt-6">Click to see the question</p>
-                      </>
-                    )}
-                  </div>
+                      </div>
+                      <h2 className="text-lg sm:text-xl font-semibold leading-relaxed max-w-lg">
+                        {flashcardQuestions[currentIndex].question}
+                      </h2>
+                      {!hasEverFlipped && (
+                        <motion.p
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.5 }}
+                          className="text-xs text-muted-foreground mt-6 flex items-center gap-1.5"
+                        >
+                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse" />
+                          Tap to reveal
+                        </motion.p>
+                      )}
+                    </div>
+
+                    {/* Back face */}
+                    <div
+                      className="glass rounded-2xl p-8 min-h-[280px] sm:min-h-[320px] flex flex-col items-center justify-center text-center absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent"
+                      style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+                    >
+                      <div className="flex items-center gap-2 mb-4">
+                        <Lightbulb className="w-5 h-5 text-emerald-500" />
+                        <Badge variant="secondary" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/10">
+                          Answer
+                        </Badge>
+                        {flashcardQuestions[currentIndex].concept && (
+                          <Badge variant="secondary" className="text-xs bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/10">
+                            {flashcardQuestions[currentIndex].concept}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-base sm:text-lg font-medium leading-relaxed max-w-lg">
+                        {flashcardQuestions[currentIndex].answer}
+                      </p>
+                      {flashcardQuestions[currentIndex].explanation && (
+                        <p className="text-sm text-muted-foreground mt-4 max-w-lg leading-relaxed">
+                          {flashcardQuestions[currentIndex].explanation}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-6 opacity-60">Swipe or use buttons below</p>
+                    </div>
+                  </motion.div>
                 </motion.div>
-              </AnimatePresence>
+              </motion.div>
             </div>
 
             {/* Known / Still Learning buttons */}

@@ -15,6 +15,14 @@ import {
 } from '@/components/ui/tooltip'
 import type { ChatMessage } from '@/types'
 
+// Reaction options for assistant messages
+const REACTIONS = [
+  { emoji: '👍', label: 'Helpful' },
+  { emoji: '👎', label: 'Not helpful' },
+  { emoji: '💡', label: 'Insightful' },
+  { emoji: '🤔', label: 'Thought-provoking' },
+]
+
 // Module-level audio instance for cross-component control
 let activeAudio: HTMLAudioElement | null = null
 
@@ -140,6 +148,55 @@ function BlinkingCursor({ visible }: { visible: boolean }) {
       animate={{ opacity: [1, 0, 1] }}
       transition={{ repeat: Infinity, duration: 1, ease: 'easeInOut' }}
     />
+  )
+}
+
+// Reaction bar for assistant messages
+function ReactionBar({
+  reactions,
+  onToggle,
+}: {
+  reactions: Record<string, number>
+  onToggle: (emoji: string) => void
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 4 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      className="flex items-center gap-1 mt-0.5 ml-1"
+    >
+      {REACTIONS.map(({ emoji, label }) => {
+        const count = reactions[emoji] || 0
+        return (
+          <motion.button
+            key={emoji}
+            whileHover={{ scale: 1.15 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => onToggle(emoji)}
+            className={`relative flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs transition-colors ${
+              count > 0
+                ? 'bg-primary/10 text-foreground border border-primary/20'
+                : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground border border-transparent'
+            }`}
+            aria-label={label}
+            title={label}
+          >
+            <span className="text-sm leading-none">{emoji}</span>
+            {count > 0 && (
+              <motion.span
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="text-[10px] font-medium min-w-[12px] text-center"
+              >
+                {count}
+              </motion.span>
+            )}
+          </motion.button>
+        )
+      })}
+    </motion.div>
   )
 }
 
@@ -398,6 +455,21 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate }: ChatB
   const playingMessageIdRef = useRef<string | null>(null)
   const [isHovered, setIsHovered] = useState(false)
   const [glowVisible, setGlowVisible] = useState(isAssistant && isStreaming)
+  const [reactions, setReactions] = useState<Record<string, number>>({})
+
+  // Toggle a reaction on this message
+  const handleReaction = useCallback((emoji: string) => {
+    setReactions((prev) => {
+      const current = prev[emoji] || 0
+      if (current > 0) {
+        // Remove reaction
+        const next = { ...prev }
+        delete next[emoji]
+        return next
+      }
+      return { ...prev, [emoji]: current + 1 }
+    })
+  }, [])
 
   // Typewriter effect for assistant messages
   const { displayedText, isComplete, complete: completeTypewriter } = useTypewriter(
@@ -507,9 +579,9 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate }: ChatB
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 24 }}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}
     >
       <div className={`flex items-end gap-2 max-w-[80%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -523,13 +595,15 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate }: ChatB
             <Brain className="w-4 h-4 text-primary" />
           </motion.div>
         )}
-        <div className="flex flex-col gap-1">
+        <div
+          className="flex flex-col gap-1"
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+        >
           <motion.div
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, ease: 'easeOut', delay: 0.05 }}
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
+            transition={{ type: 'spring', stiffness: 350, damping: 26, delay: 0.05 }}
             onClick={showCursor ? completeTypewriter : undefined}
             className={`relative px-4 py-2.5 text-sm leading-relaxed ${
               isUser
@@ -537,14 +611,17 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate }: ChatB
                 : 'bg-card/80 backdrop-blur-sm border rounded-2xl rounded-bl-md chat-bubble-assistant'
             } ${showCursor ? 'cursor-pointer' : ''}`}
           >
-            {/* Emerald pulse glow on new assistant messages */}
+            {/* Gradient glow on new assistant messages */}
             {isAssistant && glowVisible && (
               <motion.div
-                className="absolute -inset-0.5 rounded-2xl bg-emerald-400/20 dark:bg-emerald-500/10 blur-sm -z-10"
+                className="absolute -inset-1 rounded-2xl -z-10 blur-md"
                 initial={{ opacity: 0 }}
-                animate={{ opacity: [0, 0.8, 0] }}
+                animate={{ opacity: [0, 1, 0] }}
                 transition={{ duration: 2, ease: 'easeOut' }}
                 onAnimationComplete={() => setGlowVisible(false)}
+                style={{
+                  background: 'radial-gradient(ellipse at 30% 40%, rgba(16,185,129,0.3) 0%, rgba(20,184,166,0.2) 40%, rgba(16,185,129,0.1) 70%, transparent 100%)',
+                }}
               />
             )}
 
@@ -588,6 +665,15 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate }: ChatB
                 isTTSPlaying={isTTSPlaying}
               />
             </div>
+          )}
+
+          {/* Reaction bar for assistant messages */}
+          {isAssistant && !isStreaming && (
+            <AnimatePresence>
+              {isHovered && (
+                <ReactionBar reactions={reactions} onToggle={handleReaction} />
+              )}
+            </AnimatePresence>
           )}
 
           {/* TTS button during streaming */}

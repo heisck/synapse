@@ -1,0 +1,625 @@
+     1→import { create } from 'zustand';
+     2→import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings, Achievement, StudySession } from '@/types';
+     3→
+     4→interface AppState {
+     5→  // Navigation
+     6→  currentView: AppView;
+     7→  previousView: AppView | null;
+     8→  navigate: (view: AppView) => void;
+     9→
+    10→  // User
+    11→  userName: string;
+    12→  userEmail: string;
+    13→  userId: string | null;
+    14→  setUserId: (id: string) => void;
+    15→  setUserInfo: (name: string, email: string) => void;
+    16→
+    17→  // Onboarding
+    18→  onboardingComplete: boolean;
+    19→  setOnboardingComplete: (v: boolean) => void;
+    20→
+    21→  // Learner Profile
+    22→  learnerProfile: LearnerProfile | null;
+    23→  setLearnerProfile: (profile: LearnerProfile) => void;
+    24→
+    25→  // Active Session
+    26→  activeSessionId: string | null;
+    27→  activeCourseId: string | null;
+    28→  activeTopic: string | null;
+    29→  sessionPhase: string;
+    30→  setActiveSession: (sessionId: string, courseId?: string, topic?: string) => void;
+    31→  setSessionPhase: (phase: string) => void;
+    32→  setActiveTopic: (topic: string) => void;
+    33→
+    34→  // Chat
+    35→  messages: ChatMessage[];
+    36→  addMessage: (msg: ChatMessage) => void;
+    37→  clearMessages: () => void;
+    38→
+    39→  // Mastery Map
+    40→  masteryMap: MasteryMap;
+    41→  updateMastery: (concept: string, level: MasteryMap[string]['level'], evidence: string) => void;
+    42→
+    43→  // Decision Loop
+    44→  decisionState: DecisionLoopState;
+    45→  updateDecisionState: (updates: Partial<DecisionLoopState>) => void;
+    46→
+    47→  // Courses
+    48→  courses: Course[];
+    49→  setCourses: (courses: Course[]) => void;
+    50→  activeCourse: Course | null;
+    51→  setActiveCourse: (course: Course | null) => void;
+    52→
+    53→  // Slides
+    54→  activeSlides: Slide[];
+    55→  setActiveSlides: (slides: Slide[]) => void;
+    56→  currentSlideIndex: number;
+    57→  setCurrentSlideIndex: (i: number) => void;
+    58→  activeSlideContent: string | null;
+    59→  setActiveSlideContent: (content: string | null) => void;
+    60→
+    61→  // Questions
+    62→  currentQuestions: Question[];
+    63→  setCurrentQuestions: (q: Question[]) => void;
+    64→  quizScore: number | null;
+    65→  quizTotal: number | null;
+    66→  setQuizScore: (score: number, total: number) => void;
+    67→
+    68→  // Tips & Feedback
+    69→  tips: UserTip[];
+    70→  addTip: (tip: UserTip) => void;
+    71→  feedbackItems: UserFeedback[];
+    72→  addFeedbackItem: (item: UserFeedback) => void;
+    73→
+    74→  // Onboarding extended
+    75→  hardSubjects: string[];
+    76→  setHardSubjects: (subjects: string[]) => void;
+    77→  bestTeachingStyle: string;
+    78→  setBestTeachingStyle: (style: string) => void;
+    79→  alwaysConfuses: string;
+    80→  setAlwaysConfuses: (text: string) => void;
+    81→
+    82→  // Persona
+    83→  activePersona: string;
+    84→  setActivePersona: (persona: string) => void;
+    85→
+    86→  // Tutoring Mode
+    87→  tutorMode: 'text' | 'slide' | 'hybrid';
+    88→  setTutorMode: (mode: 'text' | 'slide' | 'hybrid') => void;
+    89→
+    90→  // Notes
+    91→  notes: Note[];
+    92→  addNote: (note: Note) => void;
+    93→  updateNote: (id: string, updates: Partial<Pick<Note, 'title' | 'content' | 'tags'>>) => void;
+    94→  deleteNote: (id: string) => void;
+    95→
+    96→  // Recent Views (for search modal)
+    97→  recentViews: AppView[];
+    98→  addRecentView: (view: AppView) => void;
+    99→
+   100→  // Goals
+   101→  goals: Goal[];
+   102→  addGoal: (goal: Goal) => void;
+   103→  toggleGoalStatus: (id: string) => void;
+   104→  deleteGoal: (id: string) => void;
+   105→  reorderGoals: (fromIndex: number, toIndex: number) => void;
+   106→
+   107→  // Achievements
+   108→  achievements: Achievement[];
+   109→  unlockAchievement: (id: string) => void;
+   110→  checkAchievements: () => void;
+   111→
+   112→  // Study Sessions
+   113→  studySessions: StudySession[];
+   114→  addStudySession: (session: StudySession) => void;
+   115→
+   116→  // Settings
+   117→  settings: AppSettings;
+   118→  updateSettings: (updates: Partial<AppSettings>) => void;
+   119→
+   120→  // UI
+   121→  sidebarOpen: boolean;
+   122→  setSidebarOpen: (open: boolean) => void;
+   123→  isLoading: boolean;
+   124→  setLoading: (loading: boolean) => void;
+   125→}
+   126→
+   127→function defaultAchievements(): Achievement[] {
+   128→  return [
+   129→    { id: 'first_steps', title: 'First Steps', description: 'Complete your first session', icon: 'Footprints', category: 'study', rarity: 'common', unlockedAt: null, condition: 'complete_1_session', progress: 0, targetValue: 1 },
+   130→    { id: 'bookworm', title: 'Bookworm', description: 'Complete 10 sessions', icon: 'BookOpen', category: 'study', rarity: 'rare', unlockedAt: null, condition: 'complete_10_sessions', progress: 0, targetValue: 10 },
+   131→    { id: 'scholar', title: 'Scholar', description: 'Complete 50 sessions', icon: 'GraduationCap', category: 'study', rarity: 'epic', unlockedAt: null, condition: 'complete_50_sessions', progress: 0, targetValue: 50 },
+   132→    { id: 'perfect_score', title: 'Perfect Score', description: 'Score 100% on any quiz', icon: 'Star', category: 'quiz', rarity: 'epic', unlockedAt: null, condition: 'score_100_quiz', progress: 0, targetValue: 1 },
+   133→    { id: 'quiz_master', title: 'Quiz Master', description: 'Complete 20 quizzes', icon: 'Trophy', category: 'quiz', rarity: 'rare', unlockedAt: null, condition: 'complete_20_quizzes', progress: 0, targetValue: 20 },
+   134→    { id: 'quick_learner', title: 'Quick Learner', description: 'Score 80%+ on first quiz attempt', icon: 'Zap', category: 'quiz', rarity: 'rare', unlockedAt: null, condition: 'score_80_first_quiz', progress: 0, targetValue: 1 },
+   135→    { id: 'streak_starter', title: 'Streak Starter', description: '3 day study streak', icon: 'Flame', category: 'streak', rarity: 'common', unlockedAt: null, condition: 'streak_3', progress: 0, targetValue: 3 },
+   136→    { id: 'on_fire', title: 'On Fire', description: '7 day study streak', icon: 'Flame', category: 'streak', rarity: 'rare', unlockedAt: null, condition: 'streak_7', progress: 0, targetValue: 7 },
+   137→    { id: 'unstoppable', title: 'Unstoppable', description: '30 day study streak', icon: 'Rocket', category: 'streak', rarity: 'legendary', unlockedAt: null, condition: 'streak_30', progress: 0, targetValue: 30 },
+   138→    { id: 'mind_mapper', title: 'Mind Mapper', description: 'Master 10 concepts', icon: 'Brain', category: 'mastery', rarity: 'rare', unlockedAt: null, condition: 'master_10_concepts', progress: 0, targetValue: 10 },
+   139→    { id: 'knowledge_base', title: 'Knowledge Base', description: 'Master 50 concepts', icon: 'Database', category: 'mastery', rarity: 'epic', unlockedAt: null, condition: 'master_50_concepts', progress: 0, targetValue: 50 },
+   140→    { id: 'note_taker', title: 'Note Taker', description: 'Create your first note', icon: 'Pencil', category: 'study', rarity: 'common', unlockedAt: null, condition: 'create_1_note', progress: 0, targetValue: 1 },
+   141→    { id: 'organized', title: 'Organized', description: 'Create 10 notes', icon: 'FolderOpen', category: 'study', rarity: 'rare', unlockedAt: null, condition: 'create_10_notes', progress: 0, targetValue: 10 },
+   142→    { id: 'marathon', title: 'Marathon', description: 'Study for 2 hours in one session', icon: 'Timer', category: 'study', rarity: 'epic', unlockedAt: null, condition: 'session_120_min', progress: 0, targetValue: 120 },
+   143→    { id: 'early_bird', title: 'Early Bird', description: 'Start a session before 8 AM', icon: 'Sunrise', category: 'streak', rarity: 'common', unlockedAt: null, condition: 'session_before_8am', progress: 0, targetValue: 1 },
+   144→  ];
+   145→}
+   146→
+   147→export const useAppStore = create<AppState>((set) => ({
+   148→  currentView: 'landing',
+   149→  previousView: null,
+   150→  navigate: (view) => set((s) => {
+   151→    const filtered = s.recentViews.filter((v) => v !== view);
+   152→    const updatedRecent = ['landing', 'onboarding'].includes(view) ? s.recentViews : [view, ...filtered].slice(0, 3);
+   153→    return { currentView: view, previousView: s.currentView, recentViews: updatedRecent };
+   154→  }),
+   155→  userName: '',
+   156→  userEmail: '',
+   157→  userId: null,
+   158→  setUserId: (id) => set({ userId: id }),
+   159→  setUserInfo: (name, email) => set({ userName: name, userEmail: email }),
+   160→  onboardingComplete: false,
+   161→  setOnboardingComplete: (v) => set({ onboardingComplete: v }),
+   162→  learnerProfile: null,
+   163→  setLearnerProfile: (profile) => set({ learnerProfile: profile, onboardingComplete: true }),
+   164→  activeSessionId: null,
+   165→  activeCourseId: null,
+   166→  activeTopic: null,
+   167→  sessionPhase: 'discovery',
+   168→  setActiveSession: (sessionId, courseId, topic) => set({ activeSessionId: sessionId, activeCourseId: courseId ?? null, activeTopic: topic ?? null, sessionPhase: topic ? 'starter' : 'discovery', messages: [], masteryMap: {} }),
+   169→  setSessionPhase: (phase) => set({ sessionPhase: phase }),
+   170→  setActiveTopic: (topic) => set({ activeTopic: topic, sessionPhase: 'starter' }),
+   171→  messages: [],
+   172→  addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
+   173→  clearMessages: () => set({ messages: [] }),
+   174→  masteryMap: {},
+   175→  updateMastery: (concept, level, evidence) => set((s) => ({
+   176→    masteryMap: {
+   177→      ...s.masteryMap,
+   178→      [concept]: { level, evidence: [...(s.masteryMap[concept]?.evidence || []), evidence], lastAssessed: Date.now(), attempts: (s.masteryMap[concept]?.attempts || 0) + 1 },
+   179→    },
+   180→  })),
+   181→  decisionState: { confusionScore: 0, masteryState: 'unknown', responseQuality: 5, cognitiveLoad: 'medium', motivation: 'medium' },
+   182→  updateDecisionState: (updates) => set((s) => ({ decisionState: { ...s.decisionState, ...updates } })),
+   183→  courses: [],
+   184→  setCourses: (courses) => set({ courses }),
+   185→  activeCourse: null,
+   186→  setActiveCourse: (course) => set({ activeCourse: course }),
+   187→  activeSlides: [],
+   188→  setActiveSlides: (slides) => set({ activeSlides: slides }),
+   189→  currentSlideIndex: 0,
+   190→  setCurrentSlideIndex: (i) => set({ currentSlideIndex: i }),
+   191→  activeSlideContent: null,
+   192→  setActiveSlideContent: (content) => set({ activeSlideContent: content }),
+   193→  currentQuestions: [],
+   194→  setCurrentQuestions: (q) => set({ currentQuestions: q }),
+   195→  quizScore: null,
+   196→  quizTotal: null,
+   197→  setQuizScore: (score, total) => set({ quizScore: score, quizTotal: total }),
+   198→  tips: [],
+   199→  addTip: (tip) => set((s) => ({ tips: [...s.tips, tip] })),
+   200→  feedbackItems: [],
+   201→  addFeedbackItem: (item) => set((s) => ({ feedbackItems: [...s.feedbackItems, item] })),
+   202→  hardSubjects: [],
+   203→  setHardSubjects: (subjects) => set({ hardSubjects: subjects }),
+   204→  bestTeachingStyle: '',
+   205→  setBestTeachingStyle: (style) => set({ bestTeachingStyle: style }),
+   206→  alwaysConfuses: '',
+   207→  setAlwaysConfuses: (text) => set({ alwaysConfuses: text }),
+   208→  activePersona: 'storyteller',
+   209→  setActivePersona: (persona) => set({ activePersona: persona }),
+   210→  tutorMode: 'hybrid',
+   211→  setTutorMode: (mode) => set({ tutorMode: mode }),
+   212→  notes: (() => {
+   213→    if (typeof window === 'undefined') return [];
+   214→    try {
+   215→      const stored = localStorage.getItem('synapse-notes');
+   216→      return stored ? JSON.parse(stored) : [];
+   217→    } catch {
+   218→      return [];
+   219→    }
+   220→  })(),
+   221→  addNote: (note) => set((s) => {
+   222→    const updated = [note, ...s.notes];
+   223→    if (typeof window !== 'undefined') {
+   224→      localStorage.setItem('synapse-notes', JSON.stringify(updated));
+   225→    }
+   226→    return { notes: updated };
+   227→  }),
+   228→  updateNote: (id, updates) => set((s) => {
+   229→    const updated = s.notes.map((n) =>
+   230→      n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n
+   231→    );
+   232→    if (typeof window !== 'undefined') {
+   233→      localStorage.setItem('synapse-notes', JSON.stringify(updated));
+   234→    }
+   235→    return { notes: updated };
+   236→  }),
+   237→  deleteNote: (id) => set((s) => {
+   238→    const updated = s.notes.filter((n) => n.id !== id);
+   239→    if (typeof window !== 'undefined') {
+   240→      localStorage.setItem('synapse-notes', JSON.stringify(updated));
+   241→    }
+   242→    return { notes: updated };
+   243→  }),
+   244→  goals: (() => {
+   245→    if (typeof window === 'undefined') return [];
+   246→    try {
+   247→      const stored = localStorage.getItem('synapse-goals');
+   248→      return stored ? JSON.parse(stored) : [];
+   249→    } catch {
+   250→      return [];
+   251→    }
+   252→  })(),
+   253→  addGoal: (goal) => set((s) => {
+   254→    const updated = [...s.goals, goal];
+   255→    if (typeof window !== 'undefined') {
+   256→      localStorage.setItem('synapse-goals', JSON.stringify(updated));
+   257→    }
+   258→    return { goals: updated };
+   259→  }),
+   260→  toggleGoalStatus: (id) => set((s) => {
+   261→    const cycle: Array<'pending' | 'in-progress' | 'done'> = ['pending', 'in-progress', 'done'];
+   262→    const updated = s.goals.map((g) => {
+   263→      if (g.id !== id) return g;
+   264→      const currentIdx = cycle.indexOf(g.status);
+   265→      const nextIdx = (currentIdx + 1) % cycle.length;
+   266→      return { ...g, status: cycle[nextIdx] };
+   267→    });
+   268→    if (typeof window !== 'undefined') {
+   269→      localStorage.setItem('synapse-goals', JSON.stringify(updated));
+   270→    }
+   271→    return { goals: updated };
+   272→  }),
+   273→  deleteGoal: (id) => set((s) => {
+   274→    const updated = s.goals.filter((g) => g.id !== id);
+   275→    if (typeof window !== 'undefined') {
+   276→      localStorage.setItem('synapse-goals', JSON.stringify(updated));
+   277→    }
+   278→    return { goals: updated };
+   279→  }),
+   280→  reorderGoals: (fromIndex, toIndex) => set((s) => {
+   281→    const arr = [...s.goals];
+   282→    const [moved] = arr.splice(fromIndex, 1);
+   283→    arr.splice(toIndex, 0, moved);
+   284→    if (typeof window !== 'undefined') {
+   285→      localStorage.setItem('synapse-goals', JSON.stringify(arr));
+   286→    }
+   287→    return { goals: arr };
+   288→  }),
+   289→  settings: (() => {
+   290→    if (typeof window === 'undefined') return {
+   291→      theme: 'system',
+   292→      compactMode: false,
+   293→      defaultPersona: 'storyteller',
+   294→      responseSpeed: 'balanced',
+   295→      language: 'English',
+   296→      defaultSessionDuration: 30,
+   297→      autoBreakReminders: true,
+   298→      dailyGoalHours: 2,
+   299→      sessionReminders: true,
+   300→      streakAlerts: true,
+   301→    };
+   302→    try {
+   303→      const stored = localStorage.getItem('synapse-settings');
+   304→      if (stored) {
+   305→        return { ...{
+   306→          theme: 'system',
+   307→          compactMode: false,
+   308→          defaultPersona: 'storyteller',
+   309→          responseSpeed: 'balanced',
+   310→          language: 'English',
+   311→          defaultSessionDuration: 30,
+   312→          autoBreakReminders: true,
+   313→          dailyGoalHours: 2,
+   314→          sessionReminders: true,
+   315→          streakAlerts: true,
+   316→        }, ...JSON.parse(stored) };
+   317→      }
+   318→      return {
+   319→        theme: 'system',
+   320→        compactMode: false,
+   321→        defaultPersona: 'storyteller',
+   322→        responseSpeed: 'balanced',
+   323→        language: 'English',
+   324→        defaultSessionDuration: 30,
+   325→        autoBreakReminders: true,
+   326→        dailyGoalHours: 2,
+   327→        sessionReminders: true,
+   328→        streakAlerts: true,
+   329→      };
+   330→    } catch {
+   331→      return {
+   332→        theme: 'system',
+   333→        compactMode: false,
+   334→        defaultPersona: 'storyteller',
+   335→        responseSpeed: 'balanced',
+   336→        language: 'English',
+   337→        defaultSessionDuration: 30,
+   338→        autoBreakReminders: true,
+   339→        dailyGoalHours: 2,
+   340→        sessionReminders: true,
+   341→        streakAlerts: true,
+   342→      };
+   343→    }
+   344→  })(),
+   345→  updateSettings: (updates) => set((s) => {
+   346→    const updated = { ...s.settings, ...updates };
+   347→    if (typeof window !== 'undefined') {
+   348→      localStorage.setItem('synapse-settings', JSON.stringify(updated));
+   349→    }
+   350→    return { settings: updated };
+   351→  }),
+   352→  recentViews: [],
+   353→  addRecentView: (view) => set((s) => {
+   354→    const filtered = s.recentViews.filter((v) => v !== view);
+   355→    const updated = [view, ...filtered].slice(0, 3);
+   356→    return { recentViews: updated };
+   357→  }),
+   358→  // Achievements
+   359→  achievements: (() => {
+   360→    if (typeof window === 'undefined') return defaultAchievements();
+   361→    try {
+   362→      const stored = localStorage.getItem('synapse-achievements');
+   363→      if (stored) {
+   364→        const parsed = JSON.parse(stored) as Achievement[];
+   365→        return parsed.length === 15 ? parsed : defaultAchievements();
+   366→      }
+   367→      return defaultAchievements();
+   368→    } catch {
+   369→      return defaultAchievements();
+   370→    }
+   371→  })(),
+   372→  unlockAchievement: (id) => set((s) => {
+   373→    const now = new Date().toISOString();
+   374→    const updated = s.achievements.map((a) =>
+   375→      a.id === id && !a.unlockedAt ? { ...a, unlockedAt: now, progress: 100 } : a
+   376→    );
+   377→    if (typeof window !== 'undefined') {
+   378→      localStorage.setItem('synapse-achievements', JSON.stringify(updated));
+   379→    }
+   380→    return { achievements: updated };
+   381→  }),
+   382→  checkAchievements: () => {
+   383→    const state = useAppStore.getState();
+   384→    const { studySessions, achievements, masteryMap, notes, quizScore, quizTotal } = state;
+   385→    const updates: Array<{ id: string; progress: number; unlockedAt: string | null }> = [];
+   386→
+   387→    const totalSessions = studySessions.length;
+   388→    const totalNotes = notes.length;
+   389→    const masteredConcepts = Object.values(masteryMap).filter((c) => c.level >= 80).length;
+   390→
+   391→    // Compute current streak from studySessions
+   392→    const sessionDates = [...new Set(studySessions.map((s) => new Date(s.date).toISOString().split('T')[0]))].sort().reverse();
+   393→    let streak = 0;
+   394→    if (sessionDates.length > 0) {
+   395→      const today = new Date();
+   396→      today.setHours(0, 0, 0, 0);
+   397→      const todayStr = today.toISOString().split('T')[0];
+   398→      const yesterday = new Date(today);
+   399→      yesterday.setDate(yesterday.getDate() - 1);
+   400→      const yesterdayStr = yesterday.toISOString().split('T')[0];
+   401→      const firstDate = sessionDates[0];
+   402→      if (firstDate === todayStr || firstDate === yesterdayStr) {
+   403→        streak = 1;
+   404→        for (let i = 1; i < sessionDates.length; i++) {
+   405→          const prev = new Date(sessionDates[i - 1]);
+   406→          const curr = new Date(sessionDates[i]);
+   407→          const diffDays = Math.floor((prev.getTime() - curr.getTime()) / 86400000);
+   408→          if (diffDays === 1) {
+   409→            streak++;
+   410→          } else {
+   411→            break;
+   412→          }
+   413→        }
+   414→      }
+   415→    }
+   416→
+   417→    const bestSessionDuration = studySessions.reduce((max, s) => Math.max(max, s.duration), 0);
+   418→    const earlyBirdSessions = studySessions.filter((s) => {
+   419→      const h = new Date(s.date).getHours();
+   420→      return h < 8;
+   421→    }).length;
+   422→
+   423→    // First Steps - Complete 1 session
+   424→    const a1 = achievements.find((a) => a.id === 'first_steps');
+   425→    const p1 = Math.min(100, (totalSessions / 1) * 100);
+   426→    if (a1 && (totalSessions >= 1 && !a1.unlockedAt)) {
+   427→      updates.push({ id: 'first_steps', progress: 100, unlockedAt: new Date().toISOString() });
+   428→    } else if (a1) {
+   429→      updates.push({ id: 'first_steps', progress: p1, unlockedAt: a1.unlockedAt });
+   430→    }
+   431→
+   432→    // Bookworm - Complete 10 sessions
+   433→    const a2 = achievements.find((a) => a.id === 'bookworm');
+   434→    const p2 = Math.min(100, (totalSessions / 10) * 100);
+   435→    if (a2 && totalSessions >= 10 && !a2.unlockedAt) {
+   436→      updates.push({ id: 'bookworm', progress: 100, unlockedAt: new Date().toISOString() });
+   437→    } else if (a2) {
+   438→      updates.push({ id: 'bookworm', progress: p2, unlockedAt: a2.unlockedAt });
+   439→    }
+   440→
+   441→    // Scholar - Complete 50 sessions
+   442→    const a3 = achievements.find((a) => a.id === 'scholar');
+   443→    const p3 = Math.min(100, (totalSessions / 50) * 100);
+   444→    if (a3 && totalSessions >= 50 && !a3.unlockedAt) {
+   445→      updates.push({ id: 'scholar', progress: 100, unlockedAt: new Date().toISOString() });
+   446→    } else if (a3) {
+   447→      updates.push({ id: 'scholar', progress: p3, unlockedAt: a3.unlockedAt });
+   448→    }
+   449→
+   450→    // Perfect Score - Score 100% on any quiz
+   451→    const a4 = achievements.find((a) => a.id === 'perfect_score');
+   452→    if (a4 && quizScore !== null && quizTotal !== null && quizScore === quizTotal && !a4.unlockedAt) {
+   453→      updates.push({ id: 'perfect_score', progress: 100, unlockedAt: new Date().toISOString() });
+   454→    } else if (a4 && !a4.unlockedAt) {
+   455→      updates.push({ id: 'perfect_score', progress: 0, unlockedAt: null });
+   456→    }
+   457→
+   458→    // Quiz Master - Complete 20 quizzes (count sessions with quiz-related topics or quizzes taken)
+   459→    const a5 = achievements.find((a) => a.id === 'quiz_master');
+   460→    const quizCount = studySessions.filter((s) => s.topic.toLowerCase().includes('quiz')).length;
+   461→    const p5 = Math.min(100, (quizCount / 20) * 100);
+   462→    if (a5 && quizCount >= 20 && !a5.unlockedAt) {
+   463→      updates.push({ id: 'quiz_master', progress: 100, unlockedAt: new Date().toISOString() });
+   464→    } else if (a5) {
+   465→      updates.push({ id: 'quiz_master', progress: p5, unlockedAt: a5.unlockedAt });
+   466→    }
+   467→
+   468→    // Quick Learner - Score 80%+ on first quiz attempt
+   469→    const a6 = achievements.find((a) => a.id === 'quick_learner');
+   470→    if (a6 && quizScore !== null && quizTotal !== null && (quizScore / quizTotal) >= 0.8 && !a6.unlockedAt) {
+   471→      updates.push({ id: 'quick_learner', progress: 100, unlockedAt: new Date().toISOString() });
+   472→    } else if (a6 && !a6.unlockedAt) {
+   473→      updates.push({ id: 'quick_learner', progress: 0, unlockedAt: null });
+   474→    }
+   475→
+   476→    // Streak Starter - 3 day streak
+   477→    const a7 = achievements.find((a) => a.id === 'streak_starter');
+   478→    const p7 = Math.min(100, (streak / 3) * 100);
+   479→    if (a7 && streak >= 3 && !a7.unlockedAt) {
+   480→      updates.push({ id: 'streak_starter', progress: 100, unlockedAt: new Date().toISOString() });
+   481→    } else if (a7) {
+   482→      updates.push({ id: 'streak_starter', progress: p7, unlockedAt: a7.unlockedAt });
+   483→    }
+   484→
+   485→    // On Fire - 7 day streak
+   486→    const a8 = achievements.find((a) => a.id === 'on_fire');
+   487→    const p8 = Math.min(100, (streak / 7) * 100);
+   488→    if (a8 && streak >= 7 && !a8.unlockedAt) {
+   489→      updates.push({ id: 'on_fire', progress: 100, unlockedAt: new Date().toISOString() });
+   490→    } else if (a8) {
+   491→      updates.push({ id: 'on_fire', progress: p8, unlockedAt: a8.unlockedAt });
+   492→    }
+   493→
+   494→    // Unstoppable - 30 day streak
+   495→    const a9 = achievements.find((a) => a.id === 'unstoppable');
+   496→    const p9 = Math.min(100, (streak / 30) * 100);
+   497→    if (a9 && streak >= 30 && !a9.unlockedAt) {
+   498→      updates.push({ id: 'unstoppable', progress: 100, unlockedAt: new Date().toISOString() });
+   499→    } else if (a9) {
+   500→      updates.push({ id: 'unstoppable', progress: p9, unlockedAt: a9.unlockedAt });
+   501→    }
+   502→
+   503→    // Mind Mapper - Master 10 concepts
+   504→    const a10 = achievements.find((a) => a.id === 'mind_mapper');
+   505→    const p10 = Math.min(100, (masteredConcepts / 10) * 100);
+   506→    if (a10 && masteredConcepts >= 10 && !a10.unlockedAt) {
+   507→      updates.push({ id: 'mind_mapper', progress: 100, unlockedAt: new Date().toISOString() });
+   508→    } else if (a10) {
+   509→      updates.push({ id: 'mind_mapper', progress: p10, unlockedAt: a10.unlockedAt });
+   510→    }
+   511→
+   512→    // Knowledge Base - Master 50 concepts
+   513→    const a11 = achievements.find((a) => a.id === 'knowledge_base');
+   514→    const p11 = Math.min(100, (masteredConcepts / 50) * 100);
+   515→    if (a11 && masteredConcepts >= 50 && !a11.unlockedAt) {
+   516→      updates.push({ id: 'knowledge_base', progress: 100, unlockedAt: new Date().toISOString() });
+   517→    } else if (a11) {
+   518→      updates.push({ id: 'knowledge_base', progress: p11, unlockedAt: a11.unlockedAt });
+   519→    }
+   520→
+   521→    // Note Taker - Create first note
+   522→    const a12 = achievements.find((a) => a.id === 'note_taker');
+   523→    const p12 = Math.min(100, (totalNotes / 1) * 100);
+   524→    if (a12 && totalNotes >= 1 && !a12.unlockedAt) {
+   525→      updates.push({ id: 'note_taker', progress: 100, unlockedAt: new Date().toISOString() });
+   526→    } else if (a12) {
+   527→      updates.push({ id: 'note_taker', progress: p12, unlockedAt: a12.unlockedAt });
+   528→    }
+   529→
+   530→    // Organized - Create 10 notes
+   531→    const a13 = achievements.find((a) => a.id === 'organized');
+   532→    const p13 = Math.min(100, (totalNotes / 10) * 100);
+   533→    if (a13 && totalNotes >= 10 && !a13.unlockedAt) {
+   534→      updates.push({ id: 'organized', progress: 100, unlockedAt: new Date().toISOString() });
+   535→    } else if (a13) {
+   536→      updates.push({ id: 'organized', progress: p13, unlockedAt: a13.unlockedAt });
+   537→    }
+   538→
+   539→    // Marathon - Study 2 hours (120 min) in one session
+   540→    const a14 = achievements.find((a) => a.id === 'marathon');
+   541→    const p14 = Math.min(100, (bestSessionDuration / 120) * 100);
+   542→    if (a14 && bestSessionDuration >= 120 && !a14.unlockedAt) {
+   543→      updates.push({ id: 'marathon', progress: 100, unlockedAt: new Date().toISOString() });
+   544→    } else if (a14) {
+   545→      updates.push({ id: 'marathon', progress: p14, unlockedAt: a14.unlockedAt });
+   546→    }
+   547→
+   548→    // Early Bird - Start a session before 8 AM
+   549→    const a15 = achievements.find((a) => a.id === 'early_bird');
+   550→    const p15 = Math.min(100, (earlyBirdSessions / 1) * 100);
+   551→    if (a15 && earlyBirdSessions >= 1 && !a15.unlockedAt) {
+   552→      updates.push({ id: 'early_bird', progress: 100, unlockedAt: new Date().toISOString() });
+   553→    } else if (a15) {
+   554→      updates.push({ id: 'early_bird', progress: p15, unlockedAt: a15.unlockedAt });
+   555→    }
+   556→
+   557→    if (updates.length > 0) {
+   558→      const newAchievements = achievements.map((a) => {
+   559→        const u = updates.find((up) => up.id === a.id);
+   560→        return u ? { ...a, progress: u.progress, unlockedAt: u.unlockedAt ?? a.unlockedAt } : a;
+   561→      });
+   562→      if (typeof window !== 'undefined') {
+   563→        localStorage.setItem('synapse-achievements', JSON.stringify(newAchievements));
+   564→      }
+   565→      set({ achievements: newAchievements });
+   566→    }
+   567→  },
+   568→
+   569→  // Study Sessions
+   570→  studySessions: (() => {
+   571→    if (typeof window === 'undefined') return [];
+   572→    try {
+   573→      const stored = localStorage.getItem('synapse-study-sessions');
+   574→      return stored ? JSON.parse(stored) : [];
+   575→    } catch {
+   576→      return [];
+   577→    }
+   578→  })(),
+   579→  addStudySession: (session) => set((s) => {
+   580→    const updated = [session, ...s.studySessions];
+   581→    if (typeof window !== 'undefined') {
+   582→      localStorage.setItem('synapse-study-sessions', JSON.stringify(updated));
+   583→    }
+   584→    // Update streak in localStorage
+   585→    if (typeof window !== 'undefined') {
+   586→      const today = new Date().toISOString().split('T')[0];
+   587→      const streakData = localStorage.getItem('synapse-study-streak');
+   588→      let currentStreak = 1;
+   589→      if (streakData) {
+   590→        try {
+   591→          const parsed = JSON.parse(streakData) as { lastStudyDate: string; streak: number };
+   592→          const lastDate = parsed.lastStudyDate;
+   593→          const last = new Date(lastDate);
+   594→          const now = new Date(today);
+   595→          const diffDays = Math.floor((now.getTime() - last.getTime()) / 86400000);
+   596→          if (diffDays === 0) {
+   597→            currentStreak = parsed.streak;
+   598→          } else if (diffDays === 1) {
+   599→            currentStreak = parsed.streak + 1;
+   600→          }
+   601→        } catch {
+   602→          currentStreak = 1;
+   603→        }
+   604→      }
+   605→      localStorage.setItem('synapse-study-streak', JSON.stringify({ lastStudyDate: today, streak: currentStreak }));
+   606→      // Update best streak
+   607→      const bestData = localStorage.getItem('synapse-best-streak');
+   608→      let bestStreak = 0;
+   609→      if (bestData) {
+   610→        try { bestStreak = parseInt(bestData, 10); } catch { bestStreak = 0; }
+   611→      }
+   612→      if (currentStreak > bestStreak) {
+   613→        localStorage.setItem('synapse-best-streak', String(currentStreak));
+   614→      }
+   615→    }
+   616→    // Check achievements after adding a session
+   617→    setTimeout(() => useAppStore.getState().checkAchievements(), 100);
+   618→    return { studySessions: updated };
+   619→  }),
+   620→
+   621→  sidebarOpen: false,
+   622→  setSidebarOpen: (open) => set({ sidebarOpen: open }),
+   623→  isLoading: false,
+   624→  setLoading: (loading) => set({ isLoading: loading }),
+   625→}));

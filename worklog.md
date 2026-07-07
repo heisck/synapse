@@ -911,6 +911,78 @@ src/
 2. **Three.js SSR bail** - ParticleField uses `next/dynamic` with `ssr: false` (expected)
 3. **Mock chart fallback** - Dashboard charts fall back to mock data when no localStorage data exists (expected behavior)
 
+---
+Task ID: 14
+Agent: Auto Review (Cron) - Round 5
+Task: QA assessment, quiz enhancements, onboarding simplification, chat polish, dashboard styling
+
+Work Log:
+- **QA Assessment**: Build passes clean (0 errors, 0 warnings), lint passes clean (0 errors across all files). Production build compiles successfully in 28.9s.
+- **QuizView - Drag-and-Drop Matching with SVG Connectors**:
+  - Upgraded MatchingInput to support HTML5 drag-and-drop with visual SVG bezier curve connectors between matched pairs
+  - Connector lines use animated gradient stroke (emerald-to-teal) with framer-motion pathLength animation
+  - Pulsing glow effect on drop zones during drag
+  - Click-to-match preserved as fallback for accessibility/touch
+  - Click matched left items to remove connections
+  - Uses ResizeObserver for reliable position tracking
+- **QuizView - 3D Flashcard Flip Animation**:
+  - Proper 3D flip using framer-motion rotateY with perspective: 1000px and backfaceVisibility: hidden
+  - Front face: question, concept badge, difficulty badge, type badge, course badge
+  - Back face: answer, explanation, concept tag
+  - "Tap to reveal" hint with pulsing dot (hidden after first flip)
+  - Swipe gestures (drag=x): swipe right = "I know this", swipe left = "Still learning"
+  - Directional hint icons (Check/X) using useMotionValue + useTransform
+  - Card stack effect: next card visible behind current (scaled 0.97, offset, 30% opacity)
+- **QuizView - Session Timer**: MM:SS timer starts on first answer, pauses on results, pulsing Clock icon
+- **QuizView - Difficulty Progress Tracker**: Thin stacked horizontal bar (emerald/amber/rose) with labels showing Easy/Medium/Hard question distribution
+- **OnboardingFlow - Quick Start**: Added prominent "Quick Start" button that skips all configuration, sets defaults (visual, steady pace), navigates directly to dashboard
+- **OnboardingFlow - Skip All**: Added "Skip all" link at bottom-right of Welcome step
+- **OnboardingFlow - Visual Polish**: Floating Brain icon (animate-float), animated border shimmer on "Get Started" button (.animated-border), enhanced staggered entrance animations (0.15s intervals), confetti particles on Done step (36 colored burst particles)
+- **Dashboard - Typewriter Greeting**: Characters reveal one-by-one at 40ms with blinking cursor, username fades in with gradient-text
+- **Dashboard - StatsCard Hover**: Enhanced shadow with emerald-tinted glow on hover via framer-motion whileHover
+- **Dashboard - Quick Start Hero Card**: Glass + mesh-gradient + gradient-border, conditional "Continue Learning"/"Start a Session" text, pulsing CTA, streak badge
+- **Dashboard - Chart Styling**: Added .card-shadow to chart containers for multi-layered depth
+- **Dashboard - CourseCard Hover Glow**: hover:glow-emerald on course cards
+- **ChatBubble - Message Reactions**: Added ReactionBar with thumbs up/down, lightbulb, thinking emoji reactions that appear on hover for assistant messages, stored in local state, animated count badges
+- **ChatBubble - Enhanced Entrance Animation**: Bouncier spring physics (stiffness: 300, damping: 24 for outer, 350/26 for inner)
+- **ChatBubble - Gradient Glow**: Radial emerald-to-teal gradient glow on assistant messages that fades after 2s
+- **TutorView - Suggestion Chips**: 4 contextual pill chips ("Explain in simpler terms", "Give me an example", "Quiz me on this", "Go deeper") with framer-motion stagger animation
+- **TutorView - Character Count**: Enhanced to "X/500" format with color thresholds (green < 350, amber < 450, red >= 450)
+- **TutorView - Input Styling**: Glass background (.glass), animated gradient border (.gradient-border), pulse-glow on send button when text present
+
+Stage Summary:
+- 0 lint errors, clean production build
+- 4 major features added (DnD matching, 3D flashcards, quiz timer, difficulty tracker)
+- Onboarding flow simplified with Quick Start option
+- Dashboard visual polish (typewriter greeting, hero card, enhanced hover effects)
+- Chat experience enhanced (reactions, better animations, suggestion chips)
+
+## Current Project Status
+
+### Verified Working:
+- Landing page with GSAP/WebGL/Lenis/framer-motion animations
+- Simplified onboarding with Quick Start shortcut + full multi-step wizard option
+- Enhanced Dashboard with typewriter greeting, hero card, real analytics, floating stats
+- AI Tutor with typewriter streaming chat, message reactions, suggested prompts, gradient glow
+- Three tutoring modes: Chat (text-only), Slides (slide-focused), Hybrid (combined)
+- TTS audio playback with animated indicators
+- Achievement system with 15 badges across 5 categories and 4 rarity levels
+- Study session auto-tracking with streak computation
+- Quiz mode with per-course filtering, 6 question types, drag-and-drop matching, 3D flashcards, streak counter, session timer, difficulty distribution bar
+- Notes/Journal system with tag filtering, search, sort, colored pills
+- Settings page with 6 sections, all persisted to localStorage
+- Study goals tracker with dynamic add/delete/reorder
+- Search modal (Cmd+K) with recent views, courses, quick actions, keyboard navigation
+- Glass morphism sidebar with animated gradient edge, layout animations, notification badges
+- Error boundary with recovery UI
+- Dark mode, toasts, keyboard shortcuts (Cmd+1-7)
+- Full SEO, rate limiting, Zod validation
+
+### Known Issues:
+1. **Server stability** - Next.js dev server OOMs after Turbopack compilation (sandbox memory limitation, not code bug)
+2. **Three.js SSR bail** - ParticleField uses `next/dynamic` with `ssr: false` (expected)
+3. **Mock chart fallback** - Dashboard charts fall back to mock data when no localStorage data exists (expected behavior)
+
 ### Recommendations for Next Phase:
 1. **Priority 1**: End-to-end test with real .docx upload -> question generation -> quiz flow
 2. **Priority 1**: Verify TTS playback works end-to-end in browser

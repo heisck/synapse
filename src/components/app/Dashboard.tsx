@@ -124,6 +124,40 @@ const fadeUp = {
   animate: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 };
 
+// Typewriter text component for greeting animation
+function TypewriterText({ text, speed = 40, className = '' }: { text: string; speed?: number; className?: string }) {
+  const [displayed, setDisplayed] = useState('');
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    setDisplayed('');
+    setDone(false);
+    let i = 0;
+    const timer = setInterval(() => {
+      i++;
+      setDisplayed(text.slice(0, i));
+      if (i >= text.length) {
+        setDone(true);
+        clearInterval(timer);
+      }
+    }, speed);
+    return () => clearInterval(timer);
+  }, [text, speed]);
+
+  return (
+    <span className={className}>
+      {displayed}
+      {!done && (
+        <motion.span
+          animate={{ opacity: [1, 0] }}
+          transition={{ duration: 0.4, repeat: Infinity, repeatType: 'reverse' }}
+          className="inline-block w-[2px] h-[0.85em] bg-primary ml-0.5 align-middle rounded-full"
+        />
+      )}
+    </span>
+  );
+}
+
 // Animated gradient divider component
 function GradientDivider() {
   return (
@@ -203,6 +237,7 @@ export function Dashboard() {
     reorderGoals,
     studySessions,
     masteryMap,
+    activeSessionId,
   } = useAppStore();
 
   const { current: currentStreak, best: bestStreak } = useStudyStreak();
@@ -419,15 +454,6 @@ export function Dashboard() {
     }),
   };
 
-  // Glow sweep keyframes for quick start card
-  const glowSweep = useMemo(() => ({
-    initial: { opacity: 0 },
-    animate: {
-      opacity: [0, 0.6, 0.3, 0.6, 0.3, 0.4, 0],
-      transition: { duration: 2.5, ease: 'easeInOut', delay: 0.3 },
-    },
-  }), []);
-
   return (
     <motion.div
       variants={stagger}
@@ -445,12 +471,12 @@ export function Dashboard() {
               transition={{ duration: 0.6, delay: 0.1, ease: 'easeOut' }}
               className="text-2xl lg:text-3xl font-bold"
             >
-              {greeting},{' '}
+              <TypewriterText text={`${greeting}, `} speed={40} />
               <motion.span
-                initial={{ opacity: 0, backgroundPosition: '200% center' }}
-                animate={{ opacity: 1, backgroundPosition: '0% center' }}
-                transition={{ duration: 0.8, delay: 0.4, ease: 'easeOut' }}
-                className="gradient-text inline-block bg-[length:200%_auto]"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: `${greeting}, `.length * 0.04 + 0.15, duration: 0.4, ease: 'easeOut' }}
+                className="gradient-text inline-block"
               >
                 {displayName}
               </motion.span>
@@ -501,41 +527,40 @@ export function Dashboard() {
 
       <GradientDivider />
 
-      {/* Quick Start Card */}
+      {/* Quick Start Hero Card */}
       <motion.div variants={fadeUp}>
-        <div className="relative group">
-          {/* More dramatic animated gradient border */}
-          <motion.div
-            {...glowSweep}
-            className="absolute -inset-[2px] rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 blur-md"
-          />
-          <motion.div
-            animate={{
-              opacity: [0.15, 0.3, 0.15],
-            }}
-            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-            className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500"
-          />
-          <div
-            className="relative overflow-hidden rounded-xl p-6 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white cursor-pointer"
-            onClick={() => handleStartSession("Today's Topic")}
-          >
-            <div className="absolute inset-0 bg-grid-pattern opacity-10" />
-            <div className="relative z-10 flex items-center justify-between">
-              <div className="space-y-2">
-                <p className="text-emerald-100 text-sm font-medium">Quick Start</p>
-                <h2 className="text-xl font-bold">Continue learning with your AI Tutor</h2>
-                <p className="text-emerald-100/80 text-sm">
-                  Pick a topic below or upload new study material to get started
-                </p>
-                <div className="flex items-center gap-2 pt-1 text-sm font-medium text-white/90 group-hover:text-white transition-colors">
-                  Start now <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                </div>
+        <div className="glass mesh-gradient gradient-border rounded-xl p-6 cursor-pointer group relative overflow-hidden"
+          onClick={() => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic")}
+        >
+          <div className="relative z-10 flex items-center justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-primary">Quick Start</p>
+                {currentStreak > 0 && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-orange-600 bg-orange-500/10 px-2 py-0.5 rounded-full">
+                    <Flame className="h-3 w-3" />
+                    {currentStreak} day streak
+                  </span>
+                )}
               </div>
-              <div className="hidden sm:block">
-                <div className="h-20 w-20 rounded-2xl bg-white/10 flex items-center justify-center animate-float">
-                  <Zap className="h-10 w-10 text-white/80" />
-                </div>
+              <h2 className="text-xl font-bold">
+                {activeSessionId ? 'Continue Learning' : 'Start a Session'}
+              </h2>
+              <p className="text-muted-foreground text-sm">
+                {activeSessionId
+                  ? 'Pick up where you left off with your AI tutor'
+                  : 'Pick a topic below or upload new study material to get started'}
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <Button size="sm" className="pulse-glow">
+                  {activeSessionId ? 'Continue' : 'Start Now'}
+                  <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
+                </Button>
+              </div>
+            </div>
+            <div className="hidden sm:block">
+              <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center animate-float">
+                <Zap className="h-10 w-10 text-primary/70" />
               </div>
             </div>
           </div>
@@ -614,7 +639,12 @@ export function Dashboard() {
               <motion.div
                 key={stat.label}
                 animate={{ y: [0, -2, 0] }}
+                whileHover={{
+                  boxShadow: '0 8px 30px rgba(16, 185, 129, 0.15), 0 4px 12px rgba(0, 0, 0, 0.08)',
+                  transition: { duration: 0.2 },
+                }}
                 transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.4 }}
+                className="rounded-xl"
               >
                 <StatsCard
                   icon={stat.icon}
@@ -803,7 +833,7 @@ export function Dashboard() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
           >
-            <div className="glass rounded-xl overflow-hidden">
+            <div className="glass card-shadow rounded-xl overflow-hidden">
               <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-3">
                 <div className="flex items-center gap-2 text-white">
                   <BarChart3 className="h-4 w-4" />
@@ -864,7 +894,7 @@ export function Dashboard() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2, ease: 'easeOut' }}
           >
-            <div className="glass rounded-xl overflow-hidden">
+            <div className="glass card-shadow rounded-xl overflow-hidden">
               <div className="bg-gradient-to-r from-teal-600 to-emerald-600 px-5 py-3">
                 <div className="flex items-center gap-2 text-white">
                   <TrendingUp className="h-4 w-4" />
@@ -1068,7 +1098,7 @@ function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof Cou
       onClick={onClick}
       className="group text-left w-full"
     >
-      <div className="glass rounded-xl overflow-hidden border border-border/50 transition-shadow hover:shadow-lg hover:shadow-primary/5">
+      <div className="glass rounded-xl overflow-hidden border border-border/50 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:glow-emerald">
         {/* Thumbnail */}
         <div className="relative h-32 bg-gradient-to-br from-emerald-500/20 via-teal-500/15 to-emerald-600/10 flex items-center justify-center overflow-hidden">
           <BookOpen className="h-10 w-10 text-primary/40 group-hover:text-primary/60 transition-colors relative z-10" />

@@ -102,6 +102,15 @@ const SUGGESTED_PROMPTS = [
   'Summarize key points',
 ]
 
+const CONTEXTUAL_SUGGESTIONS = [
+  'Explain in simpler terms',
+  'Give me an example',
+  'Quiz me on this',
+  'Go deeper',
+]
+
+const MAX_INPUT_CHARS = 500
+
 type InputSize = 'small' | 'medium' | 'large'
 
 const INPUT_SIZES: Record<InputSize, { minH: number; maxH: number; rows: number; label: string }> = {
@@ -297,7 +306,7 @@ export function TutorView() {
   }, [])
 
   const charCount = input.length
-  const charColorClass = charCount < 200 ? 'text-emerald-600 dark:text-emerald-400' : charCount < 400 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'
+  const charColorClass = charCount < 350 ? 'text-emerald-600 dark:text-emerald-400' : charCount < 450 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'
 
   const handleSend = useCallback(async (text?: string) => {
     const content = (text || input).trim()
@@ -798,7 +807,7 @@ export function TutorView() {
             <div className="px-3 pb-3 pt-1">
               <div className="max-w-3xl mx-auto">
                 {/* Gradient border glow wrapper */}
-                <div className="relative">
+                <div className="relative gradient-border rounded-xl">
                   {inputFocused && (
                     <motion.div
                       layoutId="input-glow"
@@ -809,7 +818,7 @@ export function TutorView() {
                       transition={{ duration: 0.3 }}
                     />
                   )}
-                  <div className="flex items-end gap-1.5 bg-background rounded-xl border border-border p-1.5 transition-shadow duration-300">
+                  <div className="flex items-end gap-1.5 glass rounded-xl border border-border/60 p-1.5 transition-shadow duration-300">
                     <Textarea
                       ref={textareaRef}
                       placeholder="Ask me anything..."
@@ -832,7 +841,7 @@ export function TutorView() {
                           exit={{ opacity: 0, x: 4 }}
                           className={`text-[10px] font-mono tabular-nums ${charColorClass}`}
                         >
-                          {charCount}
+                          {charCount}/{MAX_INPUT_CHARS}
                         </motion.span>
                       )}
 
@@ -894,7 +903,7 @@ export function TutorView() {
                       {/* Send button */}
                       <Button
                         size="icon"
-                        className="shrink-0 h-7 w-7 rounded-lg"
+                        className={`shrink-0 h-7 w-7 rounded-lg ${input.trim() ? 'pulse-glow' : ''}`}
                         onClick={() => handleSend()}
                         disabled={!input.trim() || isLoading}
                         aria-label="Send message"
@@ -904,6 +913,39 @@ export function TutorView() {
                     </div>
                   </div>
                 </div>
+
+                {/* Contextual suggestion chips below input */}
+                <AnimatePresence>
+                  {!isLoading && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 6 }}
+                      transition={{ duration: 0.25, ease: 'easeOut' }}
+                      className="flex flex-wrap gap-1.5 mt-2 justify-center"
+                    >
+                      {CONTEXTUAL_SUGGESTIONS.map((suggestion, index) => (
+                        <motion.button
+                          key={suggestion}
+                          initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          transition={{
+                            type: 'spring',
+                            stiffness: 400,
+                            damping: 28,
+                            delay: index * 0.06,
+                          }}
+                          whileHover={{ scale: 1.05, y: -1 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => handleSend(suggestion)}
+                          className="px-3 py-1 text-[11px] font-medium rounded-full border border-border/60 bg-background/40 text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-primary/5 transition-colors"
+                        >
+                          {suggestion}
+                        </motion.button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
           </div>

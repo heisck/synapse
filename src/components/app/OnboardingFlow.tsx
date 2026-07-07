@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -14,6 +14,7 @@ import {
   Check,
   Sparkles,
   ChevronRight,
+  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -70,6 +71,51 @@ const topicOptions = [
   'Creative Writing',
   'Psychology',
 ];
+
+// Confetti-like particles for the Done step
+function ConfettiParticles() {
+  const particles = useMemo(
+    () =>
+      Array.from({ length: 36 }, (_, i) => ({
+        id: i,
+        x: (Math.random() - 0.5) * 320,
+        y: -(Math.random() * 220 + 60),
+        rotate: Math.random() * 720 - 360,
+        scale: Math.random() * 0.6 + 0.4,
+        color: ['#10b981', '#14b8a6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'][
+          Math.floor(Math.random() * 6)
+        ],
+        delay: Math.random() * 0.5,
+        size: Math.random() * 6 + 3,
+      })),
+    [],
+  );
+
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl">
+      {particles.map((p) => (
+        <motion.div
+          key={p.id}
+          initial={{ x: 0, y: 0, opacity: 1, rotate: 0, scale: 0 }}
+          animate={{
+            x: p.x,
+            y: p.y,
+            opacity: 0,
+            rotate: p.rotate,
+            scale: p.scale,
+          }}
+          transition={{ duration: 2, delay: p.delay, ease: 'easeOut' }}
+          className="absolute left-1/2 top-1/2 rounded-sm"
+          style={{
+            width: p.size,
+            height: p.size,
+            backgroundColor: p.color,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 
 function StepIndicator({ currentStep }: { currentStep: number }) {
   return (
@@ -152,7 +198,7 @@ const slideVariants = {
   }),
 };
 
-function WelcomeStep({ onNext }: { onNext: () => void }) {
+function WelcomeStep({ onNext, onQuickStart }: { onNext: () => void; onQuickStart: () => void }) {
   const features = [
     { icon: Brain, text: 'AI-Powered Learning' },
     { icon: Sparkles, text: 'Adaptive Tutoring' },
@@ -175,9 +221,11 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
           initial={{ scale: 0, rotate: -180 }}
           animate={{ scale: 1, rotate: 0 }}
           transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.2 }}
-          className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20"
+          className="mx-auto"
         >
-          <Brain className="h-10 w-10 text-white" />
+          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20 animate-float">
+            <Brain className="h-10 w-10 text-white" />
+          </div>
         </motion.div>
         <motion.h1
           initial={{ opacity: 0, y: 10 }}
@@ -201,9 +249,9 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
         {features.map((f, i) => (
           <motion.div
             key={f.text}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.5 + i * 0.1 }}
+            initial={{ opacity: 0, x: -30, scale: 0.9 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            transition={{ delay: 0.5 + i * 0.15, type: 'spring', stiffness: 300, damping: 25 }}
             className="flex items-center gap-3 p-3 rounded-xl bg-background/50"
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
@@ -215,10 +263,30 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
       </div>
 
       <div className="flex flex-col items-center gap-3 pt-2">
-        <Button onClick={onNext} size="lg" className="w-full max-w-sm">
-          Get Started
-          <ArrowRight className="h-4 w-4 ml-2" />
+        <div className="animated-border rounded-xl w-full max-w-sm mx-auto">
+          <Button onClick={onNext} size="lg" className="w-full">
+            Get Started
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        </div>
+        <Button
+          onClick={onQuickStart}
+          size="lg"
+          variant="outline"
+          className="w-full max-w-sm glow-emerald border-primary/30 hover:bg-primary/10"
+        >
+          <Zap className="h-4 w-4 mr-2" />
+          Quick Start
         </Button>
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          onClick={onQuickStart}
+          className="text-xs text-muted-foreground hover:text-primary transition-colors underline-offset-4 hover:underline"
+        >
+          Skip all
+        </button>
       </div>
     </motion.div>
   );
@@ -464,9 +532,12 @@ function DoneStep({
       animate="center"
       exit="exit"
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className="space-y-6"
+      className="space-y-6 relative"
     >
-      <div className="text-center space-y-2">
+      {/* Confetti particles */}
+      <ConfettiParticles />
+
+      <div className="text-center space-y-2 relative z-10">
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
@@ -499,7 +570,7 @@ function DoneStep({
         </motion.p>
       </div>
 
-      <div className="space-y-3 max-w-sm mx-auto">
+      <div className="space-y-3 max-w-sm mx-auto relative z-10">
         {summaryItems.map((item, i) => (
           <motion.div
             key={item.label}
@@ -524,7 +595,7 @@ function DoneStep({
         ))}
       </div>
 
-      <div className="flex items-center justify-between pt-2">
+      <div className="flex items-center justify-between pt-2 relative z-10">
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="h-4 w-4 mr-1" />
           Back
@@ -595,6 +666,24 @@ export function OnboardingFlow() {
     navigate('dashboard');
   }, [selectedStyles, selectedPace, selectedTopics, setUserInfo, setLearnerProfile, setHardSubjects, setBestTeachingStyle, setOnboardingComplete, navigate]);
 
+  const handleQuickStart = useCallback(() => {
+    setUserInfo('Student', 'student@synapselearn.ai');
+    setLearnerProfile({
+      learningStyle: 'visual',
+      pace: 'steady',
+      vocabularySensitive: true,
+      prefersStory: true,
+      prefersBigPicture: true,
+      simpleGrammar: false,
+      jargonTolerance: 'medium',
+      masteryApproach: 'evidence',
+    });
+    setHardSubjects([]);
+    setBestTeachingStyle('visual');
+    setOnboardingComplete(true);
+    navigate('dashboard');
+  }, [setUserInfo, setLearnerProfile, setHardSubjects, setBestTeachingStyle, setOnboardingComplete, navigate]);
+
   const handleSkip = useCallback(() => {
     handleFinish();
   }, [handleFinish]);
@@ -610,7 +699,7 @@ export function OnboardingFlow() {
 
         <div className="mt-4 overflow-hidden">
           <AnimatePresence initial={false} custom={direction} mode="wait">
-            {step === 1 && <WelcomeStep key="s1" onNext={goNext} />}
+            {step === 1 && <WelcomeStep key="s1" onNext={goNext} onQuickStart={handleQuickStart} />}
             {step === 2 && (
               <LearningStyleStep
                 key="s2"

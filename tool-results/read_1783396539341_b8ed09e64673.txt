@@ -1,0 +1,968 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useState, useRef, useEffect, useCallback } from 'react'
+     4→     4→import { useAppStore } from '@/stores/appStore'
+     5→     5→import { Badge } from '@/components/ui/badge'
+     6→     6→import { Button } from '@/components/ui/button'
+     7→     7→import { Textarea } from '@/components/ui/textarea'
+     8→     8→import { ScrollArea } from '@/components/ui/scroll-area'
+     9→     9→import { Separator } from '@/components/ui/separator'
+    10→    10→import {
+    11→    11→  DropdownMenu,
+    12→    12→  DropdownMenuContent,
+    13→    13→  DropdownMenuItem,
+    14→    14→  DropdownMenuTrigger,
+    15→    15→} from '@/components/ui/dropdown-menu'
+    16→    16→import {
+    17→    17→  PanelRightOpen,
+    18→    18→  PanelRightClose,
+    19→    19→  Send,
+    20→    20→  Lightbulb,
+    21→    21→  MessageSquareText,
+    22→    22→  ListChecks,
+    23→    23→  MoreHorizontal,
+    24→    24→  BookOpen,
+    25→    25→  MessageCircle,
+    26→    26→  Columns,
+    27→    27→  Play,
+    28→    28→  Pause,
+    29→    29→  RotateCcw,
+    30→    30→  SkipForward,
+    31→    31→  Timer,
+    32→    32→  Coffee,
+    33→    33→  Brain,
+    34→    34→  Mic,
+    35→    35→  Maximize2,
+    36→    36→  ChevronDown,
+    37→    37→  ChevronUp,
+    38→    38→} from 'lucide-react'
+    39→    39→import { toast } from 'sonner'
+    40→    40→import { motion, AnimatePresence } from 'framer-motion'
+    41→    41→
+    42→    42→import { ChatBubble, stopAllTTS } from './ChatBubble'
+    43→    43→import { TypingIndicator } from './TypingIndicator'
+    44→    44→import { MasteryTracker } from './MasteryTracker'
+    45→    45→import { SessionControls } from './SessionControls'
+    46→    46→import { TipInput } from './TipInput'
+    47→    47→import { FeedbackBar } from './FeedbackBar'
+    48→    48→import { CourseContextPanel } from './CourseContextPanel'
+    49→    49→import { PersonaSelector } from './PersonaSelector'
+    50→    50→
+    51→    51→// ---------- Pomodoro Timer ----------
+    52→    52→const POMODORO_MODES = [
+    53→    53→  { id: 'focus' as const, label: 'Focus', duration: 25 * 60, icon: Brain, color: 'text-emerald-600 dark:text-emerald-400' },
+    54→    54→  { id: 'shortBreak' as const, label: 'Short Break', duration: 5 * 60, icon: Coffee, color: 'text-teal-600 dark:text-teal-400' },
+    55→    55→  { id: 'longBreak' as const, label: 'Long Break', duration: 15 * 60, icon: Timer, color: 'text-cyan-600 dark:text-cyan-400' },
+    56→    56→]
+    57→    57→
+    58→    58→function playBeep() {
+    59→    59→  try {
+    60→    60→    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+    61→    61→    const osc = ctx.createOscillator()
+    62→    62→    const gain = ctx.createGain()
+    63→    63→    osc.connect(gain)
+    64→    64→    gain.connect(ctx.destination)
+    65→    65→    osc.frequency.value = 660
+    66→    66→    osc.type = 'sine'
+    67→    67→    gain.gain.value = 0.3
+    68→    68→    osc.start()
+    69→    69→    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+    70→    70→    osc.stop(ctx.currentTime + 0.5)
+    71→    71→    // Second beep
+    72→    72→    setTimeout(() => {
+    73→    73→      const osc2 = ctx.createOscillator()
+    74→    74→      const gain2 = ctx.createGain()
+    75→    75→      osc2.connect(gain2)
+    76→    76→      gain2.connect(ctx.destination)
+    77→    77→      osc2.frequency.value = 880
+    78→    78→      osc2.type = 'sine'
+    79→    79→      gain2.gain.value = 0.3
+    80→    80→      osc2.start()
+    81→    81→      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+    82→    82→      osc2.stop(ctx.currentTime + 0.5)
+    83→    83→    }, 200)
+    84→    84→  } catch {
+    85→    85→    // Audio not available
+    86→    86→  }
+    87→    87→}
+    88→    88→
+    89→    89→const QUICK_TOPICS = ['Cell Biology', 'Data Structures', 'World History', 'Calculus', 'Creative Writing']
+    90→    90→
+    91→    91→const QUICK_ACTIONS = [
+    92→    92→  { label: 'Give hint', icon: Lightbulb, prompt: 'Give me a hint about what we were just discussing.' },
+    93→    93→  { label: 'Explain differently', icon: MessageSquareText, prompt: 'Can you explain that differently?' },
+    94→    94→  { label: 'Show example', icon: ListChecks, prompt: 'Can you show me an example?' },
+    95→    95→  { label: 'Quiz me', icon: ListChecks, prompt: 'Quiz me on what we just covered.' },
+    96→    96→]
+    97→    97→
+    98→    98→const SUGGESTED_PROMPTS = [
+    99→    99→  'Explain this concept',
+   100→   100→  'Give me a quiz',
+   101→   101→  'Show examples',
+   102→   102→  'Summarize key points',
+   103→   103→]
+   104→   104→
+   105→   105→type InputSize = 'small' | 'medium' | 'large'
+   106→   106→
+   107→   107→const INPUT_SIZES: Record<InputSize, { minH: number; maxH: number; rows: number; label: string }> = {
+   108→   108→  small: { minH: 40, maxH: 80, rows: 1, label: 'Small' },
+   109→   109→  medium: { minH: 40, maxH: 150, rows: 1, label: 'Medium' },
+   110→   110→  large: { minH: 80, maxH: 300, rows: 3, label: 'Large' },
+   111→   111→}
+   112→   112→
+   113→   113→const INPUT_SIZE_CYCLE: InputSize[] = ['small', 'medium', 'large']
+   114→   114→
+   115→   115→const TUTOR_MODES = [
+   116→   116→  { id: 'text' as const, label: 'Chat', icon: MessageCircle, desc: 'Text-only conversation' },
+   117→   117→  { id: 'slide' as const, label: 'Slides', icon: BookOpen, desc: 'Slide-focused learning' },
+   118→   118→  { id: 'hybrid' as const, label: 'Hybrid', icon: Columns, desc: 'Chat + slides together' },
+   119→   119→]
+   120→   120→
+   121→   121→function formatTimer(seconds: number): string {
+   122→   122→  const h = Math.floor(seconds / 3600)
+   123→   123→  const m = Math.floor((seconds % 3600) / 60)
+   124→   124→  const s = seconds % 60
+   125→   125→  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+   126→   126→}
+   127→   127→
+   128→   128→function getPhaseColor(phase: string): string {
+   129→   129→  switch (phase) {
+   130→   130→    case 'discovery': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+   131→   131→    case 'starter': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+   132→   132→    case 'teaching': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+   133→   133→    default: return 'bg-muted text-muted-foreground'
+   134→   134→  }
+   135→   135→}
+   136→   136→
+   137→   137→export function TutorView() {
+   138→   138→  const {
+   139→   139→    messages,
+   140→   140→    addMessage,
+   141→   141→    sessionPhase,
+   142→   142→    activeSessionId,
+   143→   143→    activeTopic,
+   144→   144→    setActiveTopic,
+   145→   145→    setActiveSession,
+   146→   146→    setSessionPhase,
+   147→   147→    learnerProfile,
+   148→   148→    masteryMap,
+   149→   149→    userName,
+   150→   150→    setLoading,
+   151→   151→    isLoading,
+   152→   152→    activePersona,
+   153→   153→    tutorMode,
+   154→   154→    setTutorMode,
+   155→   155→    activeSlides,
+   156→   156→    currentSlideIndex,
+   157→   157→    setCurrentSlideIndex,
+   158→   158→  } = useAppStore()
+   159→   159→
+   160→   160→  const [input, setInput] = useState('')
+   161→   161→  const [inputFocused, setInputFocused] = useState(false)
+   162→   162→  const [inputSize, setInputSize] = useState<InputSize>('medium')
+   163→   163→  const [rightPanelOpen, setRightPanelOpen] = useState(true)
+   164→   164→  const [timerSeconds, setTimerSeconds] = useState(0)
+   165→   165→  const timerStarted = useRef(false)
+   166→   166→  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+   167→   167→  const scrollRef = useRef<HTMLDivElement>(null)
+   168→   168→  const textareaRef = useRef<HTMLTextAreaElement>(null)
+   169→   169→
+   170→   170→  // Pomodoro state
+   171→   171→  const [pomodoroExpanded, setPomodoroExpanded] = useState(false)
+   172→   172→  const [pomodoroRunning, setPomodoroRunning] = useState(false)
+   173→   173→  const [pomodoroModeIndex, setPomodoroModeIndex] = useState(0)
+   174→   174→  const [pomodoroTimeLeft, setPomodoroTimeLeft] = useState(POMODORO_MODES[0].duration)
+   175→   175→  const [pomodoroSessions, setPomodoroSessions] = useState(0)
+   176→   176→  const pomodoroRef = useRef<ReturnType<typeof setInterval> | null>(null)
+   177→   177→
+   178→   178→  const currentPomodoroMode = POMODORO_MODES[pomodoroModeIndex]
+   179→   179→  const pomodoroProgress = 1 - pomodoroTimeLeft / currentPomodoroMode.duration
+   180→   180→  const pomodoroCircumference = 2 * Math.PI * 16
+   181→   181→  const pomodoroStrokeOffset = pomodoroCircumference * (1 - pomodoroProgress)
+   182→   182→
+   183→   183→  const handlePomodoroToggle = useCallback(() => {
+   184→   184→    setPomodoroRunning((prev) => !prev)
+   185→   185→  }, [])
+   186→   186→
+   187→   187→  const handlePomodoroReset = useCallback(() => {
+   188→   188→    setPomodoroRunning(false)
+   189→   189→    setPomodoroTimeLeft(currentPomodoroMode.duration)
+   190→   190→  }, [currentPomodoroMode.duration])
+   191→   191→
+   192→   192→  const handlePomodoroSkip = useCallback(() => {
+   193→   193→    setPomodoroRunning(false)
+   194→   194→    const nextIndex = (pomodoroModeIndex + 1) % POMODORO_MODES.length
+   195→   195→    // Auto-transition: Focus -> Short Break, every 4th Focus -> Long Break
+   196→   196→    if (pomodoroModeIndex === 0) {
+   197→   197→      // Was in focus mode
+   198→   198→      const newSessionCount = pomodoroSessions + 1
+   199→   199→      setPomodoroSessions(newSessionCount)
+   200→   200→      if (newSessionCount % 4 === 0) {
+   201→   201→        // Every 4th: go to long break
+   202→   202→        setPomodoroModeIndex(2)
+   203→   203→        setPomodoroTimeLeft(POMODORO_MODES[2].duration)
+   204→   204→        return
+   205→   205→      }
+   206→   206→    }
+   207→   207→    setPomodoroModeIndex(nextIndex)
+   208→   208→    setPomodoroTimeLeft(POMODORO_MODES[nextIndex].duration)
+   209→   209→  }, [pomodoroModeIndex, pomodoroSessions])
+   210→   210→
+   211→   211→  // Pomodoro tick
+   212→   212→  useEffect(() => {
+   213→   213→    if (pomodoroRunning) {
+   214→   214→      pomodoroRef.current = setInterval(() => {
+   215→   215→        setPomodoroTimeLeft((prev) => {
+   216→   216→          if (prev <= 1) {
+   217→   217→            playBeep()
+   218→   218→            toast.success(`${currentPomodoroMode.label} session complete!`)
+   219→   219→            return 0
+   220→   220→          }
+   221→   221→          return prev - 1
+   222→   222→        })
+   223→   223→      }, 1000)
+   224→   224→    } else if (pomodoroRef.current) {
+   225→   225→      clearInterval(pomodoroRef.current)
+   226→   226→      pomodoroRef.current = null
+   227→   227→    }
+   228→   228→    return () => {
+   229→   229→      if (pomodoroRef.current) clearInterval(pomodoroRef.current)
+   230→   230→    }
+   231→   231→  }, [pomodoroRunning, currentPomodoroMode.label])
+   232→   232→
+   233→   233→  // Auto-stop pomodoro when time reaches 0
+   234→   234→  useEffect(() => {
+   235→   235→    if (pomodoroTimeLeft === 0 && pomodoroRunning) {
+   236→   236→      setPomodoroRunning(false)
+   237→   237→    }
+   238→   238→  }, [pomodoroTimeLeft, pomodoroRunning])
+   239→   239→
+   240→   240→  const showSlidePanel = (tutorMode === 'slide' || tutorMode === 'hybrid') && activeSlides.length > 0
+   241→   241→
+   242→   242→  // Initialize session on mount
+   243→   243→  useEffect(() => {
+   244→   244→    if (!activeSessionId) {
+   245→   245→      const sessionId = crypto.randomUUID()
+   246→   246→      setActiveSession(sessionId)
+   247→   247→      addMessage({
+   248→   248→        id: crypto.randomUUID(),
+   249→   249→        sessionId,
+   250→   250→        role: 'assistant',
+   251→   251→        content: `Welcome${userName ? ', ' + userName : ''}! I'm your AI tutor. What would you like to learn about today? Pick a topic below or type your own!`,
+   252→   252→        createdAt: new Date().toISOString(),
+   253→   253→      })
+   254→   254→    }
+   255→   255→  }, [])
+   256→   256→
+   257→   257→  // Timer
+   258→   258→  useEffect(() => {
+   259→   259→    if (messages.length > 0 && !timerStarted.current) {
+   260→   260→      timerStarted.current = true
+   261→   261→      timerRef.current = setInterval(() => {
+   262→   262→        setTimerSeconds((s) => s + 1)
+   263→   263→      }, 1000)
+   264→   264→    }
+   265→   265→    return () => {
+   266→   266→      if (timerRef.current) clearInterval(timerRef.current)
+   267→   267→    }
+   268→   268→  }, [messages.length])
+   269→   269→
+   270→   270→  // Auto-scroll to bottom & stop TTS on new messages
+   271→   271→  const prevMessagesLen = useRef(messages.length)
+   272→   272→  useEffect(() => {
+   273→   273→    if (scrollRef.current) {
+   274→   274→      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+   275→   275→    }
+   276→   276→    if (messages.length > prevMessagesLen.current) {
+   277→   277→      stopAllTTS()
+   278→   278→    }
+   279→   279→    prevMessagesLen.current = messages.length
+   280→   280→  }, [messages, isLoading])
+   281→   281→
+   282→   282→  // Auto-resize textarea
+   283→   283→  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+   284→   284→    setInput(e.target.value)
+   285→   285→    const el = e.target
+   286→   286→    const size = INPUT_SIZES[inputSize]
+   287→   287→    el.style.height = 'auto'
+   288→   288→    el.style.height = `${Math.min(el.scrollHeight, size.maxH)}px`
+   289→   289→  }, [inputSize])
+   290→   290→
+   291→   291→  const cycleInputSize = useCallback(() => {
+   292→   292→    setInputSize((prev) => {
+   293→   293→      const idx = INPUT_SIZE_CYCLE.indexOf(prev)
+   294→   294→      const next = INPUT_SIZE_CYCLE[(idx + 1) % INPUT_SIZE_CYCLE.length]
+   295→   295→      return next
+   296→   296→    })
+   297→   297→  }, [])
+   298→   298→
+   299→   299→  const charCount = input.length
+   300→   300→  const charColorClass = charCount < 200 ? 'text-emerald-600 dark:text-emerald-400' : charCount < 400 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'
+   301→   301→
+   302→   302→  const handleSend = useCallback(async (text?: string) => {
+   303→   303→    const content = (text || input).trim()
+   304→   304→    if (!content) return
+   305→   305→
+   306→   306→    const sessionId = activeSessionId || crypto.randomUUID()
+   307→   307→    if (!activeSessionId) {
+   308→   308→      setActiveSession(sessionId)
+   309→   309→    }
+   310→   310→
+   311→   311→    const userMsg = {
+   312→   312→      id: crypto.randomUUID(),
+   313→   313→      sessionId,
+   314→   314→      role: 'user' as const,
+   315→   315→      content,
+   316→   316→      createdAt: new Date().toISOString(),
+   317→   317→    }
+   318→   318→    addMessage(userMsg)
+   319→   319→    setInput('')
+   320→   320→
+   321→   321→    if (textareaRef.current) {
+   322→   322→      textareaRef.current.style.height = 'auto'
+   323→   323→    }
+   324→   324→
+   325→   325→    setLoading(true)
+   326→   326→
+   327→   327→    try {
+   328→   328→      const history = messages.map((m) => ({ role: m.role, content: m.content }))
+   329→   329→
+   330→   330→      const res = await fetch('/api/chat', {
+   331→   331→        method: 'POST',
+   332→   332→        headers: { 'Content-Type': 'application/json' },
+   333→   333→        body: JSON.stringify({
+   334→   334→          message: content,
+   335→   335→          phase: sessionPhase,
+   336→   336→          learnerProfile,
+   337→   337→          masteryMap,
+   338→   338→          history,
+   339→   339→          persona: activePersona,
+   340→   340→        }),
+   341→   341→      })
+   342→   342→
+   343→   343→      if (!res.ok) throw new Error('Failed to get response')
+   344→   344→
+   345→   345→      const data = await res.json()
+   346→   346→      const responseText = data.response || data.message || data.content || "I'm sorry, I couldn't generate a response. Please try again."
+   347→   347→
+   348→   348→      addMessage({
+   349→   349→        id: crypto.randomUUID(),
+   350→   350→        sessionId,
+   351→   351→        role: 'assistant',
+   352→   352→        content: responseText,
+   353→   353→        createdAt: new Date().toISOString(),
+   354→   354→      })
+   355→   355→
+   356→   356→      if (sessionPhase === 'discovery' || sessionPhase === 'starter') {
+   357→   357→        setSessionPhase('teaching')
+   358→   358→      }
+   359→   359→    } catch {
+   360→   360→      addMessage({
+   361→   361→        id: crypto.randomUUID(),
+   362→   362→        sessionId,
+   363→   363→        role: 'assistant',
+   364→   364→        content: "Hmm, I ran into an issue. Let me try again — could you repeat your question?",
+   365→   365→        createdAt: new Date().toISOString(),
+   366→   366→      })
+   367→   367→      toast.error('Failed to get a response. Please try again.')
+   368→   368→    } finally {
+   369→   369→      setLoading(false)
+   370→   370→    }
+   371→   371→  }, [input, activeSessionId, messages, sessionPhase, learnerProfile, masteryMap, addMessage, setActiveSession, setLoading, setSessionPhase, activePersona])
+   372→   372→
+   373→   373→  const handleRegenerate = useCallback((messageId: string) => {
+   374→   374→    // Find the user message that preceded this assistant message
+   375→   375→    const msgIndex = messages.findIndex((m) => m.id === messageId)
+   376→   376→    if (msgIndex > 0) {
+   377→   377→      const prevMsg = messages[msgIndex - 1]
+   378→   378→      if (prevMsg.role === 'user') {
+   379→   379→        handleSend(prevMsg.content)
+   380→   380→      }
+   381→   381→    }
+   382→   382→  }, [messages, handleSend])
+   383→   383→
+   384→   384→  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+   385→   385→    if (e.key === 'Enter' && !e.shiftKey) {
+   386→   386→      e.preventDefault()
+   387→   387→      handleSend()
+   388→   388→    }
+   389→   389→  }
+   390→   390→
+   391→   391→  const handleTopicClick = (topic: string) => {
+   392→   392→    setActiveTopic(topic)
+   393→   393→    handleSend(`I'd like to learn about ${topic}`)
+   394→   394→  }
+   395→   395→
+   396→   396→  const handleQuickAction = (prompt: string) => {
+   397→   397→    handleSend(prompt)
+   398→   398→  }
+   399→   399→
+   400→   400→  return (
+   401→   401→    <div className="h-screen flex flex-col bg-background">
+   402→   402→      {/* Header - Frosted glass */}
+   403→   403→      <header className="glass-header flex items-center justify-between px-4 py-3 z-10">
+   404→   404→        <div className="flex items-center gap-3">
+   405→   405→          {/* AI Active indicator + name */}
+   406→   406→          <div className="flex items-center gap-2">
+   407→   407→            <motion.span
+   408→   408→              className="relative flex h-2.5 w-2.5"
+   409→   409→              animate={{
+   410→   410→                boxShadow: [
+   411→   411→                  '0 0 0 0 rgba(16, 185, 129, 0.5)',
+   412→   412→                  '0 0 0 5px rgba(16, 185, 129, 0)',
+   413→   413→                ],
+   414→   414→              }}
+   415→   415→              transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+   416→   416→            >
+   417→   417→              <span className="absolute inset-0 rounded-full bg-emerald-500" />
+   418→   418→            </motion.span>
+   419→   419→            <h1 className="text-lg font-semibold">
+   420→   420→              {activeTopic || 'AI Tutor'}
+   421→   421→            </h1>
+   422→   422→          </div>
+   423→   423→          <Badge variant="secondary" className={getPhaseColor(sessionPhase)}>
+   424→   424→            {sessionPhase}
+   425→   425→          </Badge>
+   426→   426→          {/* Mode Selector - Pill toggle with sliding indicator */}
+   427→   427→          <div className="hidden sm:flex items-center rounded-lg border border-border bg-background/50 p-0.5 relative">
+   428→   428→            <AnimatePresence>
+   429→   429→              {tutorMode && (
+   430→   430→                <motion.div
+   431→   431→                  layoutId="tutor-mode-indicator"
+   432→   432→                  className="absolute inset-y-0.5 rounded-md bg-primary shadow-sm"
+   433→   433→                  style={{
+   434→   434→                    left: TUTOR_MODES.findIndex((m) => m.id === tutorMode) === 0
+   435→   435→                      ? '2px'
+   436→   436→                      : TUTOR_MODES.findIndex((m) => m.id === tutorMode) === 1
+   437→   437→                        ? `${100 / 3}%`
+   438→   438→                        : `${(200 / 3)}%`,
+   439→   439→                    width: `${100 / 3}%`,
+   440→   440→                  }}
+   441→   441→                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+   442→   442→                />
+   443→   443→              )}
+   444→   444→            </AnimatePresence>
+   445→   445→            {TUTOR_MODES.map((mode) => {
+   446→   446→              const Icon = mode.icon
+   447→   447→              const isActive = tutorMode === mode.id
+   448→   448→              return (
+   449→   449→                <motion.button
+   450→   450→                  key={mode.id}
+   451→   451→                  onClick={() => setTutorMode(mode.id)}
+   452→   452→                  whileHover={{ scale: 1.04 }}
+   453→   453→                  whileTap={{ scale: 0.96 }}
+   454→   454→                  className={`relative z-10 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+   455→   455→                    isActive
+   456→   456→                      ? 'text-primary-foreground'
+   457→   457→                      : 'text-muted-foreground hover:text-foreground'
+   458→   458→                  }`}
+   459→   459→                  title={mode.desc}
+   460→   460→                >
+   461→   461→                  <Icon className="w-3.5 h-3.5" />
+   462→   462→                  {mode.label}
+   463→   463→                </motion.button>
+   464→   464→              )
+   465→   465→            })}
+   466→   466→          </div>
+   467→   467→        </div>
+   468→   468→        <div className="flex items-center gap-3">
+   469→   469→          {/* Collapsible Pomodoro Timer */}
+   470→   470→          <div className="relative">
+   471→   471→            <button
+   472→   472→              onClick={() => setPomodoroExpanded(!pomodoroExpanded)}
+   473→   473→              className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-border bg-card/50 hover:bg-accent/50 transition-colors"
+   474→   474→              aria-label="Toggle Pomodoro timer"
+   475→   475→            >
+   476→   476→              <svg width="20" height="20" className="-rotate-90">
+   477→   477→                <circle
+   478→   478→                  cx="10"
+   479→   479→                  cy="10"
+   480→   480→                  r="8"
+   481→   481→                  fill="none"
+   482→   482→                  stroke="currentColor"
+   483→   483→                  strokeWidth="2"
+   484→   484→                  className="text-muted/30"
+   485→   485→                />
+   486→   486→                <circle
+   487→   487→                  cx="10"
+   488→   488→                  cy="10"
+   489→   489→                  r="8"
+   490→   490→                  fill="none"
+   491→   491→                  stroke="url(#pomoGrad)"
+   492→   492→                  strokeWidth="2"
+   493→   493→                  strokeLinecap="round"
+   494→   494→                  strokeDasharray={pomodoroCircumference}
+   495→   495→                  strokeDashoffset={pomodoroStrokeOffset}
+   496→   496→                  className="transition-all duration-500"
+   497→   497→                />
+   498→   498→                <defs>
+   499→   499→                  <linearGradient id="pomoGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+   500→   500→                    <stop offset="0%" stopColor="#10b981" />
+   501→   501→                    <stop offset="100%" stopColor="#14b8a6" />
+   502→   502→                  </linearGradient>
+   503→   503→                </defs>
+   504→   504→              </svg>
+   505→   505→              <span className={`font-mono text-xs font-medium ${currentPomodoroMode.color}`}>
+   506→   506→                {Math.floor(pomodoroTimeLeft / 60)}:{String(pomodoroTimeLeft % 60).padStart(2, '0')}
+   507→   507→              </span>
+   508→   508→            </button>
+   509→   509→
+   510→   510→            {/* Expanded Pomodoro Panel */}
+   511→   511→            <AnimatePresence>
+   512→   512→              {pomodoroExpanded && (
+   513→   513→                <motion.div
+   514→   514→                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
+   515→   515→                  animate={{ opacity: 1, y: 0, scale: 1 }}
+   516→   516→                  exit={{ opacity: 0, y: -8, scale: 0.95 }}
+   517→   517→                  transition={{ duration: 0.2, ease: 'easeOut' }}
+   518→   518→                  className="absolute top-full right-0 mt-2 z-50 w-64 rounded-xl border bg-card p-4 shadow-lg space-y-3"
+   519→   519→                >
+   520→   520→                  {/* Mode tabs */}
+   521→   521→                  <div className="flex items-center rounded-lg border border-border bg-background/50 p-0.5">
+   522→   522→                    {POMODORO_MODES.map((mode, i) => {
+   523→   523→                      const Icon = mode.icon
+   524→   524→                      return (
+   525→   525→                        <button
+   526→   526→                          key={mode.id}
+   527→   527→                          onClick={() => {
+   528→   528→                            setPomodoroModeIndex(i)
+   529→   529→                            setPomodoroTimeLeft(mode.duration)
+   530→   530→                            setPomodoroRunning(false)
+   531→   531→                          }}
+   532→   532→                          className={`flex-1 flex items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all ${
+   533→   533→                            pomodoroModeIndex === i
+   534→   534→                              ? 'bg-primary text-primary-foreground shadow-sm'
+   535→   535→                              : 'text-muted-foreground hover:text-foreground'
+   536→   536→                          }`}
+   537→   537→                        >
+   538→   538→                          <Icon className="w-3 h-3" />
+   539→   539→                          <span className="hidden sm:inline">{mode.label}</span>
+   540→   540→                        </button>
+   541→   541→                      )
+   542→   542→                    })}
+   543→   543→                  </div>
+   544→   544→
+   545→   545→                  {/* Circular timer */}
+   546→   546→                  <div className="flex justify-center">
+   547→   547→                    <div className="relative">
+   548→   548→                      <svg width="96" height="96" className="-rotate-90">
+   549→   549→                        <circle
+   550→   550→                          cx="48"
+   551→   551→                          cy="48"
+   552→   552→                          r="42"
+   553→   553→                          fill="none"
+   554→   554→                          stroke="currentColor"
+   555→   555→                          strokeWidth="4"
+   556→   556→                          className="text-muted/20"
+   557→   557→                        />
+   558→   558→                        <motion.circle
+   559→   559→                          cx="48"
+   560→   560→                          cy="48"
+   561→   561→                          r="42"
+   562→   562→                          fill="none"
+   563→   563→                          stroke="url(#pomoGradLarge)"
+   564→   564→                          strokeWidth="4"
+   565→   565→                          strokeLinecap="round"
+   566→   566→                          strokeDasharray={2 * Math.PI * 42}
+   567→   567→                          strokeDashoffset={2 * Math.PI * 42 * (1 - pomodoroProgress)}
+   568→   568→                          className="transition-all duration-1000"
+   569→   569→                        />
+   570→   570→                        <defs>
+   571→   571→                          <linearGradient id="pomoGradLarge" x1="0%" y1="0%" x2="100%" y2="0%">
+   572→   572→                            <stop offset="0%" stopColor="#10b981" />
+   573→   573→                            <stop offset="100%" stopColor="#14b8a6" />
+   574→   574→                          </linearGradient>
+   575→   575→                        </defs>
+   576→   576→                      </svg>
+   577→   577→                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+   578→   578→                        <span className={`text-2xl font-bold font-mono ${currentPomodoroMode.color}`}>
+   579→   579→                          {Math.floor(pomodoroTimeLeft / 60)}:{String(pomodoroTimeLeft % 60).padStart(2, '0')}
+   580→   580→                        </span>
+   581→   581→                        <span className="text-[10px] text-muted-foreground mt-0.5">{currentPomodoroMode.label}</span>
+   582→   582→                      </div>
+   583→   583→                    </div>
+   584→   584→                  </div>
+   585→   585→
+   586→   586→                  {/* Session count */}
+   587→   587→                  <div className="text-center">
+   588→   588→                    <span className="text-xs text-muted-foreground">
+   589→   589→                      Session <span className={`font-bold ${currentPomodoroMode.color}`}>{(pomodoroSessions % 4) + 1}</span> / 4
+   590→   590→                    </span>
+   591→   591→                  </div>
+   592→   592→
+   593→   593→                  {/* Controls */}
+   594→   594→                  <div className="flex items-center justify-center gap-2">
+   595→   595→                    <Button
+   596→   596→                      variant="outline"
+   597→   597→                      size="icon"
+   598→   598→                      className="h-8 w-8"
+   599→   599→                      onClick={handlePomodoroReset}
+   600→   600→                      aria-label="Reset timer"
+   601→   601→                    >
+   602→   602→                      <RotateCcw className="w-3.5 h-3.5" />
+   603→   603→                    </Button>
+   604→   604→                    <Button
+   605→   605→                      size="icon"
+   606→   606→                      className="h-9 w-9"
+   607→   607→                      onClick={handlePomodoroToggle}
+   608→   608→                      aria-label={pomodoroRunning ? 'Pause' : 'Start'}
+   609→   609→                    >
+   610→   610→                      {pomodoroRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+   611→   611→                    </Button>
+   612→   612→                    <Button
+   613→   613→                      variant="outline"
+   614→   614→                      size="icon"
+   615→   615→                      className="h-8 w-8"
+   616→   616→                      onClick={handlePomodoroSkip}
+   617→   617→                      aria-label="Skip to next"
+   618→   618→                    >
+   619→   619→                      <SkipForward className="w-3.5 h-3.5" />
+   620→   620→                    </Button>
+   621→   621→                  </div>
+   622→   622→                </motion.div>
+   623→   623→              )}
+   624→   624→            </AnimatePresence>
+   625→   625→          </div>
+   626→   626→
+   627→   627→          {/* Session timer with pulsing emerald ring when running */}
+   628→   628→          <motion.div
+   629→   629→            className="relative"
+   630→   630→            animate={timerSeconds > 0 ? {
+   631→   631→              boxShadow: [
+   632→   632→                '0 0 0 0 rgba(16, 185, 129, 0.2)',
+   633→   633→                '0 0 0 4px rgba(16, 185, 129, 0)',
+   634→   634→              ],
+   635→   635→            } : {}}
+   636→   636→            transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+   637→   637→          >
+   638→   638→            <Badge variant="outline" className="font-mono text-xs rounded-full">
+   639→   639→              <span className={timerSeconds > 0 ? 'text-emerald-600 dark:text-emerald-400' : ''}>
+   640→   640→                {formatTimer(timerSeconds)}
+   641→   641→              </span>
+   642→   642→            </Badge>
+   643→   643→          </motion.div>
+   644→   644→          <Badge variant="outline" className="text-xs">
+   645→   645→            {messages.length} messages
+   646→   646→          </Badge>
+   647→   647→          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
+   648→   648→            <Button
+   649→   649→              variant="ghost"
+   650→   650→              size="icon"
+   651→   651→              onClick={() => setRightPanelOpen(!rightPanelOpen)}
+   652→   652→              className="gradient-border rounded-lg"
+   653→   653→              aria-label={rightPanelOpen ? 'Close side panel' : 'Open side panel'}
+   654→   654→            >
+   655→   655→              {rightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+   656→   656→            </Button>
+   657→   657→          </motion.div>
+   658→   658→        </div>
+   659→   659→      </header>
+   660→   660→
+   661→   661→      {/* Main Content */}
+   662→   662→      <div className="flex-1 flex overflow-hidden">
+   663→   663→        {/* Slide Panel - visible in slide or hybrid mode when slides exist */}
+   664→   664→        {showSlidePanel && (
+   665→   665→          <motion.div
+   666→   666→            initial={{ width: 0, opacity: 0 }}
+   667→   667→            animate={{ width: tutorMode === 'slide' ? '50%' : '40%', opacity: 1 }}
+   668→   668→            transition={{ duration: 0.3, ease: 'easeInOut' }}
+   669→   669→            className="border-r bg-card/30 overflow-hidden flex flex-col"
+   670→   670→          >
+   671→   671→            <div className="p-3 border-b">
+   672→   672→              <div className="flex items-center justify-between">
+   673→   673→                <div className="flex items-center gap-2">
+   674→   674→                  <BookOpen className="w-4 h-4 text-primary" />
+   675→   675→                  <span className="text-sm font-semibold">Course Slides</span>
+   676→   676→                </div>
+   677→   677→                <Badge variant="secondary" className="text-[10px]">
+   678→   678→                  {currentSlideIndex + 1} / {activeSlides.length}
+   679→   679→                </Badge>
+   680→   680→              </div>
+   681→   681→            </div>
+   682→   682→            <ScrollArea className="flex-1">
+   683→   683→              <div className="p-4">
+   684→   684→                {/* Slide navigation dots */}
+   685→   685→                <div className="flex gap-1 mb-3 flex-wrap">
+   686→   686→                  {activeSlides.map((_, idx) => (
+   687→   687→                    <button
+   688→   688→                      key={idx}
+   689→   689→                      onClick={() => setCurrentSlideIndex(idx)}
+   690→   690→                      className={`h-2 rounded-full transition-all ${
+   691→   691→                        idx === currentSlideIndex
+   692→   692→                          ? 'bg-primary w-6'
+   693→   693→                          : 'bg-muted w-2 hover:bg-primary/50'
+   694→   694→                      }`}
+   695→   695→                    />
+   696→   696→                  ))}
+   697→   697→                </div>
+   698→   698→                {activeSlides[currentSlideIndex] && (
+   699→   699→                  <div className="space-y-3">
+   700→   700→                    <h3 className="text-sm font-semibold text-foreground">
+   701→   701→                      {activeSlides[currentSlideIndex].title}
+   702→   702→                    </h3>
+   703→   703→                    <div className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
+   704→   704→                      {activeSlides[currentSlideIndex].content}
+   705→   705→                    </div>
+   706→   706→                    <div className="flex gap-2 pt-2">
+   707→   707→                      <Button
+   708→   708→                        variant="outline"
+   709→   709→                        size="sm"
+   710→   710→                        className="h-7 text-xs"
+   711→   711→                        disabled={currentSlideIndex === 0}
+   712→   712→                        onClick={() => setCurrentSlideIndex(currentSlideIndex - 1)}
+   713→   713→                      >
+   714→   714→                        Previous
+   715→   715→                      </Button>
+   716→   716→                      <Button
+   717→   717→                        variant="outline"
+   718→   718→                        size="sm"
+   719→   719→                        className="h-7 text-xs"
+   720→   720→                        disabled={currentSlideIndex === activeSlides.length - 1}
+   721→   721→                        onClick={() => setCurrentSlideIndex(currentSlideIndex + 1)}
+   722→   722→                      >
+   723→   723→                        Next
+   724→   724→                      </Button>
+   725→   725→                    </div>
+   726→   726→                  </div>
+   727→   727→                )}
+   728→   728→              </div>
+   729→   729→            </ScrollArea>
+   730→   730→          </motion.div>
+   731→   731→        )}
+   732→   732→
+   733→   733→        {/* Chat Panel */}
+   734→   734→        <div className="flex-1 flex flex-col min-w-0">
+   735→   735→          {/* Course Context Panel - fallback when no dedicated slide panel */}
+   736→   736→          {!showSlidePanel && <CourseContextPanel />}
+   737→   737→          <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+   738→   738→            {/* Quick topic chips when no topic is set */}
+   739→   739→            {!activeTopic && messages.length <= 1 && (
+   740→   740→              <div className="flex flex-wrap gap-2 mb-4 justify-center">
+   741→   741→                {QUICK_TOPICS.map((topic) => (
+   742→   742→                  <Button
+   743→   743→                    key={topic}
+   744→   744→                    variant="outline"
+   745→   745→                    size="sm"
+   746→   746→                    className="rounded-full text-xs"
+   747→   747→                    onClick={() => handleTopicClick(topic)}
+   748→   748→                  >
+   749→   749→                    {topic}
+   750→   750→                  </Button>
+   751→   751→                ))}
+   752→   752→              </div>
+   753→   753→            )}
+   754→   754→
+   755→   755→            {messages.map((msg) => (
+   756→   756→              <ChatBubble
+   757→   757→                key={msg.id}
+   758→   758→                message={msg}
+   759→   759→                isStreaming={false}
+   760→   760→                onRegenerate={msg.role === 'assistant' ? handleRegenerate : undefined}
+   761→   761→              />
+   762→   762→            ))}
+   763→   763→
+   764→   764→            {isLoading && <TypingIndicator />}
+   765→   765→          </ScrollArea>
+   766→   766→
+   767→   767→          {/* Input Area */}
+   768→   768→          <div className="border-t bg-card/50">
+   769→   769→            {/* Suggested Prompts Bar */}
+   770→   770→            <AnimatePresence>
+   771→   771→              {!inputFocused && input.trim() === '' && !isLoading && (
+   772→   772→                <motion.div
+   773→   773→                  initial={{ opacity: 0, height: 0 }}
+   774→   774→                  animate={{ opacity: 1, height: 'auto' }}
+   775→   775→                  exit={{ opacity: 0, height: 0 }}
+   776→   776→                  transition={{ duration: 0.2, ease: 'easeOut' }}
+   777→   777→                  className="overflow-hidden"
+   778→   778→                >
+   779→   779→                  <div className="px-3 pt-2.5 pb-1 max-w-3xl mx-auto">
+   780→   780→                    <div className="flex flex-wrap gap-1.5">
+   781→   781→                      {SUGGESTED_PROMPTS.map((prompt) => (
+   782→   782→                        <motion.button
+   783→   783→                          key={prompt}
+   784→   784→                          whileHover={{ scale: 1.03, y: -1 }}
+   785→   785→                          whileTap={{ scale: 0.97 }}
+   786→   786→                          onClick={() => handleSend(prompt)}
+   787→   787→                          className="px-3 py-1.5 text-xs font-medium rounded-full border border-border/60 bg-background/60 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors"
+   788→   788→                        >
+   789→   789→                          {prompt}
+   790→   790→                        </motion.button>
+   791→   791→                      ))}
+   792→   792→                    </div>
+   793→   793→                  </div>
+   794→   794→                </motion.div>
+   795→   795→              )}
+   796→   796→            </AnimatePresence>
+   797→   797→
+   798→   798→            <div className="px-3 pb-3 pt-1">
+   799→   799→              <div className="max-w-3xl mx-auto">
+   800→   800→                {/* Gradient border glow wrapper */}
+   801→   801→                <div className="relative">
+   802→   802→                  {inputFocused && (
+   803→   803→                    <motion.div
+   804→   804→                      layoutId="input-glow"
+   805→   805→                      className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-emerald-500/30 via-teal-500/30 to-emerald-500/30 blur-sm -z-10"
+   806→   806→                      initial={{ opacity: 0 }}
+   807→   807→                      animate={{ opacity: 1 }}
+   808→   808→                      exit={{ opacity: 0 }}
+   809→   809→                      transition={{ duration: 0.3 }}
+   810→   810→                    />
+   811→   811→                  )}
+   812→   812→                  <div className="flex items-end gap-1.5 bg-background rounded-xl border border-border p-1.5 transition-shadow duration-300">
+   813→   813→                    <Textarea
+   814→   814→                      ref={textareaRef}
+   815→   815→                      placeholder="Ask me anything..."
+   816→   816→                      value={input}
+   817→   817→                      onChange={handleInputChange}
+   818→   818→                      onKeyDown={handleKeyDown}
+   819→   819→                      onFocus={() => setInputFocused(true)}
+   820→   820→                      onBlur={() => setInputFocused(false)}
+   821→   821→                      className="resize-none flex-1 border-0 shadow-none focus-visible:ring-0 p-2 text-sm bg-transparent placeholder:text-muted-foreground"
+   822→   822→                      style={{ minHeight: INPUT_SIZES[inputSize].minH, maxHeight: INPUT_SIZES[inputSize].maxH }}
+   823→   823→                      rows={INPUT_SIZES[inputSize].rows}
+   824→   824→                    />
+   825→   825→
+   826→   826→                    {/* Character count */}
+   827→   827→                    <div className="flex items-center gap-1 pb-1.5 pr-1">
+   828→   828→                      {charCount > 0 && (
+   829→   829→                        <motion.span
+   830→   830→                          initial={{ opacity: 0, x: 4 }}
+   831→   831→                          animate={{ opacity: 1, x: 0 }}
+   832→   832→                          exit={{ opacity: 0, x: 4 }}
+   833→   833→                          className={`text-[10px] font-mono tabular-nums ${charColorClass}`}
+   834→   834→                        >
+   835→   835→                          {charCount}
+   836→   836→                        </motion.span>
+   837→   837→                      )}
+   838→   838→
+   839→   839→                      {/* Microphone placeholder */}
+   840→   840→                      <motion.div
+   841→   841→                        whileHover={{ scale: 1.1 }}
+   842→   842→                        whileTap={{ scale: 0.95 }}
+   843→   843→                        className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground/50 hover:text-muted-foreground cursor-not-allowed"
+   844→   844→                        title="Voice input coming soon"
+   845→   845→                      >
+   846→   846→                        <motion.div
+   847→   847→                          animate={{ scale: [1, 1.05, 1] }}
+   848→   848→                          transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+   849→   849→                        >
+   850→   850→                          <Mic className="w-3.5 h-3.5" />
+   851→   851→                        </motion.div>
+   852→   852→                      </motion.div>
+   853→   853→
+   854→   854→                      {/* Expand/Collapse button */}
+   855→   855→                      <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
+   856→   856→                        <Button
+   857→   857→                          variant="ghost"
+   858→   858→                          size="icon"
+   859→   859→                          className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+   860→   860→                          onClick={cycleInputSize}
+   861→   861→                          aria-label={`Input size: ${INPUT_SIZES[inputSize].label}. Click to change.`}
+   862→   862→                        >
+   863→   863→                          {inputSize === 'small' ? (
+   864→   864→                            <ChevronUp className="w-3.5 h-3.5" />
+   865→   865→                          ) : inputSize === 'large' ? (
+   866→   866→                            <ChevronDown className="w-3.5 h-3.5" />
+   867→   867→                          ) : (
+   868→   868→                            <Maximize2 className="w-3.5 h-3.5" />
+   869→   869→                          )}
+   870→   870→                        </Button>
+   871→   871→                      </motion.div>
+   872→   872→
+   873→   873→                      {/* Quick actions menu */}
+   874→   874→                      <DropdownMenu>
+   875→   875→                        <DropdownMenuTrigger asChild>
+   876→   876→                          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" aria-label="Quick actions">
+   877→   877→                            <MoreHorizontal className="w-3.5 h-3.5" />
+   878→   878→                          </Button>
+   879→   879→                        </DropdownMenuTrigger>
+   880→   880→                        <DropdownMenuContent align="end" className="w-48">
+   881→   881→                          {QUICK_ACTIONS.map((action) => (
+   882→   882→                            <DropdownMenuItem
+   883→   883→                              key={action.label}
+   884→   884→                              onClick={() => handleQuickAction(action.prompt)}
+   885→   885→                              className="gap-2"
+   886→   886→                            >
+   887→   887→                              <action.icon className="w-4 h-4" />
+   888→   888→                              {action.label}
+   889→   889→                            </DropdownMenuItem>
+   890→   890→                          ))}
+   891→   891→                        </DropdownMenuContent>
+   892→   892→                      </DropdownMenu>
+   893→   893→
+   894→   894→                      {/* Send button */}
+   895→   895→                      <Button
+   896→   896→                        size="icon"
+   897→   897→                        className="shrink-0 h-7 w-7 rounded-lg"
+   898→   898→                        onClick={() => handleSend()}
+   899→   899→                        disabled={!input.trim() || isLoading}
+   900→   900→                        aria-label="Send message"
+   901→   901→                      >
+   902→   902→                        <Send className="w-3.5 h-3.5" />
+   903→   903→                      </Button>
+   904→   904→                    </div>
+   905→   905→                  </div>
+   906→   906→                </div>
+   907→   907→              </div>
+   908→   908→            </div>
+   909→   909→          </div>
+   910→   910→        </div>
+   911→   911→
+   912→   912→        {/* Right Panel */}
+   913→   913→        {rightPanelOpen && (
+   914→   914→          <div className="w-72 border-l bg-card/30 overflow-y-auto hidden md:block">
+   915→   915→            <div className="p-4 space-y-5">
+   916→   916→              {/* Session Phase */}
+   917→   917→              <div className="space-y-2">
+   918→   918→                <h4 className="text-sm font-semibold text-foreground">Session Phase</h4>
+   919→   919→                <Badge className={getPhaseColor(sessionPhase)}>
+   920→   920→                  {sessionPhase.charAt(0).toUpperCase() + sessionPhase.slice(1)}
+   921→   921→                </Badge>
+   922→   922→              </div>
+   923→   923→
+   924→   924→              <Separator />
+   925→   925→
+   926→   926→              {/* Learner Profile */}
+   927→   927→              {learnerProfile && (
+   928→   928→                <div className="space-y-2">
+   929→   929→                  <h4 className="text-sm font-semibold text-foreground">Learner Profile</h4>
+   930→   930→                  <div className="text-xs text-muted-foreground space-y-1">
+   931→   931→                    <p><span className="font-medium text-foreground">Style:</span> {learnerProfile.learningStyle}</p>
+   932→   932→                    <p><span className="font-medium text-foreground">Pace:</span> {learnerProfile.pace}</p>
+   933→   933→                  </div>
+   934→   934→                </div>
+   935→   935→              )}
+   936→   936→
+   937→   937→              <Separator />
+   938→   938→
+   939→   939→              {/* Mastery Tracker */}
+   940→   940→              <MasteryTracker />
+   941→   941→
+   942→   942→              <Separator />
+   943→   943→
+   944→   944→              {/* Session Controls */}
+   945→   945→              <SessionControls />
+   946→   946→
+   947→   947→              <Separator />
+   948→   948→
+   949→   949→              {/* Tip Input */}
+   950→   950→              <TipInput />
+   951→   951→
+   952→   952→              <Separator />
+   953→   953→
+   954→   954→              {/* Persona Selector */}
+   955→   955→              <PersonaSelector />
+   956→   956→
+   957→   957→              <Separator />
+   958→   958→
+   959→   959→              {/* Feedback Bar */}
+   960→   960→              <FeedbackBar />
+   961→   961→            </div>
+   962→   962→          </div>
+   963→   963→        )}
+   964→   964→      </div>
+   965→   965→    </div>
+   966→   966→  )
+   967→   967→}
+   968→   968→
