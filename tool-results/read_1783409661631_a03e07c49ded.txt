@@ -1,0 +1,732 @@
+     1→'use client';
+     2→
+     3→import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→import {
+     6→  BookMarked,
+     7→  Plus,
+     8→  Search,
+     9→  Trash2,
+    10→  X,
+    11→  ArrowUpDown,
+    12→  Tag,
+    13→  FileText,
+    14→  Pencil,
+    15→  Type,
+    16→  Check,
+    17→  Loader2,
+    18→} from 'lucide-react';
+    19→import { format } from 'date-fns';
+    20→import { Button } from '@/components/ui/button';
+    21→import { Input } from '@/components/ui/input';
+    22→import { Textarea } from '@/components/ui/textarea';
+    23→import { useAppStore } from '@/stores/appStore';
+    24→import type { Note } from '@/types';
+    25→
+    26→const PREDEFINED_TAGS = ['biology', 'cs', 'math', 'review', 'important', 'physics', 'chemistry', 'general'];
+    27→
+    28→const TAG_COLORS: Record<string, { bg: string; border: string }> = {
+    29→  biology: { bg: 'from-emerald-500/15 to-teal-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20', border: 'border-l-emerald-500' },
+    30→  cs: { bg: 'from-cyan-500/15 to-sky-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/20', border: 'border-l-cyan-500' },
+    31→  math: { bg: 'from-violet-500/15 to-purple-500/15 text-violet-700 dark:text-violet-300 border-violet-500/20', border: 'border-l-violet-500' },
+    32→  review: { bg: 'from-amber-500/15 to-orange-500/15 text-amber-700 dark:text-amber-300 border-amber-500/20', border: 'border-l-amber-500' },
+    33→  important: { bg: 'from-rose-500/15 to-red-500/15 text-rose-700 dark:text-rose-300 border-rose-500/20', border: 'border-l-rose-500' },
+    34→  physics: { bg: 'from-blue-500/15 to-indigo-500/15 text-blue-700 dark:text-blue-300 border-blue-500/20', border: 'border-l-blue-500' },
+    35→  chemistry: { bg: 'from-pink-500/15 to-fuchsia-500/15 text-pink-700 dark:text-pink-300 border-pink-500/20', border: 'border-l-pink-500' },
+    36→  general: { bg: 'from-slate-500/15 to-gray-500/15 text-slate-600 dark:text-slate-300 border-slate-500/20', border: 'border-l-slate-500' },
+    37→};
+    38→
+    39→const TAG_BORDER_COLORS: Record<string, string> = {
+    40→  biology: 'border-l-emerald-500',
+    41→  cs: 'border-l-cyan-500',
+    42→  math: 'border-l-violet-500',
+    43→  review: 'border-l-amber-500',
+    44→  important: 'border-l-rose-500',
+    45→  physics: 'border-l-blue-500',
+    46→  chemistry: 'border-l-pink-500',
+    47→  general: 'border-l-slate-400',
+    48→};
+    49→
+    50→const springConfig = { type: 'spring' as const, stiffness: 400, damping: 30 };
+    51→
+    52→const stagger = {
+    53→  animate: { transition: { staggerChildren: 0.06 } },
+    54→};
+    55→
+    56→const fadeUp = {
+    57→  initial: { opacity: 0, y: 20 },
+    58→  animate: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+    59→};
+    60→
+    61→  const cardVariants = {
+    62→  initial: { opacity: 0, y: 12, scale: 0.98 },
+    63→  animate: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.3, ease: 'easeOut' } },
+    64→  exit: { opacity: 0, y: -8, scale: 0.98, transition: { duration: 0.2, ease: 'easeIn' } },
+    65→  };
+    66→
+    67→type SortMode = 'newest' | 'oldest' | 'title-asc' | 'title-desc';
+    68→
+    69→export function NotesView() {
+    70→  const { notes, addNote, updateNote, deleteNote } = useAppStore();
+    71→  const [searchQuery, setSearchQuery] = useState('');
+    72→  const [searchFocused, setSearchFocused] = useState(false);
+    73→  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+    74→  const [sortMode, setSortMode] = useState<SortMode>('newest');
+    75→  const [expandedId, setExpandedId] = useState<string | null>(null);
+    76→  const [editingId, setEditingId] = useState<string | null>(null);
+    77→  const [editTitle, setEditTitle] = useState('');
+    78→  const [editContent, setEditContent] = useState('');
+    79→  const [editTags, setEditTags] = useState<string[]>([]);
+    80→  const [isCreating, setIsCreating] = useState(false);
+    81→  const [newTitle, setNewTitle] = useState('');
+    82→  const [newContent, setNewContent] = useState('');
+    83→  const [newTags, setNewTags] = useState<string[]>([]);
+    84→
+    85→  // Auto-save indicator state
+    86→  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+    87→  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    88→
+    89→  const filteredNotes = useMemo(() => {
+    90→    let result = [...notes];
+    91→
+    92→    // Filter by search query
+    93→    if (searchQuery.trim()) {
+    94→      const q = searchQuery.toLowerCase();
+    95→      result = result.filter(
+    96→        (n) =>
+    97→          n.title.toLowerCase().includes(q) ||
+    98→          n.content.toLowerCase().includes(q) ||
+    99→          n.tags.some((t) => t.toLowerCase().includes(q))
+   100→      );
+   101→    }
+   102→
+   103→    // Filter by selected tags
+   104→    if (selectedTags.length > 0) {
+   105→      result = result.filter((n) =>
+   106→        selectedTags.every((tag) => n.tags.includes(tag))
+   107→      );
+   108→    }
+   109→
+   110→    // Sort
+   111→    switch (sortMode) {
+   112→      case 'newest':
+   113→        result.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+   114→        break;
+   115→      case 'oldest':
+   116→        result.sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+   117→        break;
+   118→      case 'title-asc':
+   119→        result.sort((a, b) => a.title.localeCompare(b.title));
+   120→        break;
+   121→      case 'title-desc':
+   122→        result.sort((a, b) => b.title.localeCompare(a.title));
+   123→        break;
+   124→    }
+   125→
+   126→    return result;
+   127→  }, [notes, searchQuery, selectedTags, sortMode]);
+   128→
+   129→  const handleCreateNote = () => {
+   130→    if (!newTitle.trim() && !newContent.trim()) return;
+   131→    const now = new Date().toISOString();
+   132→    const note: Note = {
+   133→      id: `note-${Date.now()}`,
+   134→      title: newTitle.trim() || 'Untitled Note',
+   135→      content: newContent.trim(),
+   136→      createdAt: now,
+   137→      updatedAt: now,
+   138→      tags: newTags,
+   139→    };
+   140→    addNote(note);
+   141→    setNewTitle('');
+   142→    setNewContent('');
+   143→    setNewTags([]);
+   144→    setIsCreating(false);
+   145→  };
+   146→
+   147→  const handleStartEdit = (note: Note) => {
+   148→    setEditingId(note.id);
+   149→    setEditTitle(note.title);
+   150→    setEditContent(note.content);
+   151→    setEditTags([...note.tags]);
+   152→  };
+   153→
+   154→  const handleSaveEdit = () => {
+   155→    if (editingId) {
+   156→      setSaveStatus('saving');
+   157→      updateNote(editingId, {
+   158→        title: editTitle.trim() || 'Untitled Note',
+   159→        content: editContent.trim(),
+   160→        tags: editTags,
+   161→      });
+   162→      // Visual feedback for save
+   163→      setTimeout(() => {
+   164→        setSaveStatus('saved');
+   165→        setEditingId(null);
+   166→        setTimeout(() => setSaveStatus('idle'), 2000);
+   167→      }, 200);
+   168→    }
+   169→  };
+   170→
+   171→  // Auto-save with debounce: show "Saving..." on type, "Saved ✓" after 500ms idle
+   172→  const handleEditChange = useCallback((field: 'title' | 'content', value: string) => {
+   173→    if (field === 'title') setEditTitle(value);
+   174→    else setEditContent(value);
+   175→    setSaveStatus('saving');
+   176→    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+   177→    saveTimerRef.current = setTimeout(() => {
+   178→      if (editingId) {
+   179→        updateNote(editingId, {
+   180→          title: (field === 'title' ? value : editTitle).trim() || 'Untitled Note',
+   181→          content: (field === 'content' ? value : editContent).trim(),
+   182→          tags: editTags,
+   183→        });
+   184→        setSaveStatus('saved');
+   185→        setTimeout(() => setSaveStatus('idle'), 2000);
+   186→      }
+   187→    }, 500);
+   188→  }, [editingId, editTitle, editContent, editTags, updateNote]);
+   189→
+   190→  // Cleanup timer on unmount
+   191→  useEffect(() => {
+   192→    return () => {
+   193→      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+   194→    };
+   195→  }, []);
+   196→
+   197→  const handleCancelEdit = () => {
+   198→    setEditingId(null);
+   199→    setEditTitle('');
+   200→    setEditContent('');
+   201→    setEditTags([]);
+   202→  };
+   203→
+   204→  const handleDeleteNote = (id: string) => {
+   205→    deleteNote(id);
+   206→    if (expandedId === id) setExpandedId(null);
+   207→    if (editingId === id) {
+   208→      setEditingId(null);
+   209→      setEditTitle('');
+   210→      setEditContent('');
+   211→      setEditTags([]);
+   212→    }
+   213→  };
+   214→
+   215→  const toggleTagFilter = (tag: string) => {
+   216→    setSelectedTags((prev) =>
+   217→      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+   218→    );
+   219→  };
+   220→
+   221→  const toggleTagOnNote = (tag: string, isEditing: boolean) => {
+   222→    if (isEditing) {
+   223→      setEditTags((prev) =>
+   224→        prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+   225→      );
+   226→    } else {
+   227→      setNewTags((prev) =>
+   228→        prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+   229→      );
+   230→    }
+   231→  };
+   232→
+   233→  const cycleSortMode = () => {
+   234→    const modes: SortMode[] = ['newest', 'oldest', 'title-asc', 'title-desc'];
+   235→    const current = modes.indexOf(sortMode);
+   236→    setSortMode(modes[(current + 1) % modes.length]);
+   237→  };
+   238→
+   239→  const sortLabel = () => {
+   240→    switch (sortMode) {
+   241→      case 'newest': return 'Newest first';
+   242→      case 'oldest': return 'Oldest first';
+   243→      case 'title-asc': return 'Title A-Z';
+   244→      case 'title-desc': return 'Title Z-A';
+   245→    }
+   246→  };
+   247→
+   248→  const activeFilterCount = selectedTags.length + (searchQuery.trim() ? 1 : 0);
+   249→
+   250→  return (
+   251→    <motion.div
+   252→      variants={stagger}
+   253→      initial="initial"
+   254→      animate="animate"
+   255→      className="space-y-6 pt-2 lg:pt-4"
+   256→    >
+   257→      {/* Gradient header */}
+   258→      <motion.div variants={fadeUp} className="rounded-xl p-6 mesh-gradient gradient-border relative overflow-hidden pl-14 lg:pl-0">
+   259→        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+   260→          <div className="space-y-1">
+   261→            <div className="flex items-center gap-2">
+   262→              <BookMarked className="h-5 w-5 text-primary" />
+   263→              <h1 className="text-2xl lg:text-3xl font-bold gradient-text">Notes</h1>
+   264→            </div>
+   265→            <p className="text-muted-foreground text-sm">
+   266→              {notes.length} {notes.length === 1 ? 'note' : 'notes'} total
+   267→              {activeFilterCount > 0 && ` — showing ${filteredNotes.length}`}
+   268→            </p>
+   269→          </div>
+   270→          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+   271→            <Button onClick={() => setIsCreating(true)} size="sm" className="glow-emerald">
+   272→              <Plus className="h-4 w-4 mr-2" />
+   273→              New Note
+   274→            </Button>
+   275→          </motion.div>
+   276→        </div>
+   277→      </motion.div>
+   278→
+   279→      {/* Create New Note Form */}
+   280→      <AnimatePresence>
+   281→        {isCreating && (
+   282→          <motion.div
+   283→            initial={{ opacity: 0, height: 0, marginTop: 0, scale: 0.97 }}
+   284→            animate={{ opacity: 1, height: 'auto', marginTop: 0, scale: 1 }}
+   285→            exit={{ opacity: 0, height: 0, marginTop: 0, scale: 0.97 }}
+   286→            transition={{ type: 'spring', stiffness: 400, damping: 30, opacity: { duration: 0.2 } }}
+   287→            className="overflow-hidden"
+   288→          >
+   289→            <div className="glass rounded-xl p-5 space-y-4 glow-emerald gradient-border card-shadow relative">
+   290→              <div className="absolute inset-0 rounded-xl mesh-gradient opacity-30 pointer-events-none" />
+   291→              <div className="relative z-10">
+   292→                <div className="flex items-center justify-between">
+   293→                  <div className="flex items-center gap-2">
+   294→                    <Pencil className="h-4 w-4 text-primary" />
+   295→                    <h3 className="text-sm font-semibold">New Note</h3>
+   296→                  </div>
+   297→                  <Button
+   298→                    variant="ghost"
+   299→                    size="icon"
+   300→                    className="h-7 w-7"
+   301→                    onClick={() => {
+   302→                      setIsCreating(false);
+   303→                      setNewTitle('');
+   304→                      setNewContent('');
+   305→                      setNewTags([]);
+   306→                    }}
+   307→                  >
+   308→                    <X className="h-4 w-4" />
+   309→                  </Button>
+   310→                </div>
+   311→                <Input
+   312→                  placeholder="Note title..."
+   313→                  value={newTitle}
+   314→                  onChange={(e) => setNewTitle(e.target.value)}
+   315→                  autoFocus
+   316→                />
+   317→                <Textarea
+   318→                  placeholder="Write your note here..."
+   319→                  value={newContent}
+   320→                  onChange={(e) => setNewContent(e.target.value)}
+   321→                  className="min-h-[120px] resize-y"
+   322→                />
+   323→                {/* Animated word count */}
+   324→                <div className="flex items-center justify-between">
+   325→                  <div className="space-y-2 flex-1">
+   326→                    <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+   327→                      <Tag className="h-3 w-3" /> Tags
+   328→                    </p>
+   329→                    <div className="flex flex-wrap gap-1.5">
+   330→                      {PREDEFINED_TAGS.map((tag) => (
+   331→                        <motion.button
+   332→                          key={tag}
+   333→                          whileHover={{ scale: 1.05 }}
+   334→                          whileTap={{ scale: 0.95 }}
+   335→                          onClick={() => toggleTagOnNote(tag, false)}
+   336→                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+   337→                            newTags.includes(tag)
+   338→                              ? `bg-gradient-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg}`
+   339→                              : 'bg-background/60 border-border hover:bg-accent'
+   340→                          }`}
+   341→                        >
+   342→                          {tag}
+   343→                        </motion.button>
+   344→                      ))}
+   345→                    </div>
+   346→                  </div>
+   347→                  <motion.span
+   348→                    key={newContent.length}
+   349→                    initial={{ scale: 1.1, opacity: 0.7 }}
+   350→                    animate={{ scale: 1, opacity: 1 }}
+   351→                    className="text-xs text-muted-foreground flex items-center gap-1 self-end"
+   352→                  >
+   353→                    <Type className="h-3 w-3" />
+   354→                    {newContent.trim().split(/\s+/).filter(Boolean).length} words
+   355→                  </motion.span>
+   356→                </div>
+   357→                <div className="flex justify-end gap-2">
+   358→                  <Button
+   359→                    variant="outline"
+   360→                    size="sm"
+   361→                    onClick={() => {
+   362→                      setIsCreating(false);
+   363→                      setNewTitle('');
+   364→                      setNewContent('');
+   365→                      setNewTags([]);
+   366→                    }}
+   367→                  >
+   368→                    Cancel
+   369→                  </Button>
+   370→                  <Button size="sm" onClick={handleCreateNote} className="glow-emerald transition-shadow duration-300">
+   371→                    Save Note
+   372→                  </Button>
+   373→                </div>
+   374→              </div>
+   375→            </div>
+   376→          </motion.div>
+   377→        )}
+   378→      </AnimatePresence>
+   379→
+   380→      {/* Search and Filters */}
+   381→      <motion.div variants={fadeUp} className="space-y-3">
+   382→        <div className="flex flex-col sm:flex-row gap-3">
+   383→          <div className="relative flex-1">
+   384→            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   385→            <div className={searchFocused ? 'gradient-border rounded-md' : ''}>
+   386→              <Input
+   387→                placeholder="Search notes..."
+   388→                value={searchQuery}
+   389→                onChange={(e) => setSearchQuery(e.target.value)}
+   390→                onFocus={() => setSearchFocused(true)}
+   391→                onBlur={() => setSearchFocused(false)}
+   392→                className="pl-9"
+   393→              />
+   394→            </div>
+   395→            {searchQuery && (
+   396→              <button
+   397→                onClick={() => setSearchQuery('')}
+   398→                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+   399→              >
+   400→                <X className="h-3.5 w-3.5" />
+   401→              </button>
+   402→            )}
+   403→          </div>
+   404→          <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+   405→            <Button
+   406→              variant="outline"
+   407→              size="sm"
+   408→              onClick={cycleSortMode}
+   409→              className="w-full sm:w-auto shrink-0 hover:glow-emerald transition-shadow duration-300"
+   410→            >
+   411→              <motion.span
+   412→                key={sortMode}
+   413→                initial={{ rotate: -90, opacity: 0 }}
+   414→                animate={{ rotate: 0, opacity: 1 }}
+   415→                exit={{ rotate: 90, opacity: 0 }}
+   416→                transition={{ duration: 0.3 }}
+   417→                className="mr-2 inline-flex"
+   418→              >
+   419→                <ArrowUpDown className="h-4 w-4" />
+   420→              </motion.span>
+   421→              {sortLabel()}
+   422→            </Button>
+   423→          </motion.div>
+   424→        </div>
+   425→
+   426→        {/* Tag Filters with spring entrance */}
+   427→        <div className="flex flex-wrap gap-1.5">
+   428→          {PREDEFINED_TAGS.map((tag, idx) => (
+   429→            <motion.button
+   430→              key={tag}
+   431→              initial={{ opacity: 0, scale: 0.8, y: 10 }}
+   432→              animate={{ opacity: 1, scale: 1, y: 0 }}
+   433→              transition={{ delay: 0.03 * idx, type: 'spring', stiffness: 400, damping: 25 }}
+   434→              whileHover={{ scale: 1.08 }}
+   435→              whileTap={{ scale: 0.92 }}
+   436→              onClick={() => toggleTagFilter(tag)}
+   437→              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+   438→                selectedTags.includes(tag)
+   439→                  ? `bg-gradient-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg} glow-emerald`
+   440→                  : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+   441→              }`}
+   442→            >
+   443→              {tag}
+   444→            </motion.button>
+   445→          ))}
+   446→          {selectedTags.length > 0 && (
+   447→            <motion.button
+   448→              initial={{ opacity: 0, scale: 0.8 }}
+   449→              animate={{ opacity: 1, scale: 1 }}
+   450→              whileHover={{ scale: 1.05 }}
+   451→              whileTap={{ scale: 0.95 }}
+   452→              onClick={() => setSelectedTags([])}
+   453→              className="px-2.5 py-1 rounded-full text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+   454→            >
+   455→              Clear filters
+   456→            </motion.button>
+   457→          )}
+   458→        </div>
+   459→      </motion.div>
+   460→
+   461→      {/* Notes List */}
+   462→      {filteredNotes.length === 0 && notes.length === 0 ? (
+   463→        <motion.div variants={fadeUp}>
+   464→          <div className="glass rounded-xl p-12 mesh-gradient card-shadow relative overflow-hidden">
+   465→            <div className="absolute inset-0 dot-pattern opacity-20 pointer-events-none" />
+   466→            <div className="relative z-10 flex flex-col items-center">
+   467→              <motion.div
+   468→                animate={{ y: [0, -8, 0] }}
+   469→                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+   470→                className="mb-4"
+   471→              >
+   472→                <BookMarked className="h-12 w-12 text-primary/40" />
+   473→              </motion.div>
+   474→              <h3 className="text-lg font-semibold mb-1">No notes yet</h3>
+   475→              <p className="text-sm text-muted-foreground text-center max-w-sm">
+   476→                Create your first note to start capturing ideas, summaries, and study notes.
+   477→              </p>
+   478→              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="mt-4">
+   479→                <Button onClick={() => setIsCreating(true)} size="sm" className="glow-emerald">
+   480→                  <Plus className="h-4 w-4 mr-2" />
+   481→                  Create Note
+   482→                </Button>
+   483→              </motion.div>
+   484→            </div>
+   485→          </div>
+   486→        </motion.div>
+   487→      ) : filteredNotes.length === 0 ? (
+   488→        <motion.div variants={fadeUp} className="text-center py-12">
+   489→          <div className="glass rounded-xl p-8 card-shadow relative overflow-hidden">
+   490→            <div className="absolute inset-0 mesh-gradient opacity-20 pointer-events-none" />
+   491→            <div className="relative z-10">
+   492→              <motion.div
+   493→                animate={{ y: [0, -6, 0] }}
+   494→                transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+   495→                className="mb-3 inline-block"
+   496→              >
+   497→                <FileText className="h-10 w-10 text-muted-foreground/40" />
+   498→              </motion.div>
+   499→              <p className="text-sm text-muted-foreground">No notes match your search or filters.</p>
+   500→              <button
+   501→                onClick={() => {
+   502→                  setSearchQuery('');
+   503→                  setSelectedTags([]);
+   504→                }}
+   505→                className="text-sm text-primary hover:underline mt-1 transition-colors"
+   506→              >
+   507→                Clear all filters
+   508→              </button>
+   509→            </div>
+   510→          </div>
+   511→        </motion.div>
+   512→      ) : (
+   513→        <motion.div
+   514→          variants={stagger}
+   515→          initial="initial"
+   516→          animate="animate"
+   517→          className="grid gap-3"
+   518→        >
+   519→          <AnimatePresence mode="popLayout">
+   520→            {filteredNotes.map((note) => {
+   521→              const primaryTag = note.tags[0];
+   522→              const borderClass = primaryTag ? TAG_BORDER_COLORS[primaryTag] || 'border-l-slate-400' : '';
+   523→              return (
+   524→                <motion.div
+   525→                  key={note.id}
+   526→                  variants={cardVariants}
+   527→                  initial="initial"
+   528→                  animate="animate"
+   529→                  exit="exit"
+   530→                  layout
+   531→                  className={`glass-hover rounded-xl noise transition-all duration-300 border-l-4 ${borderClass} ${
+   532→                    expandedId === note.id ? 'ring-1 ring-primary/20 glow-emerald' : ''
+   533→                  }`}
+   534→                >
+   535→                  {editingId === note.id ? (
+   536→                    /* Edit Mode */
+   537→                    <div className="p-4 space-y-4 relative z-10">
+   538→                      {/* Auto-save indicator */}
+   539→                      <div className="flex items-center justify-between">
+   540→                        <div className="flex items-center gap-2">
+   541→                          <Pencil className="h-4 w-4 text-primary" />
+   542→                          <h3 className="text-sm font-semibold">Editing Note</h3>
+   543→                        </div>
+   544→                        <AnimatePresence mode="wait">
+   545→                          {saveStatus === 'saving' && (
+   546→                            <motion.span
+   547→                              key="saving"
+   548→                              initial={{ opacity: 0, x: 5 }}
+   549→                              animate={{ opacity: 1, x: 0 }}
+   550→                              exit={{ opacity: 0, x: -5 }}
+   551→                              className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400"
+   552→                            >
+   553→                              <Loader2 className="h-3 w-3 animate-spin" />
+   554→                              Saving...
+   555→                            </motion.span>
+   556→                          )}
+   557→                          {saveStatus === 'saved' && (
+   558→                            <motion.span
+   559→                              key="saved"
+   560→                              initial={{ opacity: 0, x: 5 }}
+   561→                              animate={{ opacity: 1, x: 0 }}
+   562→                              exit={{ opacity: 0, x: -5 }}
+   563→                              className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400"
+   564→                            >
+   565→                              <Check className="h-3 w-3" />
+   566→                              Saved ✓
+   567→                            </motion.span>
+   568→                          )}
+   569→                        </AnimatePresence>
+   570→                      </div>
+   571→                      <Input
+   572→                        value={editTitle}
+   573→                        onChange={(e) => handleEditChange('title', e.target.value)}
+   574→                        placeholder="Note title..."
+   575→                        autoFocus
+   576→                      />
+   577→                      <Textarea
+   578→                        value={editContent}
+   579→                        onChange={(e) => handleEditChange('content', e.target.value)}
+   580→                        className="min-h-[120px] resize-y"
+   581→                        placeholder="Note content..."
+   582→                      />
+   583→                      <div className="space-y-2">
+   584→                        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+   585→                          <Tag className="h-3 w-3" /> Tags
+   586→                        </p>
+   587→                        <div className="flex flex-wrap gap-1.5">
+   588→                          {PREDEFINED_TAGS.map((tag) => (
+   589→                            <motion.button
+   590→                              key={tag}
+   591→                              whileHover={{ scale: 1.05 }}
+   592→                              whileTap={{ scale: 0.95 }}
+   593→                              onClick={() => toggleTagOnNote(tag, true)}
+   594→                              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+   595→                                editTags.includes(tag)
+   596→                                  ? `bg-gradient-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg}`
+   597→                                  : 'bg-background/60 border-border hover:bg-accent'
+   598→                              }`}
+   599→                            >
+   600→                              {tag}
+   601→                            </motion.button>
+   602→                          ))}
+   603→                        </div>
+   604→                      </div>
+   605→                      <div className="flex justify-end gap-2">
+   606→                        <Button variant="outline" size="sm" onClick={handleCancelEdit}>
+   607→                          Cancel
+   608→                        </Button>
+   609→                        <Button size="sm" onClick={handleSaveEdit}>
+   610→                          Save Changes
+   611→                        </Button>
+   612→                      </div>
+   613→                    </div>
+   614→                  ) : (
+   615→                    /* View Mode */
+   616→                    <div
+   617→                      className="cursor-pointer p-4 relative z-10"
+   618→                      onClick={() =>
+   619→                        setExpandedId((prev) => (prev === note.id ? null : note.id))
+   620→                      }
+   621→                    >
+   622→                      <div className="flex items-start justify-between gap-3">
+   623→                        <div className="flex-1 min-w-0">
+   624→                          <h3 className="font-semibold text-sm truncate">{note.title}</h3>
+   625→                          {note.tags.length > 0 && (
+   626→                            <div className="flex flex-wrap gap-1 mt-2">
+   627→                              {note.tags.map((tag) => (
+   628→                                <motion.span
+   629→                                  key={tag}
+   630→                                  whileHover={{ scale: 1.1 }}
+   631→                                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border bg-gradient-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg}`}
+   632→                                >
+   633→                                  {tag}
+   634→                                </motion.span>
+   635→                              ))}
+   636→                            </div>
+   637→                          )}
+   638→                        </div>
+   639→                        <div className="flex items-center gap-1 shrink-0">
+   640→                          <span className="text-[10px] text-muted-foreground hidden sm:inline-block">
+   641→                            {format(new Date(note.updatedAt), 'MMM d, yyyy')}
+   642→                          </span>
+   643→                          <Button
+   644→                            variant="ghost"
+   645→                            size="icon"
+   646→                            className="h-7 w-7 shrink-0 hover:glow-emerald transition-shadow duration-300"
+   647→                            onClick={(e) => {
+   648→                              e.stopPropagation();
+   649→                              handleStartEdit(note);
+   650→                            }}
+   651→                          >
+   652→                            <FileText className="h-3.5 w-3.5" />
+   653→                          </Button>
+   654→                          <motion.div
+   655→                            whileHover={{ x: [0, -2, 2, -2, 0], transition: { duration: 0.4 } }}
+   656→                          >
+   657→                            <Button
+   658→                              variant="ghost"
+   659→                              size="icon"
+   660→                              className="h-7 w-7 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+   661→                              onClick={(e) => {
+   662→                                e.stopPropagation();
+   663→                                handleDeleteNote(note.id);
+   664→                              }}
+   665→                            >
+   666→                              <Trash2 className="h-3.5 w-3.5" />
+   667→                            </Button>
+   668→                          </motion.div>
+   669→                        </div>
+   670→                      </div>
+   671→
+   672→                      {/* Content preview with line-clamp in collapsed state */}
+   673→                      {expandedId !== note.id && note.content && (
+   674→                        <>
+   675→                        <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+   676→                          {note.content}
+   677→                        </p>
+   678→                        <div className="flex items-center gap-2 mt-1.5">
+   679→                          <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+   680→                            <Type className="h-2.5 w-2.5" />
+   681→                            {note.content.trim().split(/\s+/).filter(Boolean).length} words
+   682→                          </span>
+   683→                        </div>
+   684→                        </>
+   685→                      )}
+   686→
+   687→                      <AnimatePresence>
+   688→                        {expandedId === note.id && (
+   689→                          <motion.div
+   690→                            initial={{ opacity: 0, height: 0 }}
+   691→                            animate={{ opacity: 1, height: 'auto' }}
+   692→                            exit={{ opacity: 0, height: 0 }}
+   693→                            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+   694→                            className="overflow-hidden"
+   695→                          >
+   696→                            <div className="mt-3 pt-3 border-t border-border/50">
+   697→                              <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+   698→                                {note.content || 'No content'}
+   699→                              </p>
+   700→                              <div className="flex items-center justify-between mt-3">
+   701→                                <div className="flex items-center gap-3">
+   702→                                  <span className="text-[10px] text-muted-foreground sm:hidden">
+   703→                                    {format(new Date(note.updatedAt), 'MMM d, yyyy')}
+   704→                                  </span>
+   705→                                  <span className="text-[10px] text-muted-foreground">
+   706→                                    Updated {format(new Date(note.updatedAt), 'h:mm a')}
+   707→                                  </span>
+   708→                                </div>
+   709→                                <motion.span
+   710→                                  initial={{ opacity: 0 }}
+   711→                                  animate={{ opacity: 1 }}
+   712→                                  className="text-[10px] text-muted-foreground flex items-center gap-1"
+   713→                                >
+   714→                                  <Type className="h-3 w-3" />
+   715→                                  {note.content.trim().split(/\s+/).filter(Boolean).length} words
+   716→                                </motion.span>
+   717→                              </div>
+   718→                            </div>
+   719→                          </motion.div>
+   720→                        )}
+   721→                      </AnimatePresence>
+   722→                    </div>
+   723→                  )}
+   724→                </motion.div>
+   725→              );
+   726→            })}
+   727→          </AnimatePresence>
+   728→        </motion.div>
+   729→      )}
+   730→    </motion.div>
+   731→  );
+   732→}

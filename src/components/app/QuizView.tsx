@@ -2503,6 +2503,7 @@ export function QuizView() {
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     className="quiz-timer-ring"
+                    aria-live="polite"
                   >
                     <svg width="36" height="36" viewBox="0 0 36 36">
                       <circle
@@ -2773,7 +2774,7 @@ export function QuizView() {
                   <div className="flex items-center gap-4">
                     {/* Circular SVG Timer */}
                     {!dailyShowResults && (
-                      <div className="relative">
+                      <div className="relative" aria-live="polite">
                         <svg width="64" height="64" className="-rotate-90">
                           <circle
                             cx="32"
@@ -3110,6 +3111,7 @@ export function QuizView() {
                         whileTap={!isAnswered ? { scale: 0.99 } : {}}
                         onClick={() => !isAnswered && handleDailyAnswer(opt)}
                         disabled={isAnswered}
+                        aria-label={`Option ${letter}: ${opt}`}
                         className={`relative flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition-all ${
                           isAnswered
                             ? isCorrectOpt
@@ -3156,6 +3158,7 @@ export function QuizView() {
                         whileTap={!isAnswered ? { scale: 0.97 } : {}}
                         onClick={() => !isAnswered && handleDailyAnswer(opt)}
                         disabled={isAnswered}
+                        aria-label={`Answer: ${opt}`}
                         className={`flex-1 rounded-lg border p-4 text-center font-semibold transition-all ${
                           isAnswered
                             ? isCorrectOpt
@@ -3423,6 +3426,7 @@ export function QuizView() {
                         whileTap={!isAns ? { scale: 0.99 } : {}}
                         onClick={() => !isAns && handleReviewAnswer(opt)}
                         disabled={isAns}
+                        aria-label={`Option ${letter}: ${opt}`}
                         className={`relative flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition-all ${
                           isAns
                             ? isCor
@@ -3459,6 +3463,7 @@ export function QuizView() {
                         whileTap={!isAns ? { scale: 0.97 } : {}}
                         onClick={() => !isAns && handleReviewAnswer(opt)}
                         disabled={isAns}
+                        aria-label={`Answer: ${opt}`}
                         className={`flex-1 flex items-center justify-center gap-2 rounded-lg border p-4 text-sm font-medium transition-all ${
                           isAns
                             ? isCor ? 'border-emerald-500/60 bg-emerald-500/8' : isSel ? 'border-destructive/60 bg-destructive/8' : 'border-border opacity-60'
@@ -3679,6 +3684,7 @@ export function QuizView() {
 
         {/* Quiz question card */}
         {studyMode === 'quiz' && (
+        <div role="group" aria-label="Quiz questions">
         <AnimatePresence mode="wait">
           {currentQ && (
             <motion.div
@@ -3756,6 +3762,7 @@ export function QuizView() {
                         whileTap={!isAnswered ? { scale: 0.99 } : {}}
                         onClick={() => !isAnswered && handleAnswer(opt)}
                         disabled={isAnswered}
+                        aria-label={`Option ${letter}: ${opt}`}
                         className={`relative flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition-all hover-lift ${
                           isAnswered
                             ? isCorrectOpt
@@ -3827,6 +3834,7 @@ export function QuizView() {
                         whileTap={!isAnswered ? { scale: 0.97 } : {}}
                         onClick={() => !isAnswered && handleAnswer(opt)}
                         disabled={isAnswered}
+                        aria-label={`Answer: ${opt}`}
                         className={`flex-1 rounded-lg border p-4 text-center font-semibold transition-all ${
                           isAnswered
                             ? isCorrectOpt
@@ -4082,6 +4090,7 @@ export function QuizView() {
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
         )}
 
         {/* Flashcard Mode - 3D Flip with Swipe */}

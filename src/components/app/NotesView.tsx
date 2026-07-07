@@ -15,6 +15,8 @@ import {
   Type,
   Check,
   Loader2,
+  Eye,
+  Edit2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
@@ -22,6 +24,20 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useAppStore } from '@/stores/appStore';
 import type { Note } from '@/types';
+
+function parseMarkdown(text: string): string {
+  return text
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>')
+    .replace(/<\/ul>\s*<ul>/g, '')
+    .replace(/\n/g, '<br/>');
+}
 
 const PREDEFINED_TAGS = ['biology', 'cs', 'math', 'review', 'important', 'physics', 'chemistry', 'general'];
 
@@ -81,6 +97,7 @@ export function NotesView() {
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newTags, setNewTags] = useState<string[]>([]);
+  const [previewMode, setPreviewMode] = useState(false);
 
   // Auto-save indicator state
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -149,6 +166,7 @@ export function NotesView() {
     setEditTitle(note.title);
     setEditContent(note.content);
     setEditTags([...note.tags]);
+    setPreviewMode(false);
   };
 
   const handleSaveEdit = () => {
@@ -199,6 +217,7 @@ export function NotesView() {
     setEditTitle('');
     setEditContent('');
     setEditTags([]);
+    setPreviewMode(false);
   };
 
   const handleDeleteNote = (id: string) => {
@@ -469,7 +488,7 @@ export function NotesView() {
                 transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
                 className="mb-4"
               >
-                <BookMarked className="h-12 w-12 text-primary/40" />
+                <BookMarked className="h-12 w-12 text-primary/40 float-slow" />
               </motion.div>
               <h3 className="text-lg font-semibold mb-1">No notes yet</h3>
               <p className="text-sm text-muted-foreground text-center max-w-sm">
@@ -494,7 +513,7 @@ export function NotesView() {
                 transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
                 className="mb-3 inline-block"
               >
-                <FileText className="h-10 w-10 text-muted-foreground/40" />
+                <FileText className="h-10 w-10 text-muted-foreground/40 float-slow" />
               </motion.div>
               <p className="text-sm text-muted-foreground">No notes match your search or filters.</p>
               <button
@@ -528,45 +547,63 @@ export function NotesView() {
                   animate="animate"
                   exit="exit"
                   layout
-                  className={`glass-hover rounded-xl noise transition-all duration-300 border-l-4 ${borderClass} ${
+                  className={`glass-hover rounded-xl noise transition-all duration-300 border-l-4 card-hover-lift ${borderClass} ${
                     expandedId === note.id ? 'ring-1 ring-primary/20 glow-emerald' : ''
                   }`}
                 >
                   {editingId === note.id ? (
                     /* Edit Mode */
                     <div className="p-4 space-y-4 relative z-10">
-                      {/* Auto-save indicator */}
+                      {/* Auto-save indicator + Preview toggle */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Pencil className="h-4 w-4 text-primary" />
                           <h3 className="text-sm font-semibold">Editing Note</h3>
                         </div>
-                        <AnimatePresence mode="wait">
-                          {saveStatus === 'saving' && (
-                            <motion.span
-                              key="saving"
-                              initial={{ opacity: 0, x: 5 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: -5 }}
-                              className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400"
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center rounded-lg border border-border/60 bg-muted/40 overflow-hidden">
+                            <button
+                              onClick={() => setPreviewMode(false)}
+                              className={`px-2.5 py-1 text-xs font-medium transition-colors ${!previewMode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                             >
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                              Saving...
-                            </motion.span>
-                          )}
-                          {saveStatus === 'saved' && (
-                            <motion.span
-                              key="saved"
-                              initial={{ opacity: 0, x: 5 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: -5 }}
-                              className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400"
+                              <Edit2 className="h-3 w-3 mr-1 inline-block" />
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => setPreviewMode(true)}
+                              className={`px-2.5 py-1 text-xs font-medium transition-colors ${previewMode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                             >
-                              <Check className="h-3 w-3" />
-                              Saved ✓
-                            </motion.span>
-                          )}
-                        </AnimatePresence>
+                              <Eye className="h-3 w-3 mr-1 inline-block" />
+                              Preview
+                            </button>
+                          </div>
+                          <AnimatePresence mode="wait">
+                            {saveStatus === 'saving' && (
+                              <motion.span
+                                key="saving"
+                                initial={{ opacity: 0, x: 5 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -5 }}
+                                className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400"
+                              >
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Saving...
+                              </motion.span>
+                            )}
+                            {saveStatus === 'saved' && (
+                              <motion.span
+                                key="saved"
+                                initial={{ opacity: 0, x: 5 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -5 }}
+                                className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400"
+                              >
+                                <Check className="h-3 w-3" />
+                                Saved ✓
+                              </motion.span>
+                            )}
+                          </AnimatePresence>
+                        </div>
                       </div>
                       <Input
                         value={editTitle}
@@ -574,12 +611,42 @@ export function NotesView() {
                         placeholder="Note title..."
                         autoFocus
                       />
-                      <Textarea
-                        value={editContent}
-                        onChange={(e) => handleEditChange('content', e.target.value)}
-                        className="min-h-[120px] resize-y"
-                        placeholder="Note content..."
-                      />
+                      <AnimatePresence mode="wait">
+                        {!previewMode ? (
+                          <motion.div
+                            key="edit"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <Textarea
+                              value={editContent}
+                              onChange={(e) => handleEditChange('content', e.target.value)}
+                              className="min-h-[120px] resize-y"
+                              placeholder="Note content... (supports markdown)"
+                            />
+                          </motion.div>
+                        ) : (
+                          <motion.div
+                            key="preview"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="min-h-[120px] rounded-lg border border-border/60 bg-muted/30 backdrop-blur-sm p-4 overflow-y-auto max-h-[300px]"
+                          >
+                            {editContent.trim() ? (
+                              <div
+                                className="prose prose-sm dark:prose-invert max-w-none [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mb-2 [&_h1]:text-foreground [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mb-1.5 [&_h2]:text-foreground/90 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mb-1 [&_h3]:text-foreground/80 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:space-y-1 [&_ul]:my-2 [&_li]:text-sm [&_li]:text-foreground/80 [&_code]:bg-primary/10 [&_code]:text-primary [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono [&_strong]:font-semibold [&_strong]:text-foreground [&_em]:italic [&_em]:text-foreground/80 [&_br]:block [&_br]:h-2"
+                                dangerouslySetInnerHTML={{ __html: parseMarkdown(editContent) }}
+                              />
+                            ) : (
+                              <p className="text-sm text-muted-foreground/50 italic">Nothing to preview</p>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                           <Tag className="h-3 w-3" /> Tags

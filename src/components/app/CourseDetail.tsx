@@ -262,9 +262,9 @@ export function CourseDetail() {
           <div className="relative z-10">
             {/* Breadcrumb navigation */}
             <nav className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3" aria-label="Breadcrumb">
-              <button onClick={() => navigate('dashboard')} className="hover:text-foreground transition-colors font-medium">Dashboard</button>
-              <ChevronRight className="h-3 w-3 shrink-0" />
-              <span className="text-foreground truncate max-w-[200px] sm:max-w-none">{activeCourse?.title ?? 'Course Detail'}</span>
+              <button onClick={() => navigate('dashboard')} className="hover:text-foreground transition-colors font-medium slide-up-fade stagger-1">Dashboard</button>
+              <ChevronRight className="h-3 w-3 shrink-0 slide-up-fade stagger-2" />
+              <span className="text-foreground truncate max-w-[200px] sm:max-w-none slide-up-fade stagger-3">{activeCourse?.title ?? 'Course Detail'}</span>
             </nav>
             <div className="flex items-center gap-3">
               <Button
@@ -301,7 +301,7 @@ export function CourseDetail() {
                     Start Tutor
                   </Button>
                 </motion.div>
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="card-hover-lift">
                   <Button size="sm" variant="outline" onClick={handleTakeQuiz}>
                     <ClipboardCheck className="h-4 w-4 mr-2" />
                     Start Quiz
@@ -359,7 +359,7 @@ export function CourseDetail() {
           </div>
 
           {/* Animated progress bar */}
-          <div className="h-3 w-full rounded-full bg-muted/50 overflow-hidden">
+          <div className="h-3 w-full rounded-full bg-muted/50 overflow-hidden glow-pulse">
             <motion.div
               className="h-full rounded-full"
               style={{ background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))' }}

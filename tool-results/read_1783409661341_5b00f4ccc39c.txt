@@ -1,0 +1,717 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useMemo, useCallback } from 'react';
+     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→import {
+     6→  ArrowLeft,
+     7→  FileText,
+     8→  MessageSquare,
+     9→  ClipboardCheck,
+    10→  Sparkles,
+    11→  ChevronRight,
+    12→  ChevronLeft,
+    13→  BookOpen,
+    14→  GraduationCap,
+    15→  Check,
+    16→  CheckCircle2,
+    17→  Clock,
+    18→  Trophy,
+    19→  Target,
+    20→} from 'lucide-react';
+    21→import { Button } from '@/components/ui/button';
+    22→import { ScrollArea } from '@/components/ui/scroll-area';
+    23→import { Separator } from '@/components/ui/separator';
+    24→import { useAppStore } from '@/stores/appStore';
+    25→import { useCountUp } from '@/hooks/useCountUp';
+    26→import type { Slide } from '@/types';
+    27→
+    28→const MOCK_SLIDES: Slide[] = [
+    29→  {
+    30→    id: 'slide-1',
+    31→    courseId: 'demo',
+    32→    title: 'Introduction to Cell Biology',
+    33→    content:
+    34→      'Cells are the fundamental units of life. All living organisms are composed of one or more cells. The cell theory, developed in the 1830s, states that:\n\n1. All living things are made of cells\n2. Cells are the basic units of structure and function\n3. All cells come from pre-existing cells\n\nThere are two main types of cells: prokaryotic (bacteria, archaea) and eukaryotic (plants, animals, fungi, protists).',
+    35→    order: 1,
+    36→    createdAt: new Date().toISOString(),
+    37→  },
+    38→  {
+    39→    id: 'slide-2',
+    40→    courseId: 'demo',
+    41→    title: 'Cell Organelles Overview',
+    42→    content:
+    43→      'Eukaryotic cells contain membrane-bound organelles, each with specialized functions:\n\n• **Nucleus**: Contains DNA, controls cell activities\n• **Mitochondria**: Produces ATP through cellular respiration\n• **Ribosomes**: Synthesize proteins\n• **Endoplasmic Reticulum**: Synthesizes lipids and proteins (Rough ER has ribosomes, Smooth ER does not)\n• **Golgi Apparatus**: Modifies, sorts, and packages proteins\n• **Lysosomes**: Digest cellular waste and pathogens\n• **Chloroplasts** (plants only): Site of photosynthesis',
+    44→    order: 2,
+    45→    createdAt: new Date().toISOString(),
+    46→  },
+    47→  {
+    48→    id: 'slide-3',
+    49→    courseId: 'demo',
+    50→    title: 'Cell Membrane Structure',
+    51→    content:
+    52→      'The cell membrane (plasma membrane) is a phospholipid bilayer with embedded proteins. According to the Fluid Mosaic Model:\n\n• **Phospholipids** form a double layer with hydrophilic heads facing outward and hydrophobic tails facing inward\n• **Proteins** are embedded in the membrane (integral) or attached to surfaces (peripheral)\n• **Cholesterol** molecules help maintain membrane fluidity\n• **Carbohydrates** attached to proteins form glycoproteins for cell recognition\n\nThe membrane is selectively permeable, allowing certain molecules to pass while blocking others.',
+    53→    order: 3,
+    54→    createdAt: new Date().toISOString(),
+    55→  },
+    56→  {
+    57→    id: 'slide-4',
+    58→    courseId: 'demo',
+    59→    title: 'Cell Division: Mitosis',
+    60→    content:
+    61→      'Mitosis is the process of cell division that produces two genetically identical daughter cells. The phases are:\n\n**PMAT**\n1. **Prophase**: Chromatin condenses into chromosomes, nuclear envelope breaks down\n2. **Metaphase**: Chromosomes align at the cell equator (metaphase plate)\n3. **Anaphase**: Sister chromatids separate and move to opposite poles\n4. **Telophase**: Nuclear envelopes reform, chromosomes decondense\n\nFollowed by **Cytokinesis**: Cytoplasm divides, completing cell division.',
+    62→    order: 4,
+    63→    createdAt: new Date().toISOString(),
+    64→  },
+    65→];
+    66→
+    67→const stagger = {
+    68→  animate: { transition: { staggerChildren: 0.06 } },
+    69→};
+    70→const fadeUp = {
+    71→  initial: { opacity: 0, y: 20 },
+    72→  animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
+    73→};
+    74→
+    75→const bulletVariants = {
+    76→  hidden: { opacity: 0, x: -12 },
+    77→  visible: (i: number) => ({
+    78→    opacity: 1,
+    79→    x: 0,
+    80→    transition: { delay: i * 0.06, duration: 0.3, ease: 'easeOut' },
+    81→  }),
+    82→};
+    83→
+    84→// Confetti particle component
+    85→function ConfettiParticle({ index }: { index: number }) {
+    86→  const colors = ['#10b981', '#14b8a6', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
+    87→  const color = colors[index % colors.length];
+    88→  const startX = 50 + (Math.sin(index * 2.4) * 40);
+    89→  const startY = -10;
+    90→  const endX = startX + (Math.cos(index * 1.7) * 60);
+    91→  const endY = 120;
+    92→  const rotation = index * 137.5;
+    93→  const size = 4 + (index % 3) * 2;
+    94→
+    95→  return (
+    96→    <motion.div
+    97→      initial={{ x: `${startX}%`, y: `${startY}%`, rotate: 0, opacity: 1, scale: 1 }}
+    98→      animate={{
+    99→        y: `${endY}%`,
+   100→        x: `${endX}%`,
+   101→        rotate: rotation + 720,
+   102→        opacity: 0,
+   103→        scale: 0.3,
+   104→      }}
+   105→      transition={{
+   106→        duration: 1.5 + (index % 4) * 0.3,
+   107→        delay: index * 0.05,
+   108→        ease: 'easeIn',
+   109→      }}
+   110→      className="absolute rounded-sm pointer-events-none"
+   111→      style={{
+   112→        width: size,
+   113→        height: size,
+   114→        backgroundColor: color,
+   115→        left: 0,
+   116→        top: 0,
+   117→      }}
+   118→    />
+   119→  );
+   120→}
+   121→
+   122→export function CourseDetail() {
+   123→  const {
+   124→    activeCourse,
+   125→    activeSlides,
+   126→    currentSlideIndex,
+   127→    setCurrentSlideIndex,
+   128→    navigate,
+   129→    setActiveTopic,
+   130→    setActiveSession,
+   131→    viewedSlides,
+   132→    markSlideViewed,
+   133→    completedCourses,
+   134→    completeCourse,
+   135→    quizScore,
+   136→    quizTotal,
+   137→    studySessions,
+   138→  } = useAppStore();
+   139→
+   140→  const slides = activeSlides.length > 0 ? activeSlides : (activeCourse?.slides ?? MOCK_SLIDES);
+   141→  const currentSlide = slides[currentSlideIndex] ?? slides[0];
+   142→  const [activeSlideId, setActiveSlideId] = useState<string | null>(null);
+   143→  const [readProgress, setReadProgress] = useState(0);
+   144→  const [slideDirection, setSlideDirection] = useState(0);
+   145→  const [showConfetti, setShowConfetti] = useState(false);
+   146→
+   147→  // Course progress computation
+   148→  const courseProgress = useMemo(() => {
+   149→    const courseSlideIds = slides.map((s) => s.id);
+   150→    const viewedCount = courseSlideIds.filter((id) => viewedSlides.includes(id)).length;
+   151→    const pct = slides.length > 0 ? Math.round((viewedCount / slides.length) * 100) : 0;
+   152→    return { viewedCount, total: slides.length, pct };
+   153→  }, [slides, viewedSlides]);
+   154→
+   155→  const isCourseCompleted = activeCourse ? completedCourses.includes(activeCourse.id) : false;
+   156→
+   157→  // Stats computation
+   158→  const quizzesTaken = useMemo(() => {
+   159→    if (!activeCourse) return 0;
+   160→    return studySessions.filter((s) =>
+   161→      s.topic.toLowerCase().includes('quiz') &&
+   162→      s.topic.toLowerCase().includes(activeCourse.title.toLowerCase())
+   163→    ).length;
+   164→  }, [studySessions, activeCourse]);
+   165→
+   166→  const avgScore = useMemo(() => {
+   167→    if (quizScore === null || quizTotal === null) return 0;
+   168→    return quizTotal > 0 ? Math.round((quizScore / quizTotal) * 100) : 0;
+   169→  }, [quizScore, quizTotal]);
+   170→
+   171→  const timeSpent = useMemo(() => {
+   172→    if (!activeCourse) return 0;
+   173→    return studySessions
+   174→      .filter((s) => s.topic.toLowerCase().includes(activeCourse.title.toLowerCase()))
+   175→      .reduce((sum, s) => sum + s.duration, 0);
+   176→  }, [studySessions, activeCourse]);
+   177→
+   178→  // Animated counter values
+   179→  const animatedViewed = useCountUp(courseProgress.viewedCount, { duration: 800 });
+   180→  const animatedQuizzes = useCountUp(quizzesTaken, { duration: 800 });
+   181→  const animatedScore = useCountUp(avgScore, { duration: 800 });
+   182→  const animatedTime = useCountUp(timeSpent, { duration: 800 });
+   183→
+   184→  // Mark current slide as viewed when navigating to it
+   185→  useEffect(() => {
+   186→    if (currentSlide) {
+   187→      markSlideViewed(currentSlide.id);
+   188→    }
+   189→  }, [currentSlide, markSlideViewed]);
+   190→
+   191→  // Reading progress indicator
+   192→  useEffect(() => {
+   193→    const handleScroll = () => {
+   194→      const el = document.getElementById('slide-content-scroll');
+   195→      if (!el) return;
+   196→      const scrollable = el.scrollHeight - el.clientHeight;
+   197→      if (scrollable <= 0) {
+   198→        setReadProgress(100);
+   199→        return;
+   200→      }
+   201→      setReadProgress(Math.min(100, (el.scrollTop / scrollable) * 100));
+   202→    };
+   203→    const el = document.getElementById('slide-content-scroll');
+   204→    if (el) el.addEventListener('scroll', handleScroll, { passive: true });
+   205→    return () => el?.removeEventListener('scroll', handleScroll);
+   206→  }, [currentSlideIndex]);
+   207→
+   208→  const handleSlideSelect = (index: number) => {
+   209→    setSlideDirection(index > currentSlideIndex ? 1 : -1);
+   210→    setCurrentSlideIndex(index);
+   211→  };
+   212→
+   213→  const handlePrev = () => {
+   214→    if (currentSlideIndex > 0) {
+   215→      setSlideDirection(-1);
+   216→      setCurrentSlideIndex(currentSlideIndex - 1);
+   217→    }
+   218→  };
+   219→
+   220→  const handleNext = () => {
+   221→    if (currentSlideIndex < slides.length - 1) {
+   222→      setSlideDirection(1);
+   223→      setCurrentSlideIndex(currentSlideIndex + 1);
+   224→    }
+   225→  };
+   226→
+   227→  const handleStartTutor = () => {
+   228→    setActiveSession(`session-${Date.now()}`, activeCourse?.id, activeCourse?.title ?? 'Study Session');
+   229→    navigate('tutor');
+   230→  };
+   231→
+   232→  const handleTakeQuiz = () => {
+   233→    navigate('quiz');
+   234→  };
+   235→
+   236→  const handleMarkComplete = useCallback(() => {
+   237→    if (!activeCourse || isCourseCompleted) return;
+   238→    // Mark all slides as viewed
+   239→    slides.forEach((s) => markSlideViewed(s.id));
+   240→    completeCourse(activeCourse.id);
+   241→    setShowConfetti(true);
+   242→    setTimeout(() => setShowConfetti(false), 3000);
+   243→  }, [activeCourse, isCourseCompleted, slides, markSlideViewed, completeCourse]);
+   244→
+   245→  const isSlideViewed = useCallback((slideId: string) => {
+   246→    return viewedSlides.includes(slideId);
+   247→  }, [viewedSlides]);
+   248→
+   249→  return (
+   250→    <motion.div
+   251→      variants={stagger}
+   252→      initial="initial"
+   253→      animate="animate"
+   254→      className="space-y-4 pt-2 lg:pt-4 pl-14 lg:pl-0"
+   255→    >
+   256→      {/* Gradient Header Banner */}
+   257→      <motion.div
+   258→        variants={fadeUp}
+   259→        className="rounded-xl overflow-hidden relative"
+   260→      >
+   261→        <div className="mesh-gradient gradient-border rounded-xl p-5">
+   262→          <div className="relative z-10">
+   263→            {/* Breadcrumb navigation */}
+   264→            <nav className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3" aria-label="Breadcrumb">
+   265→              <button onClick={() => navigate('dashboard')} className="hover:text-foreground transition-colors font-medium">Dashboard</button>
+   266→              <ChevronRight className="h-3 w-3 shrink-0" />
+   267→              <span className="text-foreground truncate max-w-[200px] sm:max-w-none">{activeCourse?.title ?? 'Course Detail'}</span>
+   268→            </nav>
+   269→            <div className="flex items-center gap-3">
+   270→              <Button
+   271→                variant="ghost"
+   272→                size="icon"
+   273→                onClick={() => navigate('dashboard')}
+   274→                aria-label="Back to dashboard"
+   275→                className="hover:bg-primary/10"
+   276→              >
+   277→                <ArrowLeft className="h-5 w-5" />
+   278→              </Button>
+   279→              <div className="flex-1 min-w-0">
+   280→                <div className="flex items-center gap-2">
+   281→                  <GraduationCap className="h-4 w-4 text-primary shrink-0" />
+   282→                  <h1 className="text-xl font-bold truncate gradient-text">{activeCourse?.title ?? 'Course Detail'}</h1>
+   283→                  {isCourseCompleted && (
+   284→                    <motion.div
+   285→                      initial={{ scale: 0 }}
+   286→                      animate={{ scale: 1 }}
+   287→                      transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+   288→                    >
+   289→                      <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+   290→                    </motion.div>
+   291→                  )}
+   292→                </div>
+   293→                {activeCourse?.description && (
+   294→                  <p className="text-sm text-muted-foreground truncate mt-0.5">{activeCourse.description}</p>
+   295→                )}
+   296→              </div>
+   297→              <div className="hidden sm:flex items-center gap-2">
+   298→                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+   299→                  <Button size="sm" onClick={handleStartTutor} className="glow-emerald">
+   300→                    <MessageSquare className="h-4 w-4 mr-2" />
+   301→                    Start Tutor
+   302→                  </Button>
+   303→                </motion.div>
+   304→                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+   305→                  <Button size="sm" variant="outline" onClick={handleTakeQuiz}>
+   306→                    <ClipboardCheck className="h-4 w-4 mr-2" />
+   307→                    Start Quiz
+   308→                  </Button>
+   309→                </motion.div>
+   310→                {!isCourseCompleted && (
+   311→                  <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+   312→                    <Button
+   313→                      size="sm"
+   314→                      variant="outline"
+   315→                      onClick={handleMarkComplete}
+   316→                      className="border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+   317→                    >
+   318→                      <Trophy className="h-4 w-4 mr-2" />
+   319→                      Mark Complete
+   320→                    </Button>
+   321→                  </motion.div>
+   322→                )}
+   323→              </div>
+   324→            </div>
+   325→            {/* Mobile action buttons */}
+   326→            <div className="flex sm:hidden gap-2 mt-3 flex-wrap">
+   327→              <Button size="sm" className="flex-1" onClick={handleStartTutor}>
+   328→                <MessageSquare className="h-4 w-4 mr-2" />
+   329→                Start Tutor
+   330→              </Button>
+   331→              <Button size="sm" variant="outline" className="flex-1" onClick={handleTakeQuiz}>
+   332→                <ClipboardCheck className="h-4 w-4 mr-2" />
+   333→                Start Quiz
+   334→              </Button>
+   335→              {!isCourseCompleted && (
+   336→                <Button
+   337→                  size="sm"
+   338→                  variant="outline"
+   339→                  onClick={handleMarkComplete}
+   340→                  className="flex-1 border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400"
+   341→                >
+   342→                  <Trophy className="h-4 w-4 mr-2" />
+   343→                  Mark Complete
+   344→                </Button>
+   345→              )}
+   346→            </div>
+   347→          </div>
+   348→        </div>
+   349→      </motion.div>
+   350→
+   351→      {/* Course Progress Section */}
+   352→      <motion.div variants={fadeUp}>
+   353→        <div className="glass rounded-xl p-5 space-y-4">
+   354→          <div className="flex items-center justify-between">
+   355→            <h3 className="text-sm font-semibold text-foreground">Course Progress</h3>
+   356→            <span className="text-xs font-medium text-primary bg-primary/10 px-2.5 py-1 rounded-full">
+   357→              {courseProgress.pct}%
+   358→            </span>
+   359→          </div>
+   360→
+   361→          {/* Animated progress bar */}
+   362→          <div className="h-3 w-full rounded-full bg-muted/50 overflow-hidden">
+   363→            <motion.div
+   364→              className="h-full rounded-full"
+   365→              style={{ background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))' }}
+   366→              initial={{ width: 0 }}
+   367→              animate={{ width: `${courseProgress.pct}%` }}
+   368→              transition={{ duration: 1.2, ease: 'easeOut', type: 'spring', stiffness: 200, damping: 25 }}
+   369→            />
+   370→          </div>
+   371→
+   372→          {/* Stats row */}
+   373→          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+   374→            <div className="glass rounded-lg p-3 text-center">
+   375→              <div className="flex items-center justify-center gap-1.5 mb-1">
+   376→                <BookOpen className="h-3.5 w-3.5 text-primary" />
+   377→                <span className="text-[10px] text-muted-foreground font-medium">Slides Completed</span>
+   378→              </div>
+   379→              <span className="text-lg font-bold gradient-text">{animatedViewed}</span>
+   380→              <span className="text-xs text-muted-foreground">/{courseProgress.total}</span>
+   381→            </div>
+   382→            <div className="glass rounded-lg p-3 text-center">
+   383→              <div className="flex items-center justify-center gap-1.5 mb-1">
+   384→                <ClipboardCheck className="h-3.5 w-3.5 text-primary" />
+   385→                <span className="text-[10px] text-muted-foreground font-medium">Quizzes Taken</span>
+   386→              </div>
+   387→              <span className="text-lg font-bold gradient-text">{animatedQuizzes}</span>
+   388→            </div>
+   389→            <div className="glass rounded-lg p-3 text-center">
+   390→              <div className="flex items-center justify-center gap-1.5 mb-1">
+   391→                <Target className="h-3.5 w-3.5 text-primary" />
+   392→                <span className="text-[10px] text-muted-foreground font-medium">Avg Score</span>
+   393→              </div>
+   394→              <span className="text-lg font-bold gradient-text">{animatedScore}%</span>
+   395→            </div>
+   396→            <div className="glass rounded-lg p-3 text-center">
+   397→              <div className="flex items-center justify-center gap-1.5 mb-1">
+   398→                <Clock className="h-3.5 w-3.5 text-primary" />
+   399→                <span className="text-[10px] text-muted-foreground font-medium">Time Spent</span>
+   400→              </div>
+   401→              <span className="text-lg font-bold gradient-text">{animatedTime}</span>
+   402→              <span className="text-xs text-muted-foreground">min</span>
+   403→            </div>
+   404→          </div>
+   405→        </div>
+   406→      </motion.div>
+   407→
+   408→      {/* Confetti overlay */}
+   409→      <AnimatePresence>
+   410→        {showConfetti && (
+   411→          <motion.div
+   412→            initial={{ opacity: 1 }}
+   413→            animate={{ opacity: 1 }}
+   414→            exit={{ opacity: 0 }}
+   415→            transition={{ duration: 0.5 }}
+   416→            className="fixed inset-0 pointer-events-none z-50 overflow-hidden"
+   417→          >
+   418→            {Array.from({ length: 30 }).map((_, i) => (
+   419→              <ConfettiParticle key={i} index={i} />
+   420→            ))}
+   421→            <motion.div
+   422→              initial={{ opacity: 0, scale: 0.8, y: 20 }}
+   423→              animate={{ opacity: 1, scale: 1, y: 0 }}
+   424→              exit={{ opacity: 0, scale: 0.9, y: -20 }}
+   425→              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+   426→              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 glass rounded-xl p-6 text-center shadow-lg"
+   427→            >
+   428→              <motion.div
+   429→                initial={{ scale: 0 }}
+   430→                animate={{ scale: 1 }}
+   431→                transition={{ type: 'spring', stiffness: 400, damping: 20, delay: 0.2 }}
+   432→              >
+   433→                <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto mb-2" />
+   434→              </motion.div>
+   435→              <p className="font-bold text-lg gradient-text">Course Completed!</p>
+   436→              <p className="text-sm text-muted-foreground mt-1">Congratulations on finishing this course.</p>
+   437→            </motion.div>
+   438→          </motion.div>
+   439→        )}
+   440→      </AnimatePresence>
+   441→
+   442→      {/* Reading progress bar */}
+   443→      <motion.div variants={fadeUp} className="relative">
+   444→        <div className="h-1 w-full rounded-full bg-muted/50 overflow-hidden">
+   445→          <motion.div
+   446→            className="h-full rounded-full"
+   447→            style={{ background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))' }}
+   448→            animate={{ width: `${readProgress}%` }}
+   449→            transition={{ duration: 0.3 }}
+   450→          />
+   451→        </div>
+   452→      </motion.div>
+   453→
+   454→      {/* Content area: two panels */}
+   455→      <motion.div variants={fadeUp} className="flex flex-col lg:flex-row gap-4 min-h-[60vh] glass rounded-2xl p-2 lg:p-3">
+   456→        {/* Left panel: mini-map / table of contents */}
+   457→        <div className="lg:w-72 shrink-0">
+   458→          <div className="glass rounded-xl p-4 lg:sticky lg:top-4">
+   459→            <div className="flex items-center justify-between mb-3">
+   460→              <h3 className="text-sm font-semibold text-muted-foreground">
+   461→                Slides
+   462→              </h3>
+   463→              <span className="text-xs text-muted-foreground bg-primary/10 px-2 py-0.5 rounded-full font-medium">
+   464→                {currentSlideIndex + 1}/{slides.length}
+   465→              </span>
+   466→            </div>
+   467→            {/* Mini progress dots */}
+   468→            <div className="flex items-center gap-1 mb-3">
+   469→              {slides.map((slide, i) => (
+   470→                <motion.div
+   471→                  key={slide.id}
+   472→                  whileHover={{ scale: 1.5 }}
+   473→                  onClick={() => handleSlideSelect(i)}
+   474→                  className={`cursor-pointer rounded-full transition-all ${
+   475→                    i === currentSlideIndex
+   476→                      ? 'h-2 w-6 bg-primary shadow-sm shadow-primary/30'
+   477→                      : isSlideViewed(slide.id)
+   478→                        ? 'h-2 w-2 bg-emerald-500/60'
+   479→                        : 'h-2 w-2 bg-muted hover:bg-primary/40'
+   480→                  }`}
+   481→                />
+   482→              ))}
+   483→            </div>
+   484→            <ScrollArea className="max-h-80 lg:max-h-[65vh]">
+   485→              <motion.div
+   486→                className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0"
+   487→                variants={{ animate: { transition: { staggerChildren: 0.06 } } }}
+   488→                initial="initial"
+   489→                animate="animate"
+   490→              >
+   491→                {slides.map((slide, i) => {
+   492→                  const viewed = isSlideViewed(slide.id);
+   493→                  return (
+   494→                    <motion.button
+   495→                      key={slide.id}
+   496→                      variants={{ initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } } }}
+   497→                      whileHover={{ x: 2 }}
+   498→                      whileTap={{ scale: 0.98 }}
+   499→                      onClick={() => handleSlideSelect(i)}
+   500→                      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm whitespace-nowrap lg:whitespace-normal transition-all min-w-[160px] lg:min-w-0 ${
+   501→                        i === currentSlideIndex
+   502→                          ? 'bg-gradient-to-r from-primary/10 to-secondary/5 text-primary font-medium shadow-sm border border-primary/10'
+   503→                          : viewed
+   504→                            ? 'text-foreground glass'
+   505→                            : 'text-muted-foreground hover:bg-accent'
+   506→                      }`}
+   507→                    >
+   508→                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-xs font-bold transition-colors ${
+   509→                        i === currentSlideIndex
+   510→                          ? 'bg-primary text-primary-foreground'
+   511→                          : viewed
+   512→                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+   513→                            : 'bg-muted text-muted-foreground'
+   514→                      }`}>
+   515→                        {viewed && i !== currentSlideIndex ? (
+   516→                          <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 300 }}>
+   517→                            <Check className="h-3.5 w-3.5" />
+   518→                          </motion.span>
+   519→                        ) : i === currentSlideIndex ? (
+   520→                          i + 1
+   521→                        ) : (
+   522→                          i + 1
+   523→                        )}
+   524→                      </span>
+   525→                      <span className="truncate">{slide.title}</span>
+   526→                    </motion.button>
+   527→                  );
+   528→                })}
+   529→              </motion.div>
+   530→            </ScrollArea>
+   531→          </div>
+   532→        </div>
+   533→
+   534→        {/* Right panel: slide content */}
+   535→        <div className="flex-1 min-w-0">
+   536→          <AnimatePresence mode="wait" custom={slideDirection}>
+   537→          {currentSlide ? (
+   538→            <motion.div
+   539→              key={currentSlide.id}
+   540→              custom={slideDirection}
+   541→              initial={{ opacity: 0, x: slideDirection * 40, scale: 0.98 }}
+   542→              animate={{ opacity: 1, x: 0, scale: 1 }}
+   543→              exit={{ opacity: 0, x: slideDirection * -40, scale: 0.98 }}
+   544→              transition={{ type: 'spring', stiffness: 250, damping: 25 }}
+   545→              className="glass rounded-xl p-6 space-y-4 glow-emerald"
+   546→            >
+   547→              <div className="flex items-start justify-between gap-4">
+   548→                <div className="space-y-1">
+   549→                  <div className="flex items-center gap-2">
+   550→                    <motion.div initial={{ rotate: -10, scale: 0.8 }} animate={{ rotate: 0, scale: 1 }} transition={{ type: 'spring' }}>
+   551→                      <FileText className="h-4 w-4 text-primary shrink-0" />
+   552→                    </motion.div>
+   553→                    <h2 className="text-lg font-semibold leading-snug">{currentSlide.title}</h2>
+   554→                  </div>
+   555→                  <p className="text-xs text-muted-foreground">Slide {currentSlide.order} of {slides.length}</p>
+   556→                </div>
+   557→                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+   558→                  <Button
+   559→                    size="sm"
+   560→                    variant="outline"
+   561→                    onClick={() => setActiveSlideId(activeSlideId === currentSlide.id ? null : currentSlide.id)}
+   562→                    className={activeSlideId === currentSlide.id ? 'glow-emerald border-primary/30' : ''}
+   563→                  >
+   564→                    <Sparkles className="h-4 w-4 mr-1" />
+   565→                    Generate Questions
+   566→                  </Button>
+   567→                </motion.div>
+   568→              </div>
+   569→
+   570→              <Separator />
+   571→
+   572→              {/* Slide content with animated bullet points */}
+   573→              <div id="slide-content-scroll" className="prose prose-sm dark:prose-invert max-w-none max-h-[50vh] overflow-y-auto pr-2">
+   574→                {currentSlide.content.split('\n').map((line, i) => {
+   575→                  if (!line.trim()) return <br key={i} />;
+   576→                  if (line.startsWith('• ') || line.startsWith('- ')) {
+   577→                    return (
+   578→                      <motion.div
+   579→                        key={i}
+   580→                        custom={i}
+   581→                        variants={bulletVariants}
+   582→                        initial="hidden"
+   583→                        animate="visible"
+   584→                        className="flex gap-2 ml-2 py-0.5"
+   585→                      >
+   586→                        <motion.span
+   587→                          className="mt-1.5 h-1.5 w-1.5 rounded-full bg-primary shrink-0"
+   588→                          initial={{ scale: 0 }}
+   589→                          animate={{ scale: 1 }}
+   590→                          transition={{ delay: i * 0.06 + 0.1, type: 'spring', stiffness: 400 }}
+   591→                        />
+   592→                        <span dangerouslySetInnerHTML={{ __html: formatBold(line.slice(2)) }} />
+   593→                      </motion.div>
+   594→                    );
+   595→                  }
+   596→                  if (/^\d+\.\s/.test(line)) {
+   597→                    return (
+   598→                      <motion.div
+   599→                        key={i}
+   600→                        custom={i}
+   601→                        variants={bulletVariants}
+   602→                        initial="hidden"
+   603→                        animate="visible"
+   604→                        className="flex gap-2 ml-2 py-0.5"
+   605→                      >
+   606→                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/10 text-primary text-[10px] font-bold mt-0.5">
+   607→                          {line.match(/^(\d+)\./)?.[1]}
+   608→                        </span>
+   609→                        <span dangerouslySetInnerHTML={{ __html: formatBold(line.replace(/^\d+\.\s/, '')) }} />
+   610→                      </motion.div>
+   611→                    );
+   612→                  }
+   613→                  if (line.startsWith('**') && line.endsWith('**')) {
+   614→                    return (
+   615→                      <motion.h3
+   616→                        key={i}
+   617→                        initial={{ opacity: 0, y: 5 }}
+   618→                        animate={{ opacity: 1, y: 0 }}
+   619→                        transition={{ delay: i * 0.04 }}
+   620→                        className="font-semibold text-sm mt-3 mb-1 gradient-text"
+   621→                      >
+   622→                        {line.replace(/\*\*/g, '')}
+   623→                      </motion.h3>
+   624→                    );
+   625→                  }
+   626→                  return (
+   627→                    <motion.p
+   628→                      key={i}
+   629→                      initial={{ opacity: 0 }}
+   630→                      animate={{ opacity: 1 }}
+   631→                      transition={{ delay: i * 0.03 }}
+   632→                      className="text-sm leading-relaxed"
+   633→                      dangerouslySetInnerHTML={{ __html: formatBold(line) }}
+   634→                    />
+   635→                  );
+   636→                })}
+   637→              </div>
+   638→
+   639→              {/* Slide navigation */}
+   640→              <div className="flex items-center justify-between pt-2">
+   641→                <Button
+   642→                  variant="outline"
+   643→                  size="sm"
+   644→                  onClick={handlePrev}
+   645→                  disabled={currentSlideIndex === 0}
+   646→                  className="gap-1"
+   647→                >
+   648→                  <ChevronLeft className="h-4 w-4" />
+   649→                  Previous
+   650→                </Button>
+   651→                <div className="flex items-center gap-1">
+   652→                  {slides.map((slide, i) => (
+   653→                    <button
+   654→                      key={slide.id}
+   655→                      onClick={() => handleSlideSelect(i)}
+   656→                      className={`h-1.5 rounded-full transition-all ${
+   657→                        i === currentSlideIndex ? 'w-4 bg-primary' : 'w-1.5 bg-muted'
+   658→                      }`}
+   659→                    />
+   660→                  ))}
+   661→                </div>
+   662→                <Button
+   663→                  size="sm"
+   664→                  onClick={handleNext}
+   665→                  disabled={currentSlideIndex === slides.length - 1}
+   666→                  className="gap-1"
+   667→                >
+   668→                  Next
+   669→                  <ChevronRight className="h-4 w-4" />
+   670→                </Button>
+   671→              </div>
+   672→
+   673→              {/* Generated questions placeholder */}
+   674→              {activeSlideId === currentSlide.id && (
+   675→                <motion.div
+   676→                  initial={{ opacity: 0, y: 10, height: 0 }}
+   677→                  animate={{ opacity: 1, y: 0, height: 'auto' }}
+   678→                  exit={{ opacity: 0, y: -10, height: 0 }}
+   679→                  className="rounded-lg border border-primary/20 bg-primary/5 p-4 overflow-hidden"
+   680→                >
+   681→                  <div className="flex items-center gap-2 mb-2">
+   682→                    <motion.span
+   683→                      animate={{ rotate: [0, 15, -15, 0] }}
+   684→                      transition={{ duration: 0.6, repeat: Infinity, repeatDelay: 2 }}
+   685→                    >
+   686→                      <Sparkles className="h-4 w-4 text-primary" />
+   687→                    </motion.span>
+   688→                    <span className="text-sm font-semibold text-primary">Questions Generated</span>
+   689→                  </div>
+   690→                  <p className="text-sm text-muted-foreground">
+   691→                    5 questions generated for &ldquo;{currentSlide.title}&rdquo;.
+   692→                    <Button variant="link" size="sm" className="px-1 h-auto font-medium" onClick={handleTakeQuiz}>
+   693→                      Start Quiz →
+   694→                    </Button>
+   695→                  </p>
+   696→                </motion.div>
+   697→              )}
+   698→            </motion.div>
+   699→          ) : (
+   700→            <div className="glass rounded-xl flex items-center justify-center h-64">
+   701→              <div className="text-center">
+   702→                <BookOpen className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
+   703→                <p className="text-muted-foreground">Select a slide to view its content</p>
+   704→              </div>
+   705→            </div>
+   706→          )}
+   707→          </AnimatePresence>
+   708→        </div>
+   709→      </motion.div>
+   710→    </motion.div>
+   711→  );
+   712→}
+   713→
+   714→/** Simple markdown bold formatter */
+   715→function formatBold(text: string): string {
+   716→  return text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+   717→}

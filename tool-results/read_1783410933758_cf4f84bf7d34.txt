@@ -1,0 +1,778 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useState, useCallback, useMemo, useEffect } from 'react';
+     4→     4→import { useAppStore } from '@/stores/appStore';
+     5→     5→import { motion, AnimatePresence } from 'framer-motion';
+     6→     6→import {
+     7→     7→  Brain,
+     8→     8→  Eye,
+     9→     9→  Ear,
+    10→    10→  BookOpen,
+    11→    11→  Hand,
+    12→    12→  ArrowRight,
+    13→    13→  ArrowLeft,
+    14→    14→  Check,
+    15→    15→  Sparkles,
+    16→    16→  ChevronRight,
+    17→    17→  Zap,
+    18→    18→} from 'lucide-react';
+    19→    19→import { Button } from '@/components/ui/button';
+    20→    20→
+    21→    21→const ONBOARDING_STEP_KEY = 'synapselearn_onboarding_step';
+    22→    22→
+    23→    23→const TOTAL_STEPS = 4;
+    24→    24→
+    25→    25→const learningStyles = [
+    26→    26→  {
+    27→    27→    id: 'visual' as const,
+    28→    28→    label: 'Visual',
+    29→    29→    icon: Eye,
+    30→    30→    description: 'Learn best with diagrams, charts, and visual aids',
+    31→    31→    color: 'from-emerald-500 to-teal-500',
+    32→    32→    bgLight: 'bg-emerald-50 dark:bg-emerald-950/30',
+    33→    33→  },
+    34→    34→  {
+    35→    35→    id: 'auditory' as const,
+    36→    36→    label: 'Auditory',
+    37→    37→    icon: Ear,
+    38→    38→    description: 'Prefer listening, discussions, and verbal explanations',
+    39→    39→    color: 'from-violet-500 to-purple-500',
+    40→    40→    bgLight: 'bg-violet-50 dark:bg-violet-950/30',
+    41→    41→  },
+    42→    42→  {
+    43→    43→    id: 'reading' as const,
+    44→    44→    label: 'Reading / Writing',
+    45→    45→    icon: BookOpen,
+    46→    46→    description: 'Excel with text, notes, and written materials',
+    47→    47→    color: 'from-amber-500 to-orange-500',
+    48→    48→    bgLight: 'bg-amber-50 dark:bg-amber-950/30',
+    49→    49→  },
+    50→    50→  {
+    51→    51→    id: 'kinesthetic' as const,
+    52→    52→    label: 'Kinesthetic',
+    53→    53→    icon: Hand,
+    54→    54→    description: 'Learn by doing, hands-on practice, and movement',
+    55→    55→    color: 'from-rose-500 to-pink-500',
+    56→    56→    bgLight: 'bg-rose-50 dark:bg-rose-950/30',
+    57→    57→  },
+    58→    58→];
+    59→    59→
+    60→    60→const paceOptions = [
+    61→    61→  { id: 'slow' as const, label: 'Slow & Steady', description: 'Deep dive, no rush' },
+    62→    62→  { id: 'steady' as const, label: 'Balanced', description: 'Steady and sustainable' },
+    63→    63→  { id: 'fast' as const, label: 'Fast Track', description: 'Accelerated learning' },
+    64→    64→];
+    65→    65→
+    66→    66→const topicOptions = [
+    67→    67→  'Cell Biology',
+    68→    68→  'Data Structures',
+    69→    69→  'Physics',
+    70→    70→  'Organic Chemistry',
+    71→    71→  'World History',
+    72→    72→  'Calculus',
+    73→    73→  'Creative Writing',
+    74→    74→  'Psychology',
+    75→    75→];
+    76→    76→
+    77→    77→// Confetti-like particles for the Done step
+    78→    78→function ConfettiParticles() {
+    79→    79→  const particles = useMemo(
+    80→    80→    () =>
+    81→    81→      Array.from({ length: 36 }, (_, i) => ({
+    82→    82→        id: i,
+    83→    83→        x: (Math.random() - 0.5) * 320,
+    84→    84→        y: -(Math.random() * 220 + 60),
+    85→    85→        rotate: Math.random() * 720 - 360,
+    86→    86→        scale: Math.random() * 0.6 + 0.4,
+    87→    87→        color: ['#10b981', '#14b8a6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'][
+    88→    88→          Math.floor(Math.random() * 6)
+    89→    89→        ],
+    90→    90→        delay: Math.random() * 0.5,
+    91→    91→        size: Math.random() * 6 + 3,
+    92→    92→      })),
+    93→    93→    [],
+    94→    94→  );
+    95→    95→
+    96→    96→  return (
+    97→    97→    <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl">
+    98→    98→      {particles.map((p) => (
+    99→    99→        <motion.div
+   100→   100→          key={p.id}
+   101→   101→          initial={{ x: 0, y: 0, opacity: 1, rotate: 0, scale: 0 }}
+   102→   102→          animate={{
+   103→   103→            x: p.x,
+   104→   104→            y: p.y,
+   105→   105→            opacity: 0,
+   106→   106→            rotate: p.rotate,
+   107→   107→            scale: p.scale,
+   108→   108→          }}
+   109→   109→          transition={{ duration: 2, delay: p.delay, ease: 'easeOut' }}
+   110→   110→          className="absolute left-1/2 top-1/2 rounded-sm"
+   111→   111→          style={{
+   112→   112→            width: p.size,
+   113→   113→            height: p.size,
+   114→   114→            backgroundColor: p.color,
+   115→   115→          }}
+   116→   116→        />
+   117→   117→      ))}
+   118→   118→    </div>
+   119→   119→  );
+   120→   120→}
+   121→   121→
+   122→   122→function StepIndicator({ currentStep }: { currentStep: number }) {
+   123→   123→  return (
+   124→   124→    <div className="flex items-center justify-center gap-0 pt-4 pb-2">
+   125→   125→      {Array.from({ length: TOTAL_STEPS }, (_, i) => {
+   126→   126→        const stepNum = i + 1;
+   127→   127→        const isCompleted = stepNum < currentStep;
+   128→   128→        const isCurrent = stepNum === currentStep;
+   129→   129→
+   130→   130→        return (
+   131→   131→          <div key={stepNum} className="flex items-center">
+   132→   132→            <div className="flex flex-col items-center">
+   133→   133→              <motion.div
+   134→   134→                animate={
+   135→   135→                  isCurrent
+   136→   136→                    ? { scale: [1, 1.15, 1] }
+   137→   137→                    : isCompleted
+   138→   138→                      ? { scale: 1 }
+   139→   139→                      : { scale: 1 }
+   140→   140→                }
+   141→   141→                transition={
+   142→   142→                  isCurrent
+   143→   143→                    ? { duration: 1.5, repeat: Infinity, ease: 'easeInOut' }
+   144→   144→                    : { duration: 0.3 }
+   145→   145→                }
+   146→   146→                className={`relative flex h-9 w-9 items-center justify-center rounded-full border-2 transition-colors duration-300 ${
+   147→   147→                  isCurrent
+   148→   148→                    ? 'border-primary bg-primary text-primary-foreground'
+   149→   149→                    : isCompleted
+   150→   150→                      ? 'border-emerald-500 bg-emerald-500 text-white'
+   151→   151→                      : 'border-muted-foreground/30 bg-background/50 text-muted-foreground/50'
+   152→   152→                }`}
+   153→   153→              >
+   154→   154→                {isCompleted ? (
+   155→   155→                  <Check className="h-4 w-4" />
+   156→   156→                ) : (
+   157→   157→                  <span className="text-xs font-bold">{stepNum}</span>
+   158→   158→                )}
+   159→   159→              </motion.div>
+   160→   160→              <motion.span
+   161→   161→                initial={false}
+   162→   162→                animate={{ opacity: isCurrent ? 1 : 0.4 }}
+   163→   163→                className="mt-1.5 text-[10px] font-medium text-muted-foreground"
+   164→   164→              >
+   165→   165→                {['Welcome', 'Style', 'Pace', 'Done'][i]}
+   166→   166→              </motion.span>
+   167→   167→            </div>
+   168→   168→            {stepNum < TOTAL_STEPS && (
+   169→   169→              <div className="mx-2 mt-[-18px] h-0.5 w-8 sm:w-12 overflow-hidden rounded-full bg-muted-foreground/15">
+   170→   170→                <motion.div
+   171→   171→                  className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full"
+   172→   172→                  initial={{ width: '0%' }}
+   173→   173→                  animate={{ width: stepNum < currentStep ? '100%' : '0%' }}
+   174→   174→                  transition={{ duration: 0.5, ease: 'easeInOut' }}
+   175→   175→                />
+   176→   176→              </div>
+   177→   177→            )}
+   178→   178→          </div>
+   179→   179→        );
+   180→   180→      })}
+   181→   181→    </div>
+   182→   182→  );
+   183→   183→}
+   184→   184→
+   185→   185→const slideVariants = {
+   186→   186→  enter: (direction: number) => ({
+   187→   187→    x: direction > 0 ? 300 : -300,
+   188→   188→    opacity: 0,
+   189→   189→    scale: 0.95,
+   190→   190→  }),
+   191→   191→  center: {
+   192→   192→    x: 0,
+   193→   193→    opacity: 1,
+   194→   194→    scale: 1,
+   195→   195→  },
+   196→   196→  exit: (direction: number) => ({
+   197→   197→    x: direction > 0 ? -300 : 300,
+   198→   198→    opacity: 0,
+   199→   199→    scale: 0.95,
+   200→   200→  }),
+   201→   201→};
+   202→   202→
+   203→   203→function WelcomeStep({ onNext, onQuickStart }: { onNext: () => void; onQuickStart: () => void }) {
+   204→   204→  const features = [
+   205→   205→    { icon: Brain, text: 'AI-Powered Learning' },
+   206→   206→    { icon: Sparkles, text: 'Adaptive Tutoring' },
+   207→   207→    { icon: BookOpen, text: 'Master Any Subject' },
+   208→   208→  ];
+   209→   209→
+   210→   210→  return (
+   211→   211→    <motion.div
+   212→   212→      key="step-1"
+   213→   213→      custom={1}
+   214→   214→      variants={slideVariants}
+   215→   215→      initial="enter"
+   216→   216→      animate="center"
+   217→   217→      exit="exit"
+   218→   218→      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+   219→   219→      className="space-y-8"
+   220→   220→    >
+   221→   221→      <div className="space-y-3 text-center">
+   222→   222→        <motion.div
+   223→   223→          initial={{ scale: 0, rotate: -180 }}
+   224→   224→          animate={{ scale: 1, rotate: 0 }}
+   225→   225→          transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.2 }}
+   226→   226→          className="mx-auto"
+   227→   227→        >
+   228→   228→          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20 animate-float">
+   229→   229→            <Brain className="h-10 w-10 text-white" />
+   230→   230→          </div>
+   231→   231→        </motion.div>
+   232→   232→        <motion.h1
+   233→   233→          initial={{ opacity: 0, y: 10 }}
+   234→   234→          animate={{ opacity: 1, y: 0 }}
+   235→   235→          transition={{ delay: 0.3 }}
+   236→   236→          className="text-3xl font-bold gradient-text"
+   237→   237→        >
+   238→   238→          Welcome to SynapseLearn
+   239→   239→        </motion.h1>
+   240→   240→        <motion.p
+   241→   241→          initial={{ opacity: 0, y: 10 }}
+   242→   242→          animate={{ opacity: 1, y: 0 }}
+   243→   243→          transition={{ delay: 0.4 }}
+   244→   244→          className="text-muted-foreground max-w-md mx-auto"
+   245→   245→        >
+   246→   246→          Your personalized AI learning companion. Let&apos;s set up your experience in a few quick steps.
+   247→   247→        </motion.p>
+   248→   248→      </div>
+   249→   249→
+   250→   250→      <div className="space-y-3 max-w-sm mx-auto">
+   251→   251→        {features.map((f, i) => (
+   252→   252→          <motion.div
+   253→   253→            key={f.text}
+   254→   254→            initial={{ opacity: 0, x: -30, scale: 0.9 }}
+   255→   255→            animate={{ opacity: 1, x: 0, scale: 1 }}
+   256→   256→            transition={{ delay: 0.5 + i * 0.15, type: 'spring', stiffness: 300, damping: 25 }}
+   257→   257→            className="flex items-center gap-3 p-3 rounded-xl bg-background/50"
+   258→   258→          >
+   259→   259→            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+   260→   260→              <f.icon className="h-4 w-4 text-primary" />
+   261→   261→            </div>
+   262→   262→            <span className="text-sm font-medium">{f.text}</span>
+   263→   263→          </motion.div>
+   264→   264→        ))}
+   265→   265→      </div>
+   266→   266→
+   267→   267→      <div className="flex flex-col items-center gap-3 pt-2">
+   268→   268→        <div className="animated-border rounded-xl w-full max-w-sm mx-auto">
+   269→   269→          <Button onClick={onNext} size="lg" className="w-full">
+   270→   270→            Get Started
+   271→   271→            <ArrowRight className="h-4 w-4 ml-2" />
+   272→   272→          </Button>
+   273→   273→        </div>
+   274→   274→        <Button
+   275→   275→          onClick={onQuickStart}
+   276→   276→          size="lg"
+   277→   277→          variant="outline"
+   278→   278→          className="w-full max-w-sm glow-emerald border-primary/30 hover:bg-primary/10"
+   279→   279→        >
+   280→   280→          <Zap className="h-4 w-4 mr-2" />
+   281→   281→          Quick Start
+   282→   282→        </Button>
+   283→   283→      </div>
+   284→   284→
+   285→   285→      <div className="flex justify-end">
+   286→   286→        <button
+   287→   287→          onClick={onQuickStart}
+   288→   288→          className="text-xs text-muted-foreground hover:text-primary transition-colors underline-offset-4 hover:underline"
+   289→   289→        >
+   290→   290→          Skip all
+   291→   291→        </button>
+   292→   292→      </div>
+   293→   293→    </motion.div>
+   294→   294→  );
+   295→   295→}
+   296→   296→
+   297→   297→function LearningStyleStep({
+   298→   298→  selected,
+   299→   299→  onToggle,
+   300→   300→  onNext,
+   301→   301→  onBack,
+   302→   302→  onSkip,
+   303→   303→}: {
+   304→   304→  selected: string[];
+   305→   305→  onToggle: (id: string) => void;
+   306→   306→  onNext: () => void;
+   307→   307→  onBack: () => void;
+   308→   308→  onSkip: () => void;
+   309→   309→}) {
+   310→   310→  return (
+   311→   311→    <motion.div
+   312→   312→      key="step-2"
+   313→   313→      custom={1}
+   314→   314→      variants={slideVariants}
+   315→   315→      initial="enter"
+   316→   316→      animate="center"
+   317→   317→      exit="exit"
+   318→   318→      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+   319→   319→      className="space-y-6"
+   320→   320→    >
+   321→   321→      <div className="text-center space-y-1">
+   322→   322→        <h2 className="text-xl font-bold">How do you learn best?</h2>
+   323→   323→        <p className="text-sm text-muted-foreground">
+   324→   324→          Select one or more learning styles that resonate with you
+   325→   325→        </p>
+   326→   326→      </div>
+   327→   327→
+   328→   328→      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   329→   329→        {learningStyles.map((style, i) => {
+   330→   330→          const isSelected = selected.includes(style.id);
+   331→   331→          return (
+   332→   332→            <motion.button
+   333→   333→              key={style.id}
+   334→   334→              initial={{ opacity: 0, y: 20 }}
+   335→   335→              animate={{ opacity: 1, y: 0 }}
+   336→   336→              transition={{ delay: i * 0.08, type: 'spring', stiffness: 300, damping: 25 }}
+   337→   337→              whileTap={{ scale: 0.97 }}
+   338→   338→              onClick={() => onToggle(style.id)}
+   339→   339→              className={`relative text-left p-4 rounded-xl border-2 transition-colors duration-200 ${style.bgLight} ${
+   340→   340→                isSelected
+   341→   341→                  ? `border-primary bg-primary/5 shadow-sm`
+   342→   342→                  : 'border-transparent hover:border-border'
+   343→   343→              }`}
+   344→   344→            >
+   345→   345→              {isSelected && (
+   346→   346→                <motion.div
+   347→   347→                  layoutId="style-check"
+   348→   348→                  className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground"
+   349→   349→                  initial={false}
+   350→   350→                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+   351→   351→                >
+   352→   352→                  <Check className="h-3 w-3" />
+   353→   353→                </motion.div>
+   354→   354→              )}
+   355→   355→              <div
+   356→   356→                className={`flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br ${style.color} mb-3`}
+   357→   357→              >
+   358→   358→                <style.icon className="h-5 w-5 text-white" />
+   359→   359→              </div>
+   360→   360→              <h3 className="font-semibold text-sm">{style.label}</h3>
+   361→   361→              <p className="text-xs text-muted-foreground mt-1">{style.description}</p>
+   362→   362→            </motion.button>
+   363→   363→          );
+   364→   364→        })}
+   365→   365→      </div>
+   366→   366→
+   367→   367→      <div className="flex items-center justify-between pt-2">
+   368→   368→        <Button variant="ghost" size="sm" onClick={onBack}>
+   369→   369→          <ArrowLeft className="h-4 w-4 mr-1" />
+   370→   370→          Back
+   371→   371→        </Button>
+   372→   372→        <div className="flex items-center gap-2">
+   373→   373→          <Button variant="ghost" size="sm" onClick={onSkip}>
+   374→   374→            Skip for now
+   375→   375→          </Button>
+   376→   376→          <Button size="sm" onClick={onNext}>
+   377→   377→            Next
+   378→   378→            <ArrowRight className="h-4 w-4 ml-1" />
+   379→   379→          </Button>
+   380→   380→        </div>
+   381→   381→      </div>
+   382→   382→    </motion.div>
+   383→   383→  );
+   384→   384→}
+   385→   385→
+   386→   386→function PaceAndTopicsStep({
+   387→   387→  pace,
+   388→   388→  topics,
+   389→   389→  onSelectPace,
+   390→   390→  onToggleTopic,
+   391→   391→  onNext,
+   392→   392→  onBack,
+   393→   393→  onSkip,
+   394→   394→}: {
+   395→   395→  pace: string;
+   396→   396→  topics: string[];
+   397→   397→  onSelectPace: (id: string) => void;
+   398→   398→  onToggleTopic: (topic: string) => void;
+   399→   399→  onNext: () => void;
+   400→   400→  onBack: () => void;
+   401→   401→  onSkip: () => void;
+   402→   402→}) {
+   403→   403→  return (
+   404→   404→    <motion.div
+   405→   405→      key="step-3"
+   406→   406→      custom={1}
+   407→   407→      variants={slideVariants}
+   408→   408→      initial="enter"
+   409→   409→      animate="center"
+   410→   410→      exit="exit"
+   411→   411→      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+   412→   412→      className="space-y-6"
+   413→   413→    >
+   414→   414→      <div className="text-center space-y-1">
+   415→   415→        <h2 className="text-xl font-bold">Pace &amp; Topics</h2>
+   416→   416→        <p className="text-sm text-muted-foreground">
+   417→   417→          Choose your learning pace and topics of interest
+   418→   418→        </p>
+   419→   419→      </div>
+   420→   420→
+   421→   421→      {/* Pace selector */}
+   422→   422→      <div className="space-y-3">
+   423→   423→        <h3 className="text-sm font-semibold text-muted-foreground">Preferred Pace</h3>
+   424→   424→        <div className="flex gap-2">
+   425→   425→          {paceOptions.map((option) => {
+   426→   426→            const isActive = pace === option.id;
+   427→   427→            return (
+   428→   428→              <motion.button
+   429→   429→                key={option.id}
+   430→   430→                whileTap={{ scale: 0.97 }}
+   431→   431→                onClick={() => onSelectPace(option.id)}
+   432→   432→                className={`flex-1 p-3 rounded-xl border-2 text-center transition-colors duration-200 ${
+   433→   433→                  isActive
+   434→   434→                    ? 'border-primary bg-primary/5'
+   435→   435→                    : 'border-transparent bg-background/50 hover:border-border'
+   436→   436→                }`}
+   437→   437→              >
+   438→   438→                <p className={`text-sm font-semibold ${isActive ? 'text-primary' : ''}`}>
+   439→   439→                  {option.label}
+   440→   440→                </p>
+   441→   441→                <p className="text-[11px] text-muted-foreground mt-0.5">{option.description}</p>
+   442→   442→              </motion.button>
+   443→   443→            );
+   444→   444→          })}
+   445→   445→        </div>
+   446→   446→      </div>
+   447→   447→
+   448→   448→      {/* Topic chips */}
+   449→   449→      <div className="space-y-3">
+   450→   450→        <h3 className="text-sm font-semibold text-muted-foreground">
+   451→   451→          Topics of Interest
+   452→   452→          <span className="font-normal text-muted-foreground/60 ml-1">(optional)</span>
+   453→   453→        </h3>
+   454→   454→        <div className="flex flex-wrap gap-2">
+   455→   455→          {topicOptions.map((topic, i) => {
+   456→   456→            const isSelected = topics.includes(topic);
+   457→   457→            return (
+   458→   458→              <motion.button
+   459→   459→                key={topic}
+   460→   460→                initial={{ opacity: 0, scale: 0.8 }}
+   461→   461→                animate={{ opacity: 1, scale: 1 }}
+   462→   462→                transition={{ delay: i * 0.04, type: 'spring', stiffness: 400, damping: 25 }}
+   463→   463→                whileTap={{ scale: 0.95 }}
+   464→   464→                onClick={() => onToggleTopic(topic)}
+   465→   465→                className={`px-3.5 py-2 rounded-full text-sm font-medium border transition-all duration-200 ${
+   466→   466→                  isSelected
+   467→   467→                    ? 'border-primary bg-primary text-primary-foreground shadow-sm'
+   468→   468→                    : 'border-border bg-background/50 text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+   469→   469→                }`}
+   470→   470→              >
+   471→   471→                {topic}
+   472→   472→              </motion.button>
+   473→   473→            );
+   474→   474→          })}
+   475→   475→        </div>
+   476→   476→      </div>
+   477→   477→
+   478→   478→      <div className="flex items-center justify-between pt-2">
+   479→   479→        <Button variant="ghost" size="sm" onClick={onBack}>
+   480→   480→          <ArrowLeft className="h-4 w-4 mr-1" />
+   481→   481→          Back
+   482→   482→        </Button>
+   483→   483→        <div className="flex items-center gap-2">
+   484→   484→          <Button variant="ghost" size="sm" onClick={onSkip}>
+   485→   485→            Skip for now
+   486→   486→          </Button>
+   487→   487→          <Button size="sm" onClick={onNext}>
+   488→   488→            Next
+   489→   489→            <ArrowRight className="h-4 w-4 ml-1" />
+   490→   490→          </Button>
+   491→   491→        </div>
+   492→   492→      </div>
+   493→   493→    </motion.div>
+   494→   494→  );
+   495→   495→}
+   496→   496→
+   497→   497→function DoneStep({
+   498→   498→  styles,
+   499→   499→  pace,
+   500→   500→  topics,
+   501→   501→  onStart,
+   502→   502→  onBack,
+   503→   503→}: {
+   504→   504→  styles: string[];
+   505→   505→  pace: string;
+   506→   506→  topics: string[];
+   507→   507→  onStart: () => void;
+   508→   508→  onBack: () => void;
+   509→   509→}) {
+   510→   510→  const paceLabel = paceOptions.find((p) => p.id === pace)?.label ?? 'Balanced';
+   511→   511→
+   512→   512→  const summaryItems = [
+   513→   513→    {
+   514→   514→      label: 'Learning Style',
+   515→   515→      value: styles.length > 0
+   516→   516→        ? styles.map((s) => learningStyles.find((l) => l.id === s)?.label).join(', ')
+   517→   517→        : 'Visual',
+   518→   518→    },
+   519→   519→    { label: 'Pace', value: paceLabel },
+   520→   520→    {
+   521→   521→      label: 'Topics',
+   522→   522→      value: topics.length > 0
+   523→   523→        ? topics.join(', ')
+   524→   524→        : 'Not selected yet',
+   525→   525→    },
+   526→   526→  ];
+   527→   527→
+   528→   528→  return (
+   529→   529→    <motion.div
+   530→   530→      key="step-4"
+   531→   531→      custom={1}
+   532→   532→      variants={slideVariants}
+   533→   533→      initial="enter"
+   534→   534→      animate="center"
+   535→   535→      exit="exit"
+   536→   536→      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+   537→   537→      className="space-y-6 relative"
+   538→   538→    >
+   539→   539→      {/* Confetti particles */}
+   540→   540→      <ConfettiParticles />
+   541→   541→
+   542→   542→      <div className="text-center space-y-2 relative z-10">
+   543→   543→        <motion.div
+   544→   544→          initial={{ scale: 0 }}
+   545→   545→          animate={{ scale: 1 }}
+   546→   546→          transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.2 }}
+   547→   547→          className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20"
+   548→   548→        >
+   549→   549→          <motion.div
+   550→   550→            initial={{ scale: 0, opacity: 0 }}
+   551→   551→            animate={{ scale: 1, opacity: 1 }}
+   552→   552→            transition={{ delay: 0.5, type: 'spring', stiffness: 300, damping: 20 }}
+   553→   553→          >
+   554→   554→            <Check className="h-8 w-8 text-white" />
+   555→   555→          </motion.div>
+   556→   556→        </motion.div>
+   557→   557→        <motion.h2
+   558→   558→          initial={{ opacity: 0, y: 10 }}
+   559→   559→          animate={{ opacity: 1, y: 0 }}
+   560→   560→          transition={{ delay: 0.3 }}
+   561→   561→          className="text-2xl font-bold"
+   562→   562→        >
+   563→   563→          You&apos;re all set!
+   564→   564→        </motion.h2>
+   565→   565→        <motion.p
+   566→   566→          initial={{ opacity: 0, y: 10 }}
+   567→   567→          animate={{ opacity: 1, y: 0 }}
+   568→   568→          transition={{ delay: 0.4 }}
+   569→   569→          className="text-sm text-muted-foreground"
+   570→   570→        >
+   571→   571→          Here&apos;s a summary of your preferences
+   572→   572→        </motion.p>
+   573→   573→      </div>
+   574→   574→
+   575→   575→      <div className="space-y-3 max-w-sm mx-auto relative z-10">
+   576→   576→        {summaryItems.map((item, i) => (
+   577→   577→          <motion.div
+   578→   578→            key={item.label}
+   579→   579→            initial={{ opacity: 0, x: -16 }}
+   580→   580→            animate={{ opacity: 1, x: 0 }}
+   581→   581→            transition={{ delay: 0.5 + i * 0.1 }}
+   582→   582→            className="flex items-start gap-3 p-3 rounded-xl bg-background/50"
+   583→   583→          >
+   584→   584→            <motion.div
+   585→   585→              initial={{ scale: 0 }}
+   586→   586→              animate={{ scale: 1 }}
+   587→   587→              transition={{ delay: 0.6 + i * 0.1, type: 'spring', stiffness: 400, damping: 20 }}
+   588→   588→              className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/10 mt-0.5"
+   589→   589→            >
+   590→   590→              <Check className="h-3 w-3 text-emerald-500" />
+   591→   591→            </motion.div>
+   592→   592→            <div className="min-w-0">
+   593→   593→              <p className="text-xs font-medium text-muted-foreground">{item.label}</p>
+   594→   594→              <p className="text-sm font-semibold truncate">{item.value}</p>
+   595→   595→            </div>
+   596→   596→          </motion.div>
+   597→   597→        ))}
+   598→   598→      </div>
+   599→   599→
+   600→   600→      <div className="flex items-center justify-between pt-2 relative z-10">
+   601→   601→        <Button variant="ghost" size="sm" onClick={onBack}>
+   602→   602→          <ArrowLeft className="h-4 w-4 mr-1" />
+   603→   603→          Back
+   604→   604→        </Button>
+   605→   605→        <Button size="lg" className="px-8" onClick={onStart}>
+   606→   606→          Start Learning
+   607→   607→          <ChevronRight className="h-4 w-4 ml-1" />
+   608→   608→        </Button>
+   609→   609→      </div>
+   610→   610→    </motion.div>
+   611→   611→  );
+   612→   612→}
+   613→   613→
+   614→   614→export function OnboardingFlow() {
+   615→   615→  const {
+   616→   616→    setOnboardingComplete,
+   617→   617→    setUserInfo,
+   618→   618→    setLearnerProfile,
+   619→   619→    setHardSubjects,
+   620→   620→    setBestTeachingStyle,
+   621→   621→    navigate,
+   622→   622→  } = useAppStore();
+   623→   623→
+   624→   624→  const [step, setStep] = useState(() => {
+   625→   625→    if (typeof window === 'undefined') return 1;
+   626→   626→    const saved = localStorage.getItem(ONBOARDING_STEP_KEY);
+   627→   627→    if (saved) {
+   628→   628→      const parsed = parseInt(saved, 10);
+   629→   629→      if (parsed >= 1 && parsed <= TOTAL_STEPS) return parsed;
+   630→   630→    }
+   631→   631→    return 1;
+   632→   632→  });
+   633→   633→  const [resumedFromSaved, setResumedFromSaved] = useState(() => {
+   634→   634→    if (typeof window === 'undefined') return false;
+   635→   635→    return localStorage.getItem(ONBOARDING_STEP_KEY) !== null;
+   636→   636→  });
+   637→   637→  const [direction, setDirection] = useState(1);
+   638→   638→  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
+   639→   639→  const [selectedPace, setSelectedPace] = useState<string>('steady');
+   640→   640→  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+   641→   641→
+   642→   642→  // Persist step to localStorage whenever it changes
+   643→   643→  useEffect(() => {
+   644→   644→    localStorage.setItem(ONBOARDING_STEP_KEY, String(step));
+   645→   645→  }, [step]);
+   646→   646→
+   647→   647→  const goNext = useCallback(() => {
+   648→   648→    setDirection(1);
+   649→   649→    setStep((s) => Math.min(s + 1, TOTAL_STEPS));
+   650→   650→  }, []);
+   651→   651→
+   652→   652→  const goBack = useCallback(() => {
+   653→   653→    setDirection(-1);
+   654→   654→    setStep((s) => Math.max(s - 1, 1));
+   655→   655→  }, []);
+   656→   656→
+   657→   657→  const toggleStyle = useCallback((id: string) => {
+   658→   658→    setSelectedStyles((prev) =>
+   659→   659→      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+   660→   660→    );
+   661→   661→  }, []);
+   662→   662→
+   663→   663→  const toggleTopic = useCallback((topic: string) => {
+   664→   664→    setSelectedTopics((prev) =>
+   665→   665→      prev.includes(topic) ? prev.filter((t) => t !== topic) : [...prev, topic]
+   666→   666→    );
+   667→   667→  }, []);
+   668→   668→
+   669→   669→  const handleFinish = useCallback(() => {
+   670→   670→    // Clear persisted step on completion
+   671→   671→    localStorage.removeItem(ONBOARDING_STEP_KEY);
+   672→   672→    const primaryStyle = selectedStyles[0] ?? 'visual';
+   673→   673→    setUserInfo('Student', 'student@synapselearn.ai');
+   674→   674→    setLearnerProfile({
+   675→   675→      learningStyle: primaryStyle as 'visual' | 'auditory' | 'reading' | 'kinesthetic',
+   676→   676→      pace: selectedPace as 'slow' | 'steady' | 'fast',
+   677→   677→      vocabularySensitive: true,
+   678→   678→      prefersStory: true,
+   679→   679→      prefersBigPicture: true,
+   680→   680→      simpleGrammar: false,
+   681→   681→      jargonTolerance: 'medium',
+   682→   682→      masteryApproach: 'evidence',
+   683→   683→    });
+   684→   684→    setHardSubjects(selectedTopics);
+   685→   685→    setBestTeachingStyle(selectedStyles.join(', '));
+   686→   686→    setOnboardingComplete(true);
+   687→   687→    navigate('dashboard');
+   688→   688→  }, [selectedStyles, selectedPace, selectedTopics, setUserInfo, setLearnerProfile, setHardSubjects, setBestTeachingStyle, setOnboardingComplete, navigate]);
+   689→   689→
+   690→   690→  const handleQuickStart = useCallback(() => {
+   691→   691→    // Clear persisted step on completion
+   692→   692→    localStorage.removeItem(ONBOARDING_STEP_KEY);
+   693→   693→    setUserInfo('Student', 'student@synapselearn.ai');
+   694→   694→    setLearnerProfile({
+   695→   695→      learningStyle: 'visual',
+   696→   696→      pace: 'steady',
+   697→   697→      vocabularySensitive: true,
+   698→   698→      prefersStory: true,
+   699→   699→      prefersBigPicture: true,
+   700→   700→      simpleGrammar: false,
+   701→   701→      jargonTolerance: 'medium',
+   702→   702→      masteryApproach: 'evidence',
+   703→   703→    });
+   704→   704→    setHardSubjects([]);
+   705→   705→    setBestTeachingStyle('visual');
+   706→   706→    setOnboardingComplete(true);
+   707→   707→    navigate('dashboard');
+   708→   708→  }, [setUserInfo, setLearnerProfile, setHardSubjects, setBestTeachingStyle, setOnboardingComplete, navigate]);
+   709→   709→
+   710→   710→  const handleSkip = useCallback(() => {
+   711→   711→    handleFinish();
+   712→   712→  }, [handleFinish]);
+   713→   713→
+   714→   714→  return (
+   715→   715→    <div className="min-h-screen mesh-gradient flex items-center justify-center p-6">
+   716→   716→      <motion.div
+   717→   717→        initial={{ opacity: 0, y: 30 }}
+   718→   718→        animate={{ opacity: 1, y: 0 }}
+   719→   719→        className="glass rounded-2xl p-6 sm:p-8 max-w-xl w-full"
+   720→   720→      >
+   721→   721→        <StepIndicator currentStep={step} />
+   722→   722→
+   723→   723→        {/* Resume message */}
+   724→   724→        <AnimatePresence>
+   725→   725→          {resumedFromSaved && step > 1 && (
+   726→   726→            <motion.p
+   727→   727→              initial={{ opacity: 0, y: -5 }}
+   728→   728→              animate={{ opacity: 1, y: 0 }}
+   729→   729→              exit={{ opacity: 0, y: -5 }}
+   730→   730→              transition={{ duration: 0.3, delay: 0.2 }}
+   731→   731→              className="text-xs text-center text-emerald-600 dark:text-emerald-400 mt-1"
+   732→   732→            >
+   733→   733→              Resuming where you left off — Step {step} of {TOTAL_STEPS}
+   734→   734→            </motion.p>
+   735→   735→          )}
+   736→   736→        </AnimatePresence>
+   737→   737→
+   738→   738→        <div className="mt-4 overflow-hidden">
+   739→   739→          <AnimatePresence initial={false} custom={direction} mode="wait">
+   740→   740→            {step === 1 && <WelcomeStep key="s1" onNext={goNext} onQuickStart={handleQuickStart} />}
+   741→   741→            {step === 2 && (
+   742→   742→              <LearningStyleStep
+   743→   743→                key="s2"
+   744→   744→                selected={selectedStyles}
+   745→   745→                onToggle={toggleStyle}
+   746→   746→                onNext={goNext}
+   747→   747→                onBack={goBack}
+   748→   748→                onSkip={handleSkip}
+   749→   749→              />
+   750→   750→            )}
+   751→   751→            {step === 3 && (
+   752→   752→              <PaceAndTopicsStep
+   753→   753→                key="s3"
+   754→   754→                pace={selectedPace}
+   755→   755→                topics={selectedTopics}
+   756→   756→                onSelectPace={setSelectedPace}
+   757→   757→                onToggleTopic={toggleTopic}
+   758→   758→                onNext={goNext}
+   759→   759→                onBack={goBack}
+   760→   760→                onSkip={handleSkip}
+   761→   761→              />
+   762→   762→            )}
+   763→   763→            {step === 4 && (
+   764→   764→              <DoneStep
+   765→   765→                key="s4"
+   766→   766→                styles={selectedStyles}
+   767→   767→                pace={selectedPace}
+   768→   768→                topics={selectedTopics}
+   769→   769→                onStart={handleFinish}
+   770→   770→                onBack={goBack}
+   771→   771→              />
+   772→   772→            )}
+   773→   773→          </AnimatePresence>
+   774→   774→        </div>
+   775→   775→      </motion.div>
+   776→   776→    </div>
+   777→   777→  );
+   778→   778→}

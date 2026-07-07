@@ -2050,3 +2050,33 @@ Work Log:
 6. **Priority 2**: Accessibility audit (ARIA labels, keyboard navigation, screen reader)
 7. **Priority 3**: Collaborative study features (shared sessions, group quizzes)
 8. **Priority 3**: Internationalization (i18n) support
+
+---
+Task ID: 10
+Agent: Main Orchestrator + 3 parallel subagents (10-a, 10-b, 10-c partial)
+Task: Fix client-side exception, add leaderboard + social features, quiz enhancements, PWA, CSS animations
+
+Work Log:
+- **Bug Fix**: Missing `useEffect` import in `AppSidebar.tsx` caused ReferenceError at runtime. Fixed.
+- **Subagent 10-a**: LeaderboardView (podium, ranked list, tabs, share modal), Study Buddies widget, Social Share system, Trophy nav item
+- **Subagent 10-b**: Levenshtein fill-in-blank tolerance, Question Map dialog, 5-streak bonus popup, PWA manifest + meta tags
+- **Styling (orchestrator)**: 12 new @keyframes, 15+ new @utility classes (float-gentle, glow-pulse, text-shimmer, border-glow, card-hover-lift, etc.)
+
+### Verification:
+- ESLint: 0 errors, Production build: 0 errors/0 warnings
+
+---
+Task ID: 11
+Agent: Main Orchestrator + 2 parallel subagents (11-a, 11-b)
+Task: Apply CSS animations, accessibility audit, keyboard shortcuts, notes markdown, onboarding persistence
+
+Work Log:
+- **QA**: Build clean (0 errors), lint clean (0 errors), agent-browser verified (opacity: 1, no errors)
+- **CSS animations applied** (11-a): Dashboard (counters, glow-pulse, border-glow), CourseDetail (staggered breadcrumbs), NotesView (card-hover-lift), SettingsView (pulse-soft danger zone), UploadView (float-gentle, glow-pulse)
+- **Accessibility** (11-a): AppSidebar aria-label, Dashboard role="button" + aria-label, QuizView aria-label options + aria-live timers
+- **Verified features** (11-b): Notes Markdown Preview, Onboarding Step Persistence, Keyboard Shortcuts (Ctrl+N/U/Q) — all previously implemented
+
+### Verification:
+- `npx eslint . --quiet`: 0 errors
+- `NODE_ENV=production npx next build`: 0 errors, 0 warnings
+- Agent-browser: Page visible (opacity: 1), no console errors

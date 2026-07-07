@@ -1934,3 +1934,127 @@ html.lenis, html.lenis body {
   border: 1px solid oklch(0.32 0.035 155 / 0.4);
   box-shadow: 0 -4px 20px oklch(0 0 0 / 0.2), 0 -1px 3px oklch(0 0 0 / 0.1);
 }
+
+/* ============================================
+   ROUND 10-11 ENHANCED ANIMATIONS
+   ============================================ */
+
+/* Float animation - gentle up/down */
+@keyframes floatGentle {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+/* Float slow variant */
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-12px) rotate(2deg); }
+}
+
+/* Soft pulse opacity */
+@keyframes pulseSoft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+/* Emerald glow pulse box-shadow */
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 8px oklch(0.6 0.12 160 / 0.2), 0 0 0px oklch(0.6 0.12 160 / 0); }
+  50% { box-shadow: 0 0 24px oklch(0.6 0.12 160 / 0.4), 0 0 60px oklch(0.6 0.12 160 / 0.1); }
+}
+
+/* Slide up and fade in */
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Shimmer sweep for text */
+@keyframes textShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Border glow cycle */
+@keyframes borderGlow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@utility float-gentle {
+  animation: floatGentle 6s ease-in-out infinite;
+}
+
+@utility float-slow {
+  animation: floatSlow 8s ease-in-out infinite;
+}
+
+@utility pulse-soft {
+  animation: pulseSoft 3s ease-in-out infinite;
+}
+
+@utility glow-pulse {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+@utility slide-up-fade {
+  opacity: 0;
+  transform: translateY(16px);
+  animation: slideUpFade 0.5s ease-out forwards;
+}
+
+@utility text-shimmer {
+  background: linear-gradient(90deg, oklch(0.7 0.15 160) 0%, oklch(0.9 0.1 180) 50%, oklch(0.7 0.15 160) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: textShimmer 3s linear infinite;
+}
+
+@utility border-glow {
+  position: relative;
+}
+.border-glow::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, oklch(0.7 0.15 160), oklch(0.8 0.12 180), oklch(0.7 0.15 160));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: borderGlow 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@utility card-hover-lift {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.card-hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px oklch(0.5 0.1 160 / 0.12), 0 4px 12px oklch(0.5 0.1 160 / 0.06);
+}
+
+@utility badge-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.badge-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 30%, oklch(1 0 0 / 0.3) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: skeletonShimmer 2s ease-in-out infinite;
+}
+
+@utility stagger-1 { animation-delay: 0.05s; }
+@utility stagger-2 { animation-delay: 0.1s; }
+@utility stagger-3 { animation-delay: 0.15s; }
+@utility stagger-4 { animation-delay: 0.2s; }
+@utility stagger-5 { animation-delay: 0.25s; }
+@utility stagger-6 { animation-delay: 0.3s; }
+@utility stagger-7 { animation-delay: 0.35s; }
+@utility stagger-8 { animation-delay: 0.4s; }

@@ -81,7 +81,7 @@ function SectionCard({
   return (
     <motion.div
       variants={fadeUp}
-      className={`glass rounded-xl overflow-hidden gradient-border card-shadow ${
+      className={`glass rounded-xl overflow-hidden gradient-border card-shadow card-hover-lift ${
         isDanger
           ? '[&_::before]:from-red-500/50 [&_::before]:via-red-500/20 [&_::before]:to-orange-500/50'
           : ''
@@ -102,6 +102,7 @@ function SectionCard({
             <motion.div
               animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] }}
               transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+              className="pulse-soft"
             >
               <Icon className="h-4 w-4 text-white" />
             </motion.div>

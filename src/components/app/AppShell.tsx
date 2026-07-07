@@ -473,42 +473,61 @@ const shortcutGroups = [
   {
     title: 'Navigation',
     shortcuts: [
-      { keys: ['⌘', '1'], description: 'Dashboard' },
-      { keys: ['⌘', '2'], description: 'AI Tutor' },
-      { keys: ['⌘', '3'], description: 'Upload' },
-      { keys: ['⌘', '4'], description: 'Quiz' },
-      { keys: ['⌘', '5'], description: 'Notes' },
-      { keys: ['⌘', '6'], description: 'Profile' },
-      { keys: ['⌘', '7'], description: 'Settings' },
-      { keys: ['⌘', '8'], description: 'Focus Timer' },
-      { keys: ['⌘', '9'], description: 'Notes' },
+      { keys: ['⌘', '1'], description: 'Dashboard', detail: 'Go to main dashboard' },
+      { keys: ['⌘', '2'], description: 'AI Tutor', detail: 'Open AI tutoring session' },
+      { keys: ['⌘', '3'], description: 'Upload', detail: 'Upload slide files' },
+      { keys: ['⌘', '4'], description: 'Quiz', detail: 'Start a quiz session' },
+      { keys: ['⌘', '5'], description: 'Notes', detail: 'View and manage notes' },
+      { keys: ['⌘', '6'], description: 'Profile', detail: 'View learner profile' },
+      { keys: ['⌘', '7'], description: 'Settings', detail: 'App settings & preferences' },
+      { keys: ['⌘', '8'], description: 'Focus Timer', detail: 'Pomodoro focus timer' },
     ],
   },
   {
-    title: 'Actions',
+    title: 'Quick Actions',
     shortcuts: [
-      { keys: ['⌘', 'K'], description: 'Search' },
-      { keys: ['⌘', ','], description: 'Shortcuts' },
+      { keys: ['⌘', 'N'], description: 'New Session', detail: 'Start a new AI tutor session' },
+      { keys: ['⌘', 'U'], description: 'Upload Slides', detail: 'Jump to slide upload view' },
+      { keys: ['⌘', 'Q'], description: 'Take Quiz', detail: 'Jump to quiz mode' },
+      { keys: ['⌘', 'D'], description: 'Dashboard', detail: 'Return to dashboard' },
+    ],
+  },
+  {
+    title: 'General',
+    shortcuts: [
+      { keys: ['⌘', 'K'], description: 'Search', detail: 'Open command palette' },
+      { keys: ['⌘', ','], description: 'Shortcuts', detail: 'Show this dialog' },
+      { keys: ['?'], description: 'Shortcuts', detail: 'Toggle shortcuts panel' },
+      { keys: ['Esc'], description: 'Close Dialog', detail: 'Close current dialog or modal' },
     ],
   },
   {
     title: 'Quiz',
     shortcuts: [
-      { keys: ['↑', '↓'], description: 'Navigate options' },
-      { keys: ['Enter'], description: 'Select option' },
-      { keys: ['1', '2', '3', '4'], description: 'Select answer option' },
+      { keys: ['↑', '↓'], description: 'Navigate options', detail: 'Move between answer choices' },
+      { keys: ['Enter'], description: 'Select option', detail: 'Confirm selected answer' },
+      { keys: ['1', '2', '3', '4'], description: 'Select answer', detail: 'Quick-select an answer option' },
     ],
   },
 ];
 
 function KeyboardShortcuts() {
-  const { navigate } = useAppStore();
+  const { navigate, setActiveTopic, setActiveSession } = useAppStore();
   const [open, setOpen] = useState(false);
 
-  // Navigation shortcuts + Cmd+, to open this dialog
+  // Navigation shortcuts + Cmd+, to open this dialog + Escape to close + Quick Actions
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      // Escape key - close shortcuts dialog (and any open shadcn Dialog)
+      if (e.key === 'Escape') {
+        if (open) {
+          e.preventDefault();
+          setOpen(false);
+        }
+        return;
+      }
 
       // ? key (Shift+/) without Cmd/Ctrl/Alt opens shortcuts dialog
       if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -524,6 +543,7 @@ function KeyboardShortcuts() {
         return;
       }
 
+      // Navigation shortcuts
       if ((e.metaKey || e.ctrlKey) && e.key === '1') { e.preventDefault(); navigate('dashboard'); }
       if ((e.metaKey || e.ctrlKey) && e.key === '2') { e.preventDefault(); navigate('tutor'); }
       if ((e.metaKey || e.ctrlKey) && e.key === '3') { e.preventDefault(); navigate('upload'); }
@@ -532,11 +552,21 @@ function KeyboardShortcuts() {
       if ((e.metaKey || e.ctrlKey) && e.key === '6') { e.preventDefault(); navigate('profile'); }
       if ((e.metaKey || e.ctrlKey) && e.key === '7') { e.preventDefault(); navigate('settings'); }
       if ((e.metaKey || e.ctrlKey) && e.key === '8') { e.preventDefault(); navigate('focus-timer'); }
-      if ((e.metaKey || e.ctrlKey) && e.key === '9') { e.preventDefault(); navigate('notes'); }
+
+      // Quick Actions
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+        e.preventDefault();
+        setActiveTopic('General Study');
+        setActiveSession(`session-${Date.now()}`);
+        navigate('tutor');
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'u') { e.preventDefault(); navigate('upload'); }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'q') { e.preventDefault(); navigate('quiz'); }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'd') { e.preventDefault(); navigate('dashboard'); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [navigate]);
+  }, [navigate, open, setActiveTopic, setActiveSession]);
 
   return (
     <>
@@ -566,25 +596,34 @@ function KeyboardShortcuts() {
                 key={group.title}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: gi * 0.1 }}
+                transition={{ duration: 0.3, delay: gi * 0.08 }}
                 className="space-y-2"
               >
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.title}</h4>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+                  <span className="h-px flex-1 bg-emerald-500/20" />
+                  {group.title}
+                  <span className="h-px flex-1 bg-emerald-500/20" />
+                </h4>
                 <div className="space-y-1">
                   {group.shortcuts.map((shortcut, si) => (
                     <motion.div
                       key={si}
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.25, delay: gi * 0.1 + si * 0.04 }}
+                      transition={{ duration: 0.25, delay: gi * 0.08 + si * 0.03 }}
                       className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-accent/50 transition-colors"
                     >
-                      <span className="text-sm text-foreground/80">{shortcut.description}</span>
-                      <div className="flex items-center gap-1">
+                      <div className="min-w-0 flex-1 mr-3">
+                        <span className="text-sm text-foreground/80">{shortcut.description}</span>
+                        {'detail' in shortcut && shortcut.detail && (
+                          <p className="text-[11px] text-muted-foreground/60 mt-0.5 truncate">{shortcut.detail}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
                         {shortcut.keys.map((key, ki) => (
                           <span key={ki} className="flex items-center">
                             {ki > 0 && <span className="text-xs text-muted-foreground/50 mx-0.5">+</span>}
-                            <kbd className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-md border border-border/60 bg-muted/80 px-1.5 font-mono text-[11px] font-medium text-foreground/70 shadow-sm">
+                            <kbd className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-md border border-border/60 bg-muted/60 backdrop-blur-sm px-1.5 font-mono text-[11px] font-medium text-foreground/70 shadow-sm">
                               {key}
                             </kbd>
                           </span>

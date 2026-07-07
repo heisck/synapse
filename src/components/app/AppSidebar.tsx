@@ -456,7 +456,7 @@ export function AppSidebar() {
       </div>
 
       {/* Desktop sidebar - glass morphism */}
-      <aside className="hidden lg:flex lg:w-64 lg:shrink-0 lg:flex-col h-screen sticky top-0 glass-sidebar">
+      <aside className="hidden lg:flex lg:w-64 lg:shrink-0 lg:flex-col h-screen sticky top-0 glass-sidebar" role="navigation" aria-label="Main navigation">
         <SidebarContent />
       </aside>
     </TooltipProvider>

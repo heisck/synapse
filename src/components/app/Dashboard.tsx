@@ -962,7 +962,7 @@ function StudyPlanWidget({ courses }: { courses: { id: string; title: string; su
   // Default state: Generate Plan button
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-      <div className="glass rounded-xl p-6">
+      <div className="glass rounded-xl p-6 border-glow">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
@@ -1192,6 +1192,11 @@ export function Dashboard() {
   const totalStudyTimeMinutes = useTotalStudyTime();
   const { overdueCount, getStudyPlan } = useSpacedRepetition();
   const studyPlan = getStudyPlan(7);
+
+  // Animated number counters for stats
+  const animatedCourses = useCountUp(courses.length, { duration: 1200, delay: 400 });
+  const animatedStreak = useCountUp(currentStreak, { duration: 1200, delay: 600 });
+  const animatedSessions = useCountUp(studySessions.length, { duration: 1200, delay: 800 });
 
   const [progressValue, setProgressValue] = useState(0);
   const [activeTipIndex, setActiveTipIndex] = useState(() => Math.floor(Math.random() * studyTips.length));
@@ -1643,6 +1648,20 @@ export function Dashboard() {
                 </motion.div>
               )}
             </div>
+            {/* Animated gradient bar below Study Streak */}
+            {currentStreak > 0 && (
+              <motion.div
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: 1 }}
+                transition={{ duration: 1.2, delay: 1, ease: 'easeOut' }}
+                className="h-[2px] w-full max-w-[120px] rounded-full origin-left mt-1"
+                style={{
+                  background: 'linear-gradient(90deg, #f59e0b, #ef4444, #fbbf24, #f59e0b)',
+                  backgroundSize: '300% 100%',
+                  animation: 'gradient-shift 3s ease infinite',
+                }}
+              />
+            )}
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1659,19 +1678,19 @@ export function Dashboard() {
             className="flex items-center gap-2"
           >
           <ThemeToggle />
-          <Button variant="outline" size="sm" onClick={() => setShareModalOpen(true)}>
+          <Button variant="outline" size="sm" onClick={() => setShareModalOpen(true)} aria-label="Share stats">
             <Share2 className="h-4 w-4 mr-2" />
             Share Stats
           </Button>
-          <Button variant="outline" size="sm" onClick={handleExportStudyData}>
+          <Button variant="outline" size="sm" onClick={handleExportStudyData} aria-label="Export study data">
             <Download className="h-4 w-4 mr-2" />
             Export Data
           </Button>
-          <Button onClick={() => handleStartSession('General Study')} size="sm">
+          <Button onClick={() => handleStartSession('General Study')} size="sm" aria-label="Start general study session">
             <Sparkles className="h-4 w-4 mr-2" />
             Start Session
           </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate('upload')}>
+          <Button variant="outline" size="sm" onClick={() => navigate('upload')} aria-label="Upload slides">
             <Upload className="h-4 w-4 mr-2" />
             Upload Slides
           </Button>
@@ -1685,6 +1704,10 @@ export function Dashboard() {
       <motion.div variants={fadeUp}>
         <div className="glass mesh-gradient gradient-border rounded-xl p-6 cursor-pointer group relative overflow-hidden animated-border-gradient hover-lift"
           onClick={() => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic")}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic"); } }}
+          aria-label={activeSessionId ? 'Continue learning session' : 'Start a study session'}
         >
           <QuickStartParticles />
           <div className="relative z-10 flex items-center justify-between">
@@ -1735,6 +1758,10 @@ export function Dashboard() {
             <div
               className="glass rounded-xl p-6 cursor-pointer group relative overflow-hidden"
               onClick={() => navigate('quiz')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('quiz'); } }}
+              aria-label="Open daily challenge quiz"
             >
               <div className="relative z-10 flex items-center justify-between">
                 <div className="space-y-2 flex-1">
@@ -1784,7 +1811,7 @@ export function Dashboard() {
                     </motion.div>
                   )}
                   {!isCompleted ? (
-                    <Button size="sm" className="pulse-glow">
+                    <Button size="sm" className="pulse-glow glow-pulse" aria-label="Start daily challenge">
                       Start Challenge
                       <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
                     </Button>
@@ -2077,13 +2104,13 @@ export function Dashboard() {
 
       {/* Stats Row - with floating animation */}
       <motion.div variants={fadeUp}>
-        <div className="glass rounded-xl p-4">
+        <div className="glass rounded-xl p-4 card-hover-lift">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
-              { icon: BookOpen, label: 'Active Courses', value: courses.length, trend: 'up' as const, change: studySessions.length > 0 ? `${studySessions.length} sessions` : 'No sessions yet', idx: 0 },
-              { icon: Flame, label: 'Study Streak', value: `${currentStreak}d`, trend: currentStreak > 0 ? 'up' as const : 'down' as const, change: bestStreak > 0 ? `Best: ${bestStreak} days` : 'Start studying!', idx: 1 },
+              { icon: BookOpen, label: 'Active Courses', value: animatedCourses, trend: 'up' as const, change: studySessions.length > 0 ? `${studySessions.length} sessions` : 'No sessions yet', idx: 0 },
+              { icon: Flame, label: 'Study Streak', value: `${animatedStreak}d`, trend: currentStreak > 0 ? 'up' as const : 'down' as const, change: bestStreak > 0 ? `Best: ${bestStreak} days` : 'Start studying!', idx: 1 },
               { icon: Clock, label: 'Study Time', value: totalStudyTimeMinutes > 0 ? formattedStudyTime : '0m', trend: 'up' as const, change: totalStudyTimeMinutes > 0 ? 'Keep going!' : 'Start a session', idx: 2 },
-              { icon: MessageSquare, label: 'Total Sessions', value: studySessions.length, trend: studySessions.length > 0 ? 'up' as const : 'down' as const, change: studySessions.length > 0 ? `${studySessions.reduce((s, ses) => s + ses.messagesCount, 0)} messages` : 'No messages', idx: 3 },
+              { icon: MessageSquare, label: 'Total Sessions', value: animatedSessions, trend: studySessions.length > 0 ? 'up' as const : 'down' as const, change: studySessions.length > 0 ? `${studySessions.reduce((s, ses) => s + ses.messagesCount, 0)} messages` : 'No messages', idx: 3 },
             ].map((stat, i) => (
               <motion.div
                 key={stat.label}

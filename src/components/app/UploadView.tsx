@@ -871,7 +871,7 @@ export function UploadView() {
               animate={isDragOver ? { y: [0, -6, 0], rotate: [0, 5, -5, 0] } : { y: [0, -3, 0] }}
               transition={{ duration: 0.6, repeat: Infinity, ease: 'easeInOut' }}
             >
-              <Upload className={`h-8 w-8 transition-colors ${isDragOver ? 'text-primary' : 'text-primary/60'}`} />
+              <Upload className={`h-8 w-8 transition-colors float-gentle ${isDragOver ? 'text-primary' : 'text-primary/60'}`} />
             </motion.div>
             <div>
               <p className="font-medium">
@@ -978,7 +978,7 @@ export function UploadView() {
             <Button
               onClick={simulateUpload}
               disabled={files.every((f) => f.status === 'done') || files.every((f) => f.status === 'uploading' || f.status === 'processing') || isUploading}
-              className="glow-emerald transition-shadow duration-300"
+              className="glow-emerald glow-pulse transition-shadow duration-300"
             >
               <Upload className="h-4 w-4 mr-2" />
               Upload Files

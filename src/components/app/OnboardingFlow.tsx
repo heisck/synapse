@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -17,6 +17,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+
+const ONBOARDING_STEP_KEY = 'synapselearn_onboarding_step';
 
 const TOTAL_STEPS = 4;
 
@@ -619,11 +621,28 @@ export function OnboardingFlow() {
     navigate,
   } = useAppStore();
 
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(() => {
+    if (typeof window === 'undefined') return 1;
+    const saved = localStorage.getItem(ONBOARDING_STEP_KEY);
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if (parsed >= 1 && parsed <= TOTAL_STEPS) return parsed;
+    }
+    return 1;
+  });
+  const [resumedFromSaved, setResumedFromSaved] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem(ONBOARDING_STEP_KEY) !== null;
+  });
   const [direction, setDirection] = useState(1);
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [selectedPace, setSelectedPace] = useState<string>('steady');
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+
+  // Persist step to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem(ONBOARDING_STEP_KEY, String(step));
+  }, [step]);
 
   const goNext = useCallback(() => {
     setDirection(1);
@@ -648,6 +667,8 @@ export function OnboardingFlow() {
   }, []);
 
   const handleFinish = useCallback(() => {
+    // Clear persisted step on completion
+    localStorage.removeItem(ONBOARDING_STEP_KEY);
     const primaryStyle = selectedStyles[0] ?? 'visual';
     setUserInfo('Student', 'student@synapselearn.ai');
     setLearnerProfile({
@@ -667,6 +688,8 @@ export function OnboardingFlow() {
   }, [selectedStyles, selectedPace, selectedTopics, setUserInfo, setLearnerProfile, setHardSubjects, setBestTeachingStyle, setOnboardingComplete, navigate]);
 
   const handleQuickStart = useCallback(() => {
+    // Clear persisted step on completion
+    localStorage.removeItem(ONBOARDING_STEP_KEY);
     setUserInfo('Student', 'student@synapselearn.ai');
     setLearnerProfile({
       learningStyle: 'visual',
@@ -696,6 +719,21 @@ export function OnboardingFlow() {
         className="glass rounded-2xl p-6 sm:p-8 max-w-xl w-full"
       >
         <StepIndicator currentStep={step} />
+
+        {/* Resume message */}
+        <AnimatePresence>
+          {resumedFromSaved && step > 1 && (
+            <motion.p
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              transition={{ duration: 0.3, delay: 0.2 }}
+              className="text-xs text-center text-emerald-600 dark:text-emerald-400 mt-1"
+            >
+              Resuming where you left off — Step {step} of {TOTAL_STEPS}
+            </motion.p>
+          )}
+        </AnimatePresence>
 
         <div className="mt-4 overflow-hidden">
           <AnimatePresence initial={false} custom={direction} mode="wait">
