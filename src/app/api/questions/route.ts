@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LLM } from '@/lib/ai';
 import { buildQuizGenPrompt } from '@/lib/prompts';
 import { db } from '@/lib/db';
+import type { Question } from '@prisma/client';
 
 function toClientQuestion(q: { options: string | null } & Record<string, unknown>) {
   return {
@@ -143,7 +144,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Save questions to database if courseId is provided
-    const savedQuestions = [];
+    const savedQuestions: Question[] = [];
     for (const q of questions) {
       const question = q as Record<string, unknown>;
       const saved = await db.question.create({

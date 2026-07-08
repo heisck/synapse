@@ -27,7 +27,7 @@ const springEntrance = {
       mass: 0.8,
     },
   },
-};
+} as const;
 
 function GradientAccentLine() {
   return (

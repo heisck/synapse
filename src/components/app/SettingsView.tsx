@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
   Palette,
   Bot,
@@ -56,10 +56,10 @@ const PERSONA_OPTIONS = [
   { id: 'friend', label: 'Friend', quote: '"Ok so basically, here\'s the deal..."' },
 ];
 
-const stagger = {
+const stagger: Variants = {
   animate: { transition: { staggerChildren: 0.07 } },
 };
-const fadeUp = {
+const fadeUp: Variants = {
   initial: { opacity: 0, y: 16 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 };

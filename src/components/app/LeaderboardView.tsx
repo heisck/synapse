@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
   Trophy,
   Medal,
@@ -76,14 +76,14 @@ const rankStyles: Record<number, { bg: string; border: string; icon: typeof Trop
 };
 
 /* ── Animated Variants ── */
-const stagger = {
+const stagger: Variants = {
   animate: { transition: { staggerChildren: 0.05 } },
 };
-const fadeUp = {
+const fadeUp: Variants = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 };
-const listItem = {
+const listItem: Variants = {
   initial: { opacity: 0, x: -20 },
   animate: { opacity: 1, x: 0, transition: { type: 'spring', stiffness: 300, damping: 22 } },
 };

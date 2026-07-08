@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
   BookMarked,
   Plus,
@@ -65,20 +65,20 @@ const TAG_BORDER_COLORS: Record<string, string> = {
 
 const springConfig = { type: 'spring' as const, stiffness: 400, damping: 30 };
 
-const stagger = {
+const stagger: Variants = {
   animate: { transition: { staggerChildren: 0.06 } },
 };
 
-const fadeUp = {
+const fadeUp: Variants = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 };
 
-  const cardVariants = {
+const cardVariants: Variants = {
   initial: { opacity: 0, y: 12, scale: 0.98 },
   animate: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.3, ease: 'easeOut' } },
   exit: { opacity: 0, y: -8, scale: 0.98, transition: { duration: 0.2, ease: 'easeIn' } },
-  };
+};
 
 type SortMode = 'newest' | 'oldest' | 'title-asc' | 'title-desc';
 

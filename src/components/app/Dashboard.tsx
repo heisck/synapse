@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
   Flame,
   BookOpen,
@@ -150,10 +150,10 @@ function getGreeting(): string {
   return 'Good evening';
 }
 
-const stagger = {
+const stagger: Variants = {
   animate: { transition: { staggerChildren: 0.08 } },
 };
-const fadeUp = {
+const fadeUp: Variants = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 };

@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, lazy, useState, useRef, useEffect, useCallback } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Timer, Bell, Flame, Target, Lightbulb, Clock, CheckCheck, Trophy, BookOpen } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { AppSidebar } from './AppSidebar';
@@ -77,7 +77,7 @@ function TransitionIndicator({ show }: { show: boolean }) {
 }
 
 // Unique entrance animations per view
-const viewTransitions: Record<string, { initial: object; animate: object; exit: object }> = {
+const viewTransitions: Record<string, Variants> = {
   dashboard: {
     initial: { opacity: 0, x: -40 },
     animate: { opacity: 1, x: 0 },
@@ -140,7 +140,7 @@ const viewTransitions: Record<string, { initial: object; animate: object; exit: 
   },
 };
 
-const defaultTransition = {
+const defaultTransition: Variants = {
   initial: { opacity: 0, x: -20 },
   animate: { opacity: 1, x: 0 },
   exit: { opacity: 0, x: 20 },
@@ -665,7 +665,7 @@ function NotificationBell() {
 const fullViewportViews: Array<string> = ['landing', 'onboarding'];
 
 // Transition config for view changes - use tween for reliable animations
-const viewTransitionConfig = { type: 'tween' as const, duration: 0.3, ease: 'easeInOut' };
+const viewTransitionConfig = { type: 'tween', duration: 0.3, ease: 'easeInOut' } as const;
 
 export function AppShell() {
   const { currentView, navigate } = useAppStore();

@@ -19,12 +19,7 @@ import type { NextConfig } from "next";
  *    - For production Vercel deployment, consider migrating to a managed
  *      database (PostgreSQL, MySQL) or using Vercel KV/Postgres.
  *
- * 3. typescript.ignoreBuildErrors: true
- *    - Temporarily suppresses TypeScript build errors during development.
- *    - Useful when rapidly prototyping or when third-party types are incomplete.
- *    - TODO: Remove this once all type errors are resolved for production.
- *
- * 4. reactStrictMode: false
+ * 3. reactStrictMode: false
  *    - Disables React strict mode to avoid double-rendering in development.
  *    - Some animations and side effects behave unexpectedly with strict mode.
  *    - Consider re-enabling for production to catch potential issues.
@@ -36,9 +31,6 @@ const nextConfig: NextConfig = {
   // Next.js/Turbopack stops inferring the wrong one.
   turbopack: {
     root: __dirname,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
   },
   reactStrictMode: false,
 };

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
-import { useAppStore } from '@/stores/appStore';
+import { useAppStore, type AppState } from '@/stores/appStore';
 import type { LearnerProfile, MasteryMap, ChatMessage, Course, StudyGoal, StudyNotification, AdaptiveResult } from '@/types';
 
 const STORAGE_KEY_PREFIX = 'synapselearn_';
@@ -109,11 +109,11 @@ export function useSessionPersistence(): void {
     isRestoredRef.current = true;
 
     const savedMessages: ChatMessage[] = safeGetItem(KEYS.messages, []);
-    const savedProfile: LearnerProfile | null = safeGetItem(KEYS.learnerProfile, null);
+    const savedProfile = safeGetItem<LearnerProfile | null>(KEYS.learnerProfile, null);
     const savedCourses: Course[] = safeGetItem(KEYS.courses, []);
     const savedMasteryMap: MasteryMap = safeGetItem(KEYS.masteryMap, {});
-    const savedQuizScore: { score: number; total: number } | null = safeGetItem(KEYS.quizScore, null);
-    const savedOnboarding: boolean = safeGetItem(KEYS.onboarding, false);
+    const savedQuizScore = safeGetItem<{ score: number; total: number } | null>(KEYS.quizScore, null);
+    const savedOnboarding = safeGetItem<boolean>(KEYS.onboarding, false);
     const savedUserName: string = safeGetItem(KEYS.userName, '');
     const savedUserEmail: string = safeGetItem(KEYS.userEmail, '');
     const savedHardSubjects: string[] = safeGetItem(KEYS.hardSubjects, []);
@@ -153,8 +153,12 @@ export function useSessionPersistence(): void {
 
     if (!hasData) return;
 
-    // Batch all restorations into a single Zustand set call
-    useAppStore.setState({
+    // Batch all restorations into a single Zustand set call. Built as an
+    // explicitly-typed variable first — passing the object literal directly
+    // to setState's overloaded (state | partial | updater-fn) signature was
+    // defeating contextual typing and making every conditional spread below
+    // resolve to `never`.
+    const restoredState: Partial<AppState> = {
       ...(savedMessages.length > 0 && { messages: savedMessages }),
       ...(savedProfile && { learnerProfile: savedProfile, onboardingComplete: true }),
       ...(savedCourses.length > 0 && { courses: savedCourses }),
@@ -176,7 +180,8 @@ export function useSessionPersistence(): void {
       ...(savedNotifications.length > 0 && { notifications: savedNotifications }),
       ...(savedAdaptiveResults.length > 0 && { adaptiveResults: savedAdaptiveResults }),
       ...(Object.keys(savedCourseCategories).length > 0 && { courseCategories: savedCourseCategories }),
-    });
+    };
+    useAppStore.setState(restoredState);
   }, []);
 
   // Persist non-message state whenever it changes (no debounce needed)

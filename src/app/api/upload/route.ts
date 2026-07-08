@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import type { Slide } from '@prisma/client';
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.pptx', '.docx', '.odp', '.odt', '.txt', '.md', '.markdown', '.csv', '.rtf', '.html', '.htm'];
 const LEGACY_EXTENSIONS = ['.ppt', '.doc'];
@@ -105,7 +106,7 @@ async function extractPptxSlides(buffer: ArrayBuffer, filename: string): Promise
 /** DOCX via mammoth. */
 async function extractDocxSlides(buffer: ArrayBuffer, filename: string): Promise<ParsedSlide[]> {
   const mammoth = await import('mammoth');
-  const result = await mammoth.default.extractRawText({ buffer });
+  const result = await mammoth.default.extractRawText({ buffer: Buffer.from(buffer) });
   return splitIntoSlides(result.value, filename);
 }
 
@@ -259,7 +260,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Create slide records
-    const createdSlides = [];
+    const createdSlides: Slide[] = [];
     for (let i = 0; i < slides.length; i++) {
       const slide = await db.slide.create({
         data: {

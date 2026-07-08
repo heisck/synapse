@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, type Variants } from 'framer-motion'
 import { useAppStore } from '@/stores/appStore'
 import { Button } from '@/components/ui/button'
 import {
@@ -98,7 +98,7 @@ export function SessionControls({ onRevision, onEndSession }: SessionControlsPro
     setIsExporting(false)
   }
 
-  const buttonVariants = {
+  const buttonVariants: Variants = {
     hidden: { opacity: 0, x: 20 },
     visible: (i: number) => ({
       opacity: 1,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
   ArrowLeft,
   FileText,
@@ -43,15 +43,15 @@ import { useCountUp } from '@/hooks/useCountUp';
 import type { Slide } from '@/types';
 
 
-const stagger = {
+const stagger: Variants = {
   animate: { transition: { staggerChildren: 0.06 } },
 };
-const fadeUp = {
+const fadeUp: Variants = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
 };
 
-const bulletVariants = {
+const bulletVariants: Variants = {
   hidden: { opacity: 0, x: -12 },
   visible: (i: number) => ({
     opacity: 1,

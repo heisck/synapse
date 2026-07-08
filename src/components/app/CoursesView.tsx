@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { BookOpen, Search, X, Upload } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -11,10 +11,10 @@ import { CourseCard } from './CourseCard';
 import { EmptyState } from './EmptyState';
 import { CATEGORY_CONFIG } from './UploadView';
 
-const stagger = {
+const stagger: Variants = {
   animate: { transition: { staggerChildren: 0.06 } },
 };
-const fadeUp = {
+const fadeUp: Variants = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
 };

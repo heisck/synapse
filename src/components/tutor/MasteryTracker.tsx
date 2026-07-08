@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { motion, useSpring } from 'framer-motion'
+import { motion, useSpring, type Variants } from 'framer-motion'
 import { useAppStore } from '@/stores/appStore'
 import { TrendingUp } from 'lucide-react'
 
@@ -78,7 +78,7 @@ export function MasteryTracker() {
 
   const hasActivity = heatmapCells.some((c) => c.level > 0)
 
-  const containerVariants = {
+  const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
@@ -86,7 +86,7 @@ export function MasteryTracker() {
     },
   }
 
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { opacity: 0, y: 8 },
     visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24 } },
   }

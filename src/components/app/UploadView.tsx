@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
   Upload,
   FileText,
@@ -119,10 +119,10 @@ interface UploadHistoryItem {
   courseId?: string;
 }
 
-const stagger = {
+const stagger: Variants = {
   animate: { transition: { staggerChildren: 0.06 } },
 };
-const fadeUp = {
+const fadeUp: Variants = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
 };

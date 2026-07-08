@@ -10,7 +10,7 @@ export interface QuizCardProgress {
   finished: boolean;
 }
 
-interface AppState {
+export interface AppState {
   // Navigation
   currentView: AppView;
   previousView: AppView | null;
@@ -234,14 +234,7 @@ function safeArray(val: unknown): unknown[] {
   try { const p = JSON.parse(String(val)); return Array.isArray(p) ? p : []; } catch { return []; }
 }
 
-// Defensive helper: ensure value is always a valid object (or empty object)
-function safeObject<T extends Record<string, unknown>>(val: unknown, fallback: T): T {
-  if (val && typeof val === 'object' && !Array.isArray(val)) return val as T;
-  if (val == null) return fallback;
-  try { const p = JSON.parse(String(val)); return p && typeof p === 'object' && !Array.isArray(p) ? p as T : fallback; } catch { return fallback; }
-}
-
-export const useAppStore = create<AppState>()(subscribeWithSelector((set, get) => ({
+export const useAppStore = create<AppState>()(subscribeWithSelector((set, get): AppState => ({
   currentView: 'landing',
   previousView: null,
   navigate: (view) => set((s) => {
@@ -329,7 +322,7 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get) =
       monday.setDate(now.getDate() - mondayOffset);
       const weekStartStr = monday.toISOString().split('T')[0];
       const pct = Math.round((score / total) * 100);
-      safeArray(state.studyGoals).forEach((g) => {
+      (safeArray(state.studyGoals) as StudyGoal[]).forEach((g) => {
         if (g.type === 'quiz_score' && g.weekStart === weekStartStr) {
           useAppStore.getState().updateStudyGoal(g.id, { currentProgress: Math.max(g.currentProgress, pct) });
         }
@@ -356,7 +349,7 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get) =
     if (typeof window === 'undefined') return [];
     try {
       const stored = localStorage.getItem('synapse-notes');
-      return safeArray(stored ? JSON.parse(stored) : []);
+      return safeArray(stored ? JSON.parse(stored) : []) as Note[];
     } catch {
       return [];
     }
@@ -388,7 +381,7 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get) =
     if (typeof window === 'undefined') return [];
     try {
       const stored = localStorage.getItem('synapse-goals');
-      return safeArray(stored ? JSON.parse(stored) : []);
+      return safeArray(stored ? JSON.parse(stored) : []) as Goal[];
     } catch {
       return [];
     }
@@ -502,7 +495,7 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get) =
     const totalSessions = studySessions.length;
     const totalNotes = notes.length;
     const masteryValues = safeArray(Object.values(masteryMap));
-    const masteredConcepts = masteryValues.filter((c) => c && typeof c === 'object' && (c as Record<string, unknown>).level !== undefined && (c as Record<string, unknown>).level >= 80).length;
+    const masteredConcepts = masteryValues.filter((c) => c && typeof c === 'object' && Number((c as Record<string, unknown>).level) >= 80).length;
 
     // Compute current streak from studySessions
     const sessionDates = [...new Set(studySessions.map((s) => new Date(s.date).toISOString().split('T')[0]))].sort().reverse();
@@ -687,7 +680,7 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get) =
     if (typeof window === 'undefined') return [];
     try {
       const stored = localStorage.getItem('synapse-study-sessions');
-      return safeArray(stored ? JSON.parse(stored) : []);
+      return safeArray(stored ? JSON.parse(stored) : []) as StudySession[];
     } catch {
       return [];
     }
@@ -737,12 +730,12 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get) =
     const monday = new Date(now);
     monday.setDate(now.getDate() - mondayOffset);
     const weekStartStr = monday.toISOString().split('T')[0];
-    safeArray(state.studyGoals).forEach((g) => {
+    (safeArray(state.studyGoals) as StudyGoal[]).forEach((g) => {
       if (g.type === 'sessions' && g.weekStart === weekStartStr) {
-        useAppStore.getState().updateStudyGoal(g.id, { currentProgress: (g as Record<string, unknown>).currentProgress !== undefined ? Number((g as Record<string, unknown>).currentProgress) + 1 : 1 });
+        useAppStore.getState().updateStudyGoal(g.id, { currentProgress: g.currentProgress !== undefined ? Number(g.currentProgress) + 1 : 1 });
       }
       if (g.type === 'hours' && g.weekStart === weekStartStr) {
-        useAppStore.getState().updateStudyGoal(g.id, { currentProgress: (g as Record<string, unknown>).currentProgress !== undefined ? Number((g as Record<string, unknown>).currentProgress) + session.duration / 60 : session.duration / 60 });
+        useAppStore.getState().updateStudyGoal(g.id, { currentProgress: g.currentProgress !== undefined ? Number(g.currentProgress) + session.duration / 60 : session.duration / 60 });
       }
     });
     // Check achievements after adding a session
@@ -902,7 +895,7 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get) =
     if (typeof window === 'undefined') return [];
     try {
       const stored = localStorage.getItem('synapse-starred-messages');
-      return safeArray(stored ? JSON.parse(stored) : []);
+      return safeArray(stored ? JSON.parse(stored) : []) as StarredMessage[];
     } catch {
       return [];
     }

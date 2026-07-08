@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import type { Prisma } from '@prisma/client';
+
+type QuizQuestionWithQuestion = Prisma.QuizQuestionGetPayload<{ include: { question: true } }>;
 
 export async function POST(request: NextRequest) {
   try {
@@ -66,7 +69,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const quizQuestions = [];
+    const quizQuestions: QuizQuestionWithQuestion[] = [];
     for (const q of questions) {
       // Save the question first if it doesn't have an id
       let questionId = q.id;

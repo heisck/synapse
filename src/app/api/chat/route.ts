@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { LLM } from '@/lib/ai';
+import { LLM, type ChatMessage } from '@/lib/ai';
 import {
   buildDiscoveryPrompt,
   buildSessionStarterPrompt,
@@ -33,9 +33,7 @@ function sanitize(input: string): string {
 }
 
 // --- Dedupe consecutive same-role messages, keep last 14 ---
-function dedupeMessages(
-  messages: Array<{ role: string; content: string }>,
-): Array<{ role: string; content: string }> {
+function dedupeMessages(messages: ChatMessage[]): ChatMessage[] {
   const deduped: typeof messages = [];
   for (const msg of messages) {
     const prev = deduped[deduped.length - 1];
@@ -136,8 +134,8 @@ export async function POST(request: NextRequest) {
 
     // --- Provider mode: body has `messages` array ---
     if (body.messages && Array.isArray(body.messages)) {
-      const sanitized = body.messages.map((m: { role: string; content: string }) => ({
-        role: m.role,
+      const sanitized: ChatMessage[] = body.messages.map((m: { role: string; content: string }) => ({
+        role: m.role === 'system' || m.role === 'assistant' ? m.role : 'user',
         content: sanitize(m.content || ''),
       }));
       const deduped = dedupeMessages(sanitized);
@@ -308,7 +306,7 @@ export async function POST(request: NextRequest) {
 
     // Build conversation from history + current message. The system prompt is
     // kept OUT of the windowing so a long chat can never truncate it away.
-    const conversation: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
+    const conversation: ChatMessage[] = [];
 
     if (Array.isArray(history)) {
       for (const h of history) {
@@ -319,9 +317,9 @@ export async function POST(request: NextRequest) {
     }
 
     conversation.push({ role: 'user', content: userMessage });
-    const deduped = [
-      { role: 'system' as const, content: systemPrompt },
-      ...(dedupeMessages(conversation) as Array<{ role: 'system' | 'user' | 'assistant'; content: string }>),
+    const deduped: ChatMessage[] = [
+      { role: 'system', content: systemPrompt },
+      ...dedupeMessages(conversation),
     ];
 
     const result = await LLM.chatWithReview({ messages: deduped, contextSummary: topic ? `Study topic: ${topic}` : undefined });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import {
   CheckCircle2,
@@ -676,7 +676,7 @@ function MatchingInput({
                 draggable={!isMatched}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => handleLeftClick(p.left)}
-                onDragStart={(e) => handleDragStart(e, p.left)}
+                onDragStart={(e) => handleDragStart(e as unknown as React.DragEvent, p.left)}
                 onDragEnd={handleDragEnd}
                 className={`rounded-lg border p-3 text-left text-sm font-medium transition-all ${
                   isDragging
@@ -4347,7 +4347,7 @@ export function QuizView() {
                   const isCurrent = i === currentIndex;
                   const isAnswered = answered[q.id];
                   let statusColor = 'bg-muted/50 text-muted-foreground border-border';
-                  let statusIcon = null;
+                  let statusIcon: ReactNode = null;
                   if (isAnswered) {
                     if (q.type === 'fill_blank' && fillBlankGrades[q.id]) {
                       const grade = fillBlankGrades[q.id];

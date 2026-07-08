@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useMemo, useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence, useSpring, useMotionValue, useTransform } from 'framer-motion';
+import { motion, AnimatePresence, useSpring, useMotionValue, useTransform, type Variants } from 'framer-motion';
 import {
   Mail,
   Palette,
@@ -79,7 +79,7 @@ const iconMap: Record<string, typeof Eye> = {
 };
 
 /* ── Animation Variants ── */
-const stagger = {
+const stagger: Variants = {
   animate: { transition: { staggerChildren: 0.08 } },
 };
 
@@ -98,15 +98,15 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-const fadeUp = {
+const fadeUp: Variants = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
 };
 
-const achievementGridStagger = {
+const achievementGridStagger: Variants = {
   animate: { transition: { staggerChildren: 0.06 } },
 };
-const achievementCardVariant = {
+const achievementCardVariant: Variants = {
   initial: { opacity: 0, scale: 0.85, y: 12 },
   animate: { opacity: 1, scale: 1, y: 0, transition: { type: 'spring', stiffness: 400, damping: 25 } },
 };
@@ -1379,7 +1379,7 @@ export function ProfileView() {
                               {bestStreak} days
                             </span>
                           </div>
-                          {quizTotal > 0 && (
+                          {quizScore !== null && quizTotal !== null && quizTotal > 0 && (
                             <div className="flex justify-between text-sm">
                               <span className="text-muted-foreground">Quiz Accuracy</span>
                               <span className={`font-semibold font-mono tabular-nums ${quizScore / quizTotal >= 0.7 ? 'text-emerald-600 dark:text-emerald-400' : quizScore / quizTotal >= 0.4 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'}`}>

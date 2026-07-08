@@ -11,13 +11,14 @@ import {
   Clock,
   Check,
   Brain,
+  type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { UserFeedback } from '@/types'
 
 const feedbackOptions: Array<{
   type: UserFeedback['type']
-  icon: React.ElementType
+  icon: LucideIcon
   label: string
   rating: number
   color: string
