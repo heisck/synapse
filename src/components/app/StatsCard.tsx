@@ -29,25 +29,27 @@ export function StatsCard({ icon: Icon, label, value, trend, change, index = 0 }
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10">
         <Icon className="h-5 w-5 text-primary" />
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-muted-foreground truncate">{label}</p>
-        <div className="flex items-baseline gap-2">
+      <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
+        {/* Left: label + value, never wraps */}
+        <div className="min-w-0">
+          <p className="text-sm text-muted-foreground whitespace-nowrap truncate">{label}</p>
           <motion.p
             key={String(value)}
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.4, delay: 0.2 + index * 0.15, ease: 'easeOut' }}
-            className="text-xl font-bold"
+            className="text-xl font-bold whitespace-nowrap"
           >
             {animatedValue}
           </motion.p>
-          {trend && change && (
-            <span className={`flex items-center gap-0.5 text-xs font-medium ${trend === 'up' ? 'text-emerald-600' : 'text-destructive'}`}>
-              {trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-              {change}
-            </span>
-          )}
         </div>
+        {/* Right: trend chip, vertically centered */}
+        {trend && change && (
+          <span className={`flex items-center gap-0.5 shrink-0 self-center text-xs font-medium whitespace-nowrap ${trend === 'up' ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
+            {trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+            {change}
+          </span>
+        )}
       </div>
     </motion.div>
   );

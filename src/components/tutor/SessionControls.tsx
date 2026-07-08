@@ -13,6 +13,7 @@ import {
   BookOpen,
   BarChart3,
   Check,
+  ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -37,6 +38,8 @@ export function SessionControls({ onRevision, onEndSession }: SessionControlsPro
   const messages = useAppStore((s) => s.messages)
   const [showEndConfirm, setShowEndConfirm] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  // Session actions stay out of the way until asked for
+  const [controlsOpen, setControlsOpen] = useState(false)
 
   const currentPhaseIndex = PHASES.findIndex((p) => p.id === sessionPhase)
 
@@ -119,15 +122,6 @@ export function SessionControls({ onRevision, onEndSession }: SessionControlsPro
           </span>
         </div>
         <div className="relative flex items-center justify-between px-1">
-          {/* Connector line */}
-          <div className="absolute top-1/2 left-4 right-4 h-0.5 -translate-y-1/2 bg-muted rounded-full overflow-hidden">
-            <motion.div
-              className="h-full bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full"
-              initial={false}
-              animate={{ width: `${(currentPhaseIndex / (PHASES.length - 1)) * 100}%` }}
-              transition={{ type: 'spring', stiffness: 200, damping: 25 }}
-            />
-          </div>
           {PHASES.map((phase, idx) => {
             const Icon = phase.icon
             const isActive = idx === currentPhaseIndex
@@ -168,9 +162,18 @@ export function SessionControls({ onRevision, onEndSession }: SessionControlsPro
         </div>
       </motion.div>
 
-      {/* Action buttons */}
+      {/* Action buttons — collapsed by default to keep the panel calm */}
       <div className="space-y-1.5">
-        <h4 className="text-sm font-semibold text-foreground">Controls</h4>
+        <button
+          type="button"
+          onClick={() => setControlsOpen((o) => !o)}
+          className="flex w-full items-center justify-between rounded-md px-1 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          aria-expanded={controlsOpen}
+        >
+          <span>Session actions</span>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${controlsOpen ? 'rotate-180' : ''}`} />
+        </button>
+        {controlsOpen && (
         <div className="flex flex-col gap-1.5">
           <motion.div variants={buttonVariants} custom={1}>
             <Button
@@ -267,6 +270,7 @@ export function SessionControls({ onRevision, onEndSession }: SessionControlsPro
             </AnimatePresence>
           </motion.div>
         </div>
+        )}
       </div>
     </motion.div>
   )

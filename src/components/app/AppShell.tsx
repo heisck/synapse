@@ -802,12 +802,19 @@ const viewTransitionConfig = { type: 'tween' as const, duration: 0.3, ease: 'eas
 
 export function AppShell() {
   const { currentView, navigate } = useAppStore();
+  const compactMode = useAppStore((s) => s.settings.compactMode);
   const isFullViewport = fullViewportViews.includes(currentView);
   const [transitioning, setTransitioning] = useState(false);
   const prevViewRef = useRef(currentView);
 
   // Generate contextual notifications
   useNotifications();
+
+  // Compact mode: sync the root class here (always mounted) so the setting
+  // applies on every view, not just while the settings page is open
+  useEffect(() => {
+    document.documentElement.classList.toggle('compact', compactMode);
+  }, [compactMode]);
 
   // Detect view changes to trigger transition indicator
   useEffect(() => {
@@ -894,10 +901,10 @@ export function AppShell() {
             animate="animate"
             exit="exit"
             transition={viewTransitionConfig}
-            className="flex h-screen overflow-hidden"
+            className="flex h-dvh overflow-hidden"
           >
             <AppSidebar />
-            <main className={`relative flex-1 h-screen min-w-0 overflow-y-auto overflow-x-hidden ${currentView === 'tutor' ? '!p-0 !max-w-none' : ''}`}>
+            <main className={`relative flex-1 h-dvh min-w-0 overflow-y-auto overflow-x-hidden ${currentView === 'tutor' ? '!p-0 !max-w-none' : ''}`}>
               {/* Animated mesh-gradient background */}
               <div
                 className="pointer-events-none fixed inset-0 -z-10 opacity-40 dark:opacity-20 overflow-hidden"

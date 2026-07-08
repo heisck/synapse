@@ -148,9 +148,9 @@ export function CourseContextPanel() {
                 >
                   <div className="px-4 pb-4 pt-2">
                     {/* Slide title */}
-                    <h3 className="text-sm font-semibold text-foreground mb-1.5 flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-emerald-500" />
-                      {currentSlide.title}
+                    <h3 className="text-sm font-semibold text-foreground mb-1.5 flex items-center gap-1.5 min-w-0">
+                      <Layers className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      <span className="truncate" title={currentSlide.title}>{currentSlide.title}</span>
                     </h3>
 
                     {/* Topic tags */}

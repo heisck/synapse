@@ -223,11 +223,9 @@ function WelcomeStep({ onNext, onQuickStart }: { onNext: () => void; onQuickStar
           initial={{ scale: 0, rotate: -180 }}
           animate={{ scale: 1, rotate: 0 }}
           transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.2 }}
-          className="mx-auto"
+          className="mx-auto flex justify-center py-3"
         >
-          <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20 animate-float">
-            <Brain className="h-10 w-10 text-white" />
-          </div>
+          <Brain className="h-16 w-16 text-primary animate-float" strokeWidth={1.5} />
         </motion.div>
         <motion.h1
           initial={{ opacity: 0, y: 10 }}
@@ -247,19 +245,17 @@ function WelcomeStep({ onNext, onQuickStart }: { onNext: () => void; onQuickStar
         </motion.p>
       </div>
 
-      <div className="space-y-3 max-w-sm mx-auto">
+      <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 max-w-md mx-auto">
         {features.map((f, i) => (
           <motion.div
             key={f.text}
-            initial={{ opacity: 0, x: -30, scale: 0.9 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            transition={{ delay: 0.5 + i * 0.15, type: 'spring', stiffness: 300, damping: 25 }}
-            className="flex items-center gap-3 p-3 rounded-xl bg-background/50"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 + i * 0.12, duration: 0.35, ease: 'easeOut' }}
+            className="flex items-center gap-1.5 text-muted-foreground"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-              <f.icon className="h-4 w-4 text-primary" />
-            </div>
-            <span className="text-sm font-medium">{f.text}</span>
+            <f.icon className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium whitespace-nowrap">{f.text}</span>
           </motion.div>
         ))}
       </div>

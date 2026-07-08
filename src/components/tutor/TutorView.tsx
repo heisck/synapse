@@ -37,6 +37,8 @@ import {
   Maximize2,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Search,
   X,
   LogOut,
@@ -163,25 +165,14 @@ function playBeep() {
   }
 }
 
+// Single set of quick actions — each one distinct, shown once below the input
 const QUICK_ACTIONS = [
-  { label: 'Give hint', icon: Lightbulb, prompt: 'Give me a hint about what we were just discussing.' },
-  { label: 'Explain differently', icon: MessageSquareText, prompt: 'Can you explain that differently?' },
-  { label: 'Show example', icon: ListChecks, prompt: 'Can you show me an example?' },
-  { label: 'Quiz me', icon: ListChecks, prompt: 'Quiz me on what we just covered.' },
-]
-
-const SUGGESTED_PROMPTS = [
-  'Explain this concept',
-  'Give me a quiz',
-  'Show examples',
-  'Summarize key points',
-]
-
-const CONTEXTUAL_SUGGESTIONS = [
-  'Explain in simpler terms',
-  'Give me an example',
-  'Quiz me on this',
-  'Go deeper',
+  { label: 'Give me a hint', prompt: 'Give me a hint about what we were just discussing.' },
+  { label: 'Show an example', prompt: 'Can you show me an example?' },
+  { label: 'Explain it more simply', prompt: 'Explain that again in simpler terms.' },
+  { label: 'Quiz me on this', prompt: 'Quiz me on what we just covered.' },
+  { label: 'Summarize key points', prompt: 'Summarize the key points so far.' },
+  { label: 'Go deeper', prompt: 'Go deeper into this topic.' },
 ]
 
 const MAX_INPUT_CHARS = 500
@@ -933,29 +924,16 @@ export function TutorView() {
   }, [])
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-dvh flex flex-col bg-background">
       {/* Header - Frosted glass */}
-      <header className="glass-header flex items-center justify-between px-4 py-3 z-10">
-        <div className="flex items-center gap-3">
-          {/* AI Active indicator + name */}
-          <div className="flex items-center gap-2">
-            <motion.span
-              className="relative flex h-2.5 w-2.5"
-              animate={{
-                boxShadow: [
-                  '0 0 0 0 rgba(16, 185, 129, 0.5)',
-                  '0 0 0 5px rgba(16, 185, 129, 0)',
-                ],
-              }}
-              transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
-            >
-              <span className="absolute inset-0 rounded-full bg-emerald-500" />
-            </motion.span>
-            <h1 className="text-lg font-semibold">
-              {activeTopic || 'AI Tutor'}
+      <header className="glass-header flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 z-10">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+          {activeTopic && (
+            <h1 className="text-base sm:text-lg font-semibold truncate min-w-0" title={activeTopic}>
+              {activeTopic}
             </h1>
-          </div>
-          <Badge variant="secondary" className={getPhaseColor(sessionPhase)}>
+          )}
+          <Badge variant="secondary" className={`${getPhaseColor(sessionPhase)} shrink-0 hidden sm:inline-flex`}>
             {sessionPhase}
           </Badge>
           {/* Mode Selector — pill sizes itself to the active button */}
@@ -988,12 +966,12 @@ export function TutorView() {
             })}
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Collapsible Pomodoro Timer */}
           <div className="relative">
             <button
               onClick={() => setPomodoroExpanded(!pomodoroExpanded)}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-border glass hover:bg-accent/50 transition-colors"
+              className="inline-flex items-center gap-1 pl-1 pr-2 py-0.5 rounded-full border border-border glass hover:bg-accent/50 transition-colors"
               aria-label="Toggle Pomodoro timer"
             >
               <svg width="20" height="20" className="-rotate-90">
@@ -1038,7 +1016,7 @@ export function TutorView() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -8, scale: 0.95 }}
                   transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="absolute top-full right-0 mt-2 z-50 w-64 rounded-xl border bg-card p-4 shadow-lg space-y-3"
+                  className="absolute top-full right-0 mt-2 z-50 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border bg-card p-4 shadow-lg space-y-3"
                 >
                   {/* Mode tabs */}
                   <div className="flex items-center rounded-lg border border-border bg-background/50 p-0.5">
@@ -1052,14 +1030,14 @@ export function TutorView() {
                             setPomodoroTimeLeft(mode.duration)
                             setPomodoroRunning(false)
                           }}
-                          className={`flex-1 flex items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all ${
+                          className={`flex-1 flex items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-[11px] font-medium whitespace-nowrap transition-all ${
                             pomodoroModeIndex === i
                               ? 'bg-primary text-primary-foreground shadow-sm'
                               : 'text-muted-foreground hover:text-foreground'
                           }`}
                         >
-                          <Icon className="w-3 h-3" />
-                          <span className="hidden sm:inline">{mode.label}</span>
+                          <Icon className="w-3 h-3 shrink-0" />
+                          <span className="whitespace-nowrap">{mode.label}</span>
                         </button>
                       )
                     })}
@@ -1147,25 +1125,8 @@ export function TutorView() {
             </AnimatePresence>
           </div>
 
-          {/* Session timer with pulsing emerald ring when running */}
-          <motion.div
-            className="relative"
-            animate={timerSeconds > 0 ? {
-              boxShadow: [
-                '0 0 0 0 rgba(16, 185, 129, 0.2)',
-                '0 0 0 4px rgba(16, 185, 129, 0)',
-              ],
-            } : {}}
-            transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
-          >
-            <Badge variant="outline" className="font-mono text-xs rounded-full">
-              <span className={timerSeconds > 0 ? 'text-emerald-600 dark:text-emerald-400' : ''}>
-                {formatTimer(timerSeconds)}
-              </span>
-            </Badge>
-          </motion.div>
-          {/* Word Count Stats Pill */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 glass text-xs text-muted-foreground">
+          {/* Session stats: message count + elapsed time, in one pill */}
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 glass text-xs text-muted-foreground">
             <MessageCircle className="w-3 h-3 text-emerald-500" />
             <span className="font-mono font-medium tabular-nums">{messages.length}</span>
             <span className="text-muted-foreground/60">·</span>
@@ -1231,7 +1192,7 @@ export function TutorView() {
                 </div>
                 {activeSlides[currentSlideIndex] && (
                   <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-foreground">
+                    <h3 className="text-sm font-semibold text-foreground truncate" title={activeSlides[currentSlideIndex].title}>
                       {activeSlides[currentSlideIndex].title}
                     </h3>
                     <div className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
@@ -1463,35 +1424,6 @@ export function TutorView() {
 
           {/* Input Area */}
           <div className="border-t tutor-floating-input">
-            {/* Suggested Prompts Bar */}
-            <AnimatePresence>
-              {!inputFocused && input.trim() === '' && !isLoading && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="overflow-hidden"
-                >
-                  <div className="px-3 pt-2.5 pb-1 max-w-3xl mx-auto">
-                    <div className="flex flex-wrap gap-1.5">
-                      {SUGGESTED_PROMPTS.map((prompt) => (
-                        <motion.button
-                          key={prompt}
-                          whileHover={{ scale: 1.03, y: -1 }}
-                          whileTap={{ scale: 0.97 }}
-                          onClick={() => handleSend(prompt)}
-                          className="px-3 py-1.5 text-xs font-medium rounded-full border border-border/60 glass-hover text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 hover:shadow-[0_0_12px_rgba(16,185,129,0.1)] transition-all duration-200"
-                        >
-                          {prompt}
-                        </motion.button>
-                      ))}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             <div className="px-3 pb-3 pt-1">
               <div className="max-w-3xl mx-auto">
                 {/* Gradient border glow wrapper */}
@@ -1513,9 +1445,13 @@ export function TutorView() {
                       value={input}
                       onChange={handleInputChange}
                       onKeyDown={handleKeyDown}
-                      onFocus={() => setInputFocused(true)}
+                      onFocus={(e) => {
+                        setInputFocused(true)
+                        // Keep the input above the on-screen keyboard on phones
+                        setTimeout(() => e.target.scrollIntoView({ block: 'end', behavior: 'smooth' }), 300)
+                      }}
                       onBlur={() => setInputFocused(false)}
-                      className="resize-none flex-1 border-0 shadow-none focus-visible:ring-0 p-2 text-sm bg-transparent placeholder:text-muted-foreground"
+                      className="resize-none flex-1 border-0 shadow-none focus-visible:ring-0 p-2 text-base sm:text-sm bg-transparent placeholder:text-muted-foreground"
                       style={{ minHeight: INPUT_SIZES[inputSize].minH, maxHeight: INPUT_SIZES[inputSize].maxH }}
                       rows={INPUT_SIZES[inputSize].rows}
                     />
@@ -1663,27 +1599,6 @@ export function TutorView() {
                         </Button>
                       </motion.div>
 
-                      {/* Quick actions menu */}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" aria-label="Quick actions">
-                            <MoreHorizontal className="w-3.5 h-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          {QUICK_ACTIONS.map((action) => (
-                            <DropdownMenuItem
-                              key={action.label}
-                              onClick={() => handleQuickAction(action.prompt)}
-                              className="gap-2"
-                            >
-                              <action.icon className="w-4 h-4" />
-                              {action.label}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-
                       {/* Send button */}
                       <Button
                         size="icon"
@@ -1698,7 +1613,8 @@ export function TutorView() {
                   </div>
                 </div>
 
-                {/* Contextual suggestion chips below input */}
+                {/* Quick actions — chips on wide screens, a single "…" menu on
+                    small ones so the row never wraps */}
                 <AnimatePresence>
                   {!isLoading && (
                     <motion.div
@@ -1706,27 +1622,49 @@ export function TutorView() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 6 }}
                       transition={{ duration: 0.25, ease: 'easeOut' }}
-                      className="flex flex-wrap gap-1.5 mt-2 justify-center"
+                      className="mt-2"
                     >
-                      {CONTEXTUAL_SUGGESTIONS.map((suggestion, index) => (
-                        <motion.button
-                          key={suggestion}
-                          initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          transition={{
-                            type: 'spring',
-                            stiffness: 400,
-                            damping: 28,
-                            delay: index * 0.06,
-                          }}
-                          whileHover={{ scale: 1.05, y: -1 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => handleSend(suggestion)}
-                          className="px-3 py-1 text-[11px] font-medium rounded-full border border-border/60 bg-background/40 text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-primary/5 transition-colors"
-                        >
-                          {suggestion}
-                        </motion.button>
-                      ))}
+                      <div className="hidden md:flex flex-wrap gap-1.5 justify-center">
+                        {QUICK_ACTIONS.map((action, index) => (
+                          <motion.button
+                            key={action.label}
+                            initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{
+                              type: 'spring',
+                              stiffness: 400,
+                              damping: 28,
+                              delay: index * 0.06,
+                            }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => handleSend(action.prompt)}
+                            className="px-3 py-1 text-[11px] font-medium rounded-full border border-border/60 bg-background/40 text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-primary/5 transition-colors whitespace-nowrap"
+                          >
+                            {action.label}
+                          </motion.button>
+                        ))}
+                      </div>
+                      <div className="flex md:hidden justify-center">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex items-center gap-1 px-3 py-1 text-[11px] font-medium rounded-full border border-border/60 bg-background/40 text-muted-foreground hover:text-foreground transition-colors"
+                              aria-label="Quick actions"
+                            >
+                              <MoreHorizontal className="w-3.5 h-3.5" />
+                              Quick actions
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="center" className="w-52">
+                            {QUICK_ACTIONS.map((action) => (
+                              <DropdownMenuItem key={action.label} onClick={() => handleSend(action.prompt)}>
+                                {action.label}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </motion.div>
                   )}
                 </AnimatePresence>

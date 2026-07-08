@@ -424,9 +424,31 @@ const SESSION_TYPE_CONFIG: Record<string, { icon: typeof BookOpen; color: string
   quiz: { icon: ClipboardCheck, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/10' },
 };
 
+// Compact study-buddies indicator for the greeting header: an icon with the
+// live online count (from the presence backend). Clicking opens the
+// leaderboard where the full peer list lives.
+function StudyBuddiesChip() {
+  const { studyBuddies, navigate } = useAppStore();
+  const onlineCount = studyBuddies.filter((b) => b.isOnline).length;
+  return (
+    <button
+      type="button"
+      onClick={() => navigate('leaderboard')}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-border/60 text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+      aria-label={`${onlineCount} study ${onlineCount === 1 ? 'buddy' : 'buddies'} online — view leaderboard`}
+      title="Study buddies online"
+    >
+      <Users className="h-4 w-4" />
+      <span className="text-xs font-semibold tabular-nums">{onlineCount}</span>
+      {onlineCount > 0 && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+    </button>
+  );
+}
+
 // Study Buddies Online Mini Widget — shows REAL peers from the presence
 // backend (usePresence polls /api/presence and writes into the store).
 // Clicking a buddy expands an honest detail panel; no fake invites.
+// (No longer rendered on the dashboard — replaced by StudyBuddiesChip.)
 function StudyBuddiesOnlineWidget() {
   const { studyBuddies, navigate } = useAppStore();
   const onlineBuddies = studyBuddies.filter((b) => b.isOnline).slice(0, 4);
@@ -521,14 +543,9 @@ function StudyBuddiesOnlineWidget() {
                       transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
                     />
                   </div>
-                  <div className="text-center min-w-0 w-full">
-                    <p className="text-xs font-medium truncate">{buddy.name.split(' ')[0]}</p>
-                    <p className="text-[10px] text-muted-foreground truncate">{buddy.currentTopic}</p>
-                    <div className="flex items-center justify-center gap-1 mt-1">
-                      <Flame className="h-2.5 w-2.5 text-orange-500" />
-                      <span className="text-[10px] font-semibold text-orange-600 dark:text-orange-400">{buddy.streak}d</span>
-                    </div>
-                  </div>
+                  {/* Details (topic, streak, level, accuracy) live in the
+                      expanded row below — the tile stays minimal */}
+                  <p className="text-xs font-medium truncate text-center min-w-0 w-full">{buddy.name.split(' ')[0]}</p>
                 </motion.button>
               ))}
             </AnimatePresence>
@@ -1866,72 +1883,51 @@ export function Dashboard() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="flex items-center gap-2"
+            className="flex items-center gap-1.5 shrink-0"
           >
-          <ThemeToggle />
-          <Button variant="outline" size="sm" onClick={() => setShareModalOpen(true)} aria-label="Share stats">
-            <Share2 className="h-4 w-4 mr-2" />
-            Share Stats
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleExportStudyData} aria-label="Export study data">
-            <Download className="h-4 w-4 mr-2" />
-            Export Data
-          </Button>
-          <Button onClick={() => handleStartSession('General Study')} size="sm" aria-label="Start general study session">
-            <Sparkles className="h-4 w-4 mr-2" />
-            Start Session
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate('upload')} aria-label="Upload slides">
-            <Upload className="h-4 w-4 mr-2" />
-            Upload Slides
-          </Button>
-        </motion.div>
+            <StudyBuddiesChip />
+            <ThemeToggle />
+            <Button variant="ghost" size="icon" onClick={() => setShareModalOpen(true)} aria-label="Share stats" title="Share stats">
+              <Share2 className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={handleExportStudyData} aria-label="Export study data" title="Export data">
+              <Download className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => navigate('upload')} aria-label="Upload slides" title="Upload slides">
+              <Upload className="h-4 w-4" />
+            </Button>
+          </motion.div>
         </div>
-      </motion.div>
 
-      <GradientDivider />
-
-      {/* Quick Start Hero Card */}
-      <motion.div variants={fadeUp}>
-        <div className="glass mesh-gradient gradient-border rounded-xl p-6 cursor-pointer group relative overflow-hidden animated-border-gradient hover-lift glass-card-shine glass-card-3d spotlight-card"
+        {/* Continue Learning — merged into the greeting card as its primary action */}
+        <div
+          className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between rounded-lg border border-primary/15 bg-primary/5 px-4 py-3 cursor-pointer group"
           onClick={() => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic")}
           role="button"
           tabIndex={0}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic"); } }}
           aria-label={activeSessionId ? 'Continue learning session' : 'Start a study session'}
         >
-          <QuickStartParticles />
-          <div className="relative z-10 flex items-center justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-primary">Quick Start</p>
-                {currentStreak > 0 && (
-                  <span className="flex items-center gap-1 text-xs font-semibold text-orange-600 bg-orange-500/10 px-2 py-0.5 rounded-full">
-                    <Flame className="h-3 w-3" />
-                    {currentStreak} day streak
-                  </span>
-                )}
+          <div className="w-full min-w-0">
+            {/* Header row: title left, button right on the same line */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Zap className="h-4 w-4 shrink-0 text-primary" />
+                <h2 className="text-sm font-bold truncate">
+                  {activeSessionId ? 'Continue Learning' : 'Start a Session'}
+                </h2>
               </div>
-              <h2 className="text-xl font-bold shimmer-text">
-                {activeSessionId ? 'Continue Learning' : 'Start a Session'}
-              </h2>
-              <p className="text-muted-foreground text-sm">
-                {activeSessionId
-                  ? 'Pick up where you left off with your AI tutor'
-                  : 'Pick a topic below or upload new study material to get started'}
-              </p>
-              <div className="flex items-center gap-2 pt-1">
-                <Button size="sm" className="pulse-glow">
-                  {activeSessionId ? 'Continue' : 'Start Now'}
-                  <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
-                </Button>
-              </div>
+              <Button size="sm" className="pulse-glow shrink-0">
+                {activeSessionId ? 'Continue' : 'Start Now'}
+                <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
+              </Button>
             </div>
-            <div className="hidden sm:block">
-              <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center animate-float">
-                <Zap className="h-10 w-10 text-primary/70" />
-              </div>
-            </div>
+            {/* Description spans the full width below */}
+            <p className="text-muted-foreground text-xs mt-1">
+              {activeSessionId
+                ? 'Pick up where you left off with your AI tutor'
+                : 'Pick a topic below or upload new study material'}
+            </p>
           </div>
         </div>
       </motion.div>
@@ -1954,10 +1950,11 @@ export function Dashboard() {
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('quiz'); } }}
               aria-label="Open daily challenge quiz"
             >
-              <div className="relative z-10 flex items-center justify-between">
-                <div className="space-y-2 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-primary">Daily Challenge</p>
+              <div className="relative z-10">
+                {/* Header row: title + chips left, streak & action right */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p className="text-sm font-medium text-primary whitespace-nowrap">Daily Challenge</p>
                     {isCompleted && todayResults && (
                       <div className="flex items-center gap-0.5">
                         {[1, 2, 3].map((s) => (
@@ -1968,60 +1965,53 @@ export function Dashboard() {
                       </div>
                     )}
                     {multiplier > 1 && (
-                      <span className="flex items-center gap-1 text-xs font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                      <span className="flex items-center gap-1 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
                         <Zap className="h-3 w-3" />
                         {multiplier}x
                       </span>
                     )}
                   </div>
-                  {isCompleted && todayResults ? (
-                    <div className="space-y-1">
-                      <h2 className="text-lg font-bold">Completed!</h2>
-                      <p className="text-muted-foreground text-sm">
-                        {todayResults.score}/{todayResults.total} correct -- Come back tomorrow
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      <h2 className="text-lg font-bold">Ready to challenge yourself?</h2>
-                      <p className="text-muted-foreground text-sm">
-                        5 questions, 3 minutes. Beat the clock!
-                      </p>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {streak > 0 && (
+                      <motion.div
+                        animate={{ scale: [1, 1.1, 1] }}
+                        transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20"
+                      >
+                        <Flame className="h-4 w-4 text-orange-500" />
+                        <span className="text-sm font-bold text-orange-600 dark:text-orange-400">{streak}</span>
+                      </motion.div>
+                    )}
+                    {!isCompleted ? (
+                      <Button size="sm" className="pulse-glow glow-pulse" aria-label="Start daily challenge">
+                        Start Challenge
+                        <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
+                      </Button>
+                    ) : (
+                      <span className="text-sm font-bold gradient-text whitespace-nowrap">{todayResults?.score || 0} pts</span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-col items-center gap-2 shrink-0 ml-4">
-                  {streak > 0 && (
-                    <motion.div
-                      animate={{ scale: [1, 1.1, 1] }}
-                      transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20"
-                    >
-                      <Flame className="h-4 w-4 text-orange-500" />
-                      <span className="text-sm font-bold text-orange-600 dark:text-orange-400">{streak}</span>
-                    </motion.div>
-                  )}
-                  {!isCompleted ? (
-                    <Button size="sm" className="pulse-glow glow-pulse" aria-label="Start daily challenge">
-                      Start Challenge
-                      <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
-                    </Button>
-                  ) : (
-                    <div className="text-center">
-                      <div className="text-2xl font-bold gradient-text">{todayResults?.score || 0}</div>
-                      <div className="text-[10px] text-muted-foreground">points</div>
-                    </div>
-                  )}
-                </div>
+                {/* Description spans the full width below the header row */}
+                {isCompleted && todayResults ? (
+                  <div className="mt-1.5">
+                    <h2 className="text-lg font-bold">Completed!</h2>
+                    <p className="text-muted-foreground text-sm">
+                      {todayResults.score}/{todayResults.total} correct -- Come back tomorrow
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-1.5">
+                    <h2 className="text-lg font-bold">Ready to challenge yourself?</h2>
+                    <p className="text-muted-foreground text-sm">
+                      5 questions, 3 minutes. Beat the clock!
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           );
         })()}
-      </motion.div>
-
-      {/* Study Buddies Online */}
-      <motion.div variants={fadeUp}>
-        <StudyBuddiesOnlineWidget />
       </motion.div>
 
       {/* Your Study Plan - AI Generated */}
@@ -2308,9 +2298,8 @@ export function Dashboard() {
 
       <GradientDivider />
 
-      {/* Stats Row - with floating animation */}
+      {/* Stats Row — tiles stand on their own, no wrapping card */}
       <motion.div variants={fadeUp}>
-        <div className="glass rounded-xl p-4 card-hover-lift card-hover-shadow-lift stat-card-gradient aurora-bg">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               { icon: BookOpen, label: 'Active Courses', value: animatedCourses, trend: 'up' as const, change: studySessions.length > 0 ? `${studySessions.length} sessions` : 'No sessions yet', idx: 0 },
@@ -2337,7 +2326,6 @@ export function Dashboard() {
               </motion.div>
             ))}
           </div>
-        </div>
       </motion.div>
 
       {/* Bookmarked Courses - horizontal scrollable pills */}
@@ -2717,7 +2705,7 @@ export function Dashboard() {
                       </Badge>
                     )}
                     {goal.status === 'done' && (
-                      <span className="text-[10px] text-emerald-600 font-medium">Done</span>
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Done</span>
                     )}
                     {goal.status === 'pending' && (
                       <span className="text-[10px] text-muted-foreground">Pending</span>
@@ -3445,30 +3433,28 @@ function DashboardPomodoroTimer() {
   const displayTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
   // SVG circular progress
-  const radius = 52;
+  const radius = 40;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (progress / 100) * circumference;
 
   return (
-    <div className="glass rounded-xl p-5 border border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 via-teal-500/5 to-transparent relative overflow-hidden">
-      {/* Subtle glow accent */}
-      <div className="absolute -top-10 -right-10 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="relative z-10 flex items-center gap-5">
+    <div className="glass rounded-xl p-4 border border-emerald-500/20 relative overflow-hidden">
+      <div className="relative z-10 flex items-center gap-4">
         {/* Circular timer */}
         <div className="relative shrink-0">
-          <svg width="128" height="128" className="-rotate-90">
+          <svg width="96" height="96" className="-rotate-90">
             <circle
-              cx="64" cy="64" r={radius}
+              cx="48" cy="48" r={radius}
               fill="none"
               stroke="currentColor"
-              strokeWidth="6"
+              strokeWidth="5"
               className="text-muted/30"
             />
             <motion.circle
-              cx="64" cy="64" r={radius}
+              cx="48" cy="48" r={radius}
               fill="none"
               stroke="url(#timerGradient)"
-              strokeWidth="6"
+              strokeWidth="5"
               strokeLinecap="round"
               strokeDasharray={circumference}
               initial={{ strokeDashoffset: circumference }}
@@ -3483,24 +3469,22 @@ function DashboardPomodoroTimer() {
             </defs>
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-2xl font-bold font-mono tabular-nums tracking-tight">{displayTime}</span>
-            <span className="text-[10px] text-muted-foreground mt-0.5">
-              {isRunning ? 'Focusing...' : secondsLeft === 0 ? 'Done!' : 'Ready'}
+            <span className="text-lg font-bold font-mono tabular-nums tracking-tight">{displayTime}</span>
+            <span className="text-[9px] text-muted-foreground">
+              {isRunning ? 'Focusing…' : secondsLeft === 0 ? 'Done!' : 'Ready'}
             </span>
           </div>
         </div>
 
-        {/* Controls & Info */}
-        <div className="flex-1 space-y-3 min-w-0">
-          <div className="flex items-center gap-2">
-            <Timer className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            <h3 className="font-semibold text-sm">Focus Timer</h3>
-            <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">
+        {/* Info — never wraps */}
+        <div className="flex-1 min-w-0 space-y-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Timer className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <h3 className="font-semibold text-sm whitespace-nowrap truncate">Focus Timer</h3>
+            <Badge variant="secondary" className="text-[10px] shrink-0 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 whitespace-nowrap">
               Session {Math.min(completedSessions + 1, TOTAL_SESSIONS)}/{TOTAL_SESSIONS}
             </Badge>
           </div>
-
-          {/* Session dots */}
           <div className="flex items-center gap-1.5">
             {Array.from({ length: TOTAL_SESSIONS }).map((_, i) => (
               <div
@@ -3515,46 +3499,47 @@ function DashboardPomodoroTimer() {
               />
             ))}
           </div>
+          <p className="text-[10px] text-muted-foreground whitespace-nowrap truncate">
+            {completedSessions > 0 ? `${completedSessions} done today` : '25 min sessions'}
+          </p>
+        </div>
 
-          {/* Buttons */}
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                if (secondsLeft === 0) {
-                  setSecondsLeft(POMODORO_SECONDS);
-                  setCompletedSessions(0);
-                  try { localStorage.setItem('synapse-dashboard-pomodoro-sessions', '0'); } catch { /* ignore */ }
-                }
-                setIsRunning(!isRunning);
-              }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs"
-            >
-              {secondsLeft === 0 ? (
-                <><RotateCcw className="h-3 w-3 mr-1.5" />Restart</>
-              ) : isRunning ? (
-                <><Pause className="h-3 w-3 mr-1.5" />Pause</>
-              ) : (
-                <><Play className="h-3 w-3 mr-1.5" />Start</>
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setIsRunning(false);
+        {/* Controls — always centered on the right */}
+        <div className="flex flex-col items-center justify-center gap-2 shrink-0">
+          <Button
+            size="sm"
+            onClick={() => {
+              if (secondsLeft === 0) {
                 setSecondsLeft(POMODORO_SECONDS);
-              }}
-              className="h-8 text-xs"
-              disabled={secondsLeft === POMODORO_SECONDS && !isRunning}
-              aria-label="Reset pomodoro timer"
-            >
-              <RotateCcw className="h-3 w-3" />
-            </Button>
-            <span className="text-[10px] text-muted-foreground ml-auto">
-              {completedSessions > 0 ? `${completedSessions} done today` : '25 min sessions'}
-            </span>
-          </div>
+                setCompletedSessions(0);
+                try { localStorage.setItem('synapse-dashboard-pomodoro-sessions', '0'); } catch { /* ignore */ }
+              }
+              setIsRunning(!isRunning);
+            }}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs w-24"
+          >
+            {secondsLeft === 0 ? (
+              <><RotateCcw className="h-3 w-3 mr-1.5" />Restart</>
+            ) : isRunning ? (
+              <><Pause className="h-3 w-3 mr-1.5" />Pause</>
+            ) : (
+              <><Play className="h-3 w-3 mr-1.5" />Start</>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setIsRunning(false);
+              setSecondsLeft(POMODORO_SECONDS);
+            }}
+            className="h-8 text-xs w-24"
+            disabled={secondsLeft === POMODORO_SECONDS && !isRunning}
+            aria-label="Reset pomodoro timer"
+          >
+            <RotateCcw className="h-3 w-3 mr-1.5" />
+            Reset
+          </Button>
         </div>
       </div>
     </div>
