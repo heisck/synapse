@@ -1896,26 +1896,29 @@ export function Dashboard() {
             <Button variant="ghost" size="icon" onClick={() => navigate('upload')} aria-label="Upload slides" title="Upload slides">
               <Upload className="h-4 w-4" />
             </Button>
-            {/* Primary action lives on the page-header line */}
-            <Button
-              size="sm"
-              className="pulse-glow shrink-0 ml-1"
-              onClick={() => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic")}
-              aria-label={activeSessionId ? 'Continue learning session' : 'Start a study session'}
-            >
-              {activeSessionId ? 'Continue' : 'Start Now'}
-              <ArrowRight className="h-4 w-4 ml-1" />
-            </Button>
           </motion.div>
         </div>
 
-        {/* One-line context under the header */}
-        <p className="text-muted-foreground text-xs mt-3 flex items-center gap-1.5">
-          <Zap className="h-3.5 w-3.5 text-primary shrink-0" />
-          {activeSessionId
-            ? 'Continue learning — pick up where you left off with your AI tutor'
-            : 'Start a session — pick a topic below or upload new study material'}
-        </p>
+        {/* Continue learning — text and its button share one line */}
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <p className="text-muted-foreground text-xs flex items-center gap-1.5 min-w-0">
+            <Zap className="h-3.5 w-3.5 text-primary shrink-0" />
+            <span className="truncate">
+              {activeSessionId
+                ? 'Continue learning — pick up where you left off with your AI tutor'
+                : 'Start a session — pick a topic below or upload new study material'}
+            </span>
+          </p>
+          <Button
+            size="sm"
+            className="pulse-glow shrink-0"
+            onClick={() => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic")}
+            aria-label={activeSessionId ? 'Continue learning session' : 'Start a study session'}
+          >
+            {activeSessionId ? 'Continue' : 'Start Now'}
+            <ArrowRight className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
       </motion.div>
 
       {/* Daily Challenge Card */}
@@ -3428,12 +3431,13 @@ function DashboardPomodoroTimer() {
     <div className="glass rounded-xl p-4 border border-emerald-500/20 relative overflow-hidden">
       {/* Session counter — round chip pinned to the card's top-right corner */}
       <span
-        className="absolute top-2.5 right-2.5 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold tabular-nums text-emerald-700 dark:text-emerald-400"
+        className="absolute top-2 right-2 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold tabular-nums text-emerald-700 dark:text-emerald-400"
         title={`Session ${Math.min(completedSessions + 1, TOTAL_SESSIONS)} of ${TOTAL_SESSIONS}`}
       >
         {Math.min(completedSessions + 1, TOTAL_SESSIONS)}/{TOTAL_SESSIONS}
       </span>
-      <div className="relative z-10 flex items-center gap-4">
+      {/* pt-6 keeps the whole content row clear of the corner chip */}
+      <div className="relative z-10 flex items-center gap-4 pt-6">
         {/* Circular timer */}
         <div className="relative shrink-0">
           <svg width="96" height="96" className="-rotate-90">
@@ -3495,8 +3499,8 @@ function DashboardPomodoroTimer() {
           </p>
         </div>
 
-        {/* Controls — centered on the right, below the corner session chip */}
-        <div className="flex flex-col items-center justify-center gap-2 shrink-0 pt-4">
+        {/* Controls — always centered on the right */}
+        <div className="flex flex-col items-center justify-center gap-2 shrink-0">
           <Button
             size="sm"
             onClick={() => {
