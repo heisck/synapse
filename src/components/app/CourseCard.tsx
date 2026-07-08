@@ -16,7 +16,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/stores/appStore';
-import { CATEGORY_CONFIG } from './UploadView';
 import type { Course } from '@/types';
 
 interface CourseCardProps {
@@ -44,8 +43,6 @@ export function CourseCard({ course, onClick }: CourseCardProps) {
   const { courseCategories, bookmarkedCourses, toggleBookmark, removeCourse } = useAppStore();
   const isBookmarked = bookmarkedCourses.includes(course.id);
   const category = courseCategories[course.id] || course.subject;
-  const config = CATEGORY_CONFIG[category];
-  const stripeColor = config?.stripeColor || 'bg-gray-400';
 
   const [isHovered, setIsHovered] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -87,9 +84,6 @@ export function CourseCard({ course, onClick }: CourseCardProps) {
         ref={cardRef}
         className="glass-hover card-shadow rounded-xl overflow-hidden border border-border/50 relative transition-all duration-300"
       >
-        {/* Category color stripe on left edge (calm color-coding, no top line) */}
-        <div className={`absolute left-0 top-0 bottom-0 w-1 z-20 ${stripeColor}`} />
-
         {/* Thumbnail */}
         <div className="relative h-32 bg-gradient-to-br from-emerald-500/20 via-teal-500/15 to-emerald-600/10 flex items-center justify-center overflow-hidden">
           <FileText className="h-10 w-10 text-primary/40 group-hover:text-primary/60 transition-colors relative z-10" />
