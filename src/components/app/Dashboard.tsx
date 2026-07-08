@@ -434,7 +434,7 @@ function StudyBuddiesChip() {
     <button
       type="button"
       onClick={() => navigate('leaderboard')}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-border/60 text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+      className="flex items-center gap-1.5 h-8 px-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
       aria-label={`${onlineCount} study ${onlineCount === 1 ? 'buddy' : 'buddies'} online — view leaderboard`}
       title="Study buddies online"
     >
@@ -1309,6 +1309,7 @@ export function Dashboard() {
   const [toastShown, setToastShown] = useState(false);
   const [newGoalText, setNewGoalText] = useState('');
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [activeCommandIndex, setActiveCommandIndex] = useState(0);
 
   // Weak areas state
   const ERROR_REPORT_STORAGE_KEY = 'synapse-error-report';
@@ -1806,6 +1807,79 @@ export function Dashboard() {
     }),
   };
 
+  const today = new Date().toISOString().split('T')[0];
+  const dailyChallengeDone = storeDailyChallenge.lastCompletedDate === today;
+  const activeWeeklyGoal = studyGoals[0];
+  const commandActions = [
+    {
+      label: activeSessionId ? 'Continue' : 'Start Now',
+      title: activeSessionId ? 'Resume your session' : 'Start a focused session',
+      description: activeSessionId
+        ? 'Pick up where you left off with your AI tutor.'
+        : 'Open a fresh tutor session around today\'s topic.',
+      icon: PlayCircle,
+      onClick: () => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic"),
+    },
+    {
+      label: 'Start Challenge',
+      title: dailyChallengeDone ? 'Challenge complete' : 'Daily challenge',
+      description: dailyChallengeDone
+        ? `You scored ${storeDailyChallenge.todayResults?.score || 0} points today.`
+        : 'Take five timed questions and keep your streak moving.',
+      icon: Target,
+      onClick: () => navigate('quiz'),
+    },
+    {
+      label: 'Generate Plan',
+      title: 'Build a weekly plan',
+      description: 'Generate a study plan from your courses, topics, and goals.',
+      icon: Sparkles,
+      onClick: () => document.getElementById('dashboard-study-plan')?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+    },
+    {
+      label: 'Resume',
+      title: lastCourse ? `Resume ${lastCourse.title}` : 'Resume learning',
+      description: lastCourse?.description || 'Return to your most recent course when one is available.',
+      icon: BookOpen,
+      onClick: () => {
+        if (lastCourse) handleCourseClick(lastCourse);
+        else navigate('courses');
+      },
+    },
+    {
+      label: 'Focus Timer',
+      title: 'Start a focus block',
+      description: 'Use a timed session to keep attention tight and measurable.',
+      icon: Timer,
+      onClick: () => navigate('focus-timer'),
+    },
+    {
+      label: 'Week Goal',
+      title: activeWeeklyGoal ? activeWeeklyGoal.label : 'Set a weekly goal',
+      description: activeWeeklyGoal
+        ? `${weeklyGoalPct}% overall progress across your weekly study goals.`
+        : 'Create a weekly target for sessions, reviews, hours, or score.',
+      icon: Flame,
+      onClick: () => document.getElementById('dashboard-weekly-goals')?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+    },
+    {
+      label: 'Day Goal',
+      title: dailyChallengeDone ? 'Today is done' : 'Finish today strong',
+      description: dailyChallengeDone
+        ? 'Your daily challenge is complete. Keep the rhythm tomorrow.'
+        : 'Use the daily challenge as today\'s minimum win.',
+      icon: CheckCircle2,
+      onClick: () => navigate('quiz'),
+    },
+  ];
+  const activeCommand = commandActions[activeCommandIndex] || commandActions[0];
+
+  const handleCommandWheel = (event: React.WheelEvent<HTMLElement>) => {
+    event.preventDefault();
+    const direction = event.deltaY > 0 || event.deltaX > 0 ? 1 : -1;
+    setActiveCommandIndex((prev) => (prev + direction + commandActions.length) % commandActions.length);
+  };
+
   return (
     <div className="relative">
       {/* Decorative animated mesh gradient background */}
@@ -1816,9 +1890,9 @@ export function Dashboard() {
       animate="animate"
       className="space-y-8 pt-2 lg:pt-4"
     >
-      {/* Floating glass-morphism header card */}
-      <motion.div variants={fadeUp} className="glass-card-hover hover-lift rounded-xl p-5">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* Greeting — bare, no card wrapper */}
+      <motion.div variants={fadeUp}>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-3 flex-wrap">
               <motion.h1
@@ -1879,128 +1953,124 @@ export function Dashboard() {
               {format(new Date(), 'EEEE, MMMM d, yyyy')}
             </motion.p>
           </div>
+
+          {/* One slim pill holds every header action — no loose separate buttons */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="flex items-center gap-1.5 shrink-0"
+            className="flex items-center gap-0.5 rounded-full border border-border/60 p-1 shrink-0"
           >
             <StudyBuddiesChip />
             <ThemeToggle />
-            <Button variant="ghost" size="icon" onClick={() => setShareModalOpen(true)} aria-label="Share stats" title="Share stats">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShareModalOpen(true)} aria-label="Share stats" title="Share stats">
               <Share2 className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleExportStudyData} aria-label="Export study data" title="Export data">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleExportStudyData} aria-label="Export study data" title="Export data">
               <Download className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => navigate('upload')} aria-label="Upload slides" title="Upload slides">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('upload')} aria-label="Upload slides" title="Upload slides">
               <Upload className="h-4 w-4" />
             </Button>
           </motion.div>
         </div>
-
-        {/* Continue learning — text and its button share one line */}
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <p className="text-muted-foreground text-xs flex items-center gap-1.5 min-w-0">
-            <Zap className="h-3.5 w-3.5 text-primary shrink-0" />
-            <span className="truncate">
-              {activeSessionId
-                ? 'Continue learning — pick up where you left off with your AI tutor'
-                : 'Start a session — pick a topic below or upload new study material'}
-            </span>
-          </p>
-          <Button
-            size="sm"
-            className="pulse-glow shrink-0"
-            onClick={() => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic")}
-            aria-label={activeSessionId ? 'Continue learning session' : 'Start a study session'}
-          >
-            {activeSessionId ? 'Continue' : 'Start Now'}
-            <ArrowRight className="h-4 w-4 ml-1" />
-          </Button>
-        </div>
       </motion.div>
 
-      {/* Daily Challenge Card */}
-      <motion.div variants={fadeUp}>
-        {(() => {
-          const today = new Date().toISOString().split('T')[0];
-          const isCompleted = storeDailyChallenge.lastCompletedDate === today;
-          const streak = storeDailyChallenge.streak;
-          const todayResults = storeDailyChallenge.todayResults;
-          const multiplier = streak >= 7 ? 3 : streak >= 3 ? 2 : 1;
+      <GradientDivider />
 
-          return (
-            <div
-              className="glass rounded-xl p-6 cursor-pointer group relative overflow-hidden neon-border magnetic-hover"
-              onClick={() => navigate('quiz')}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('quiz'); } }}
-              aria-label="Open daily challenge quiz"
+      {/* Command dial — left pane shows the selected action's name/description,
+          right side is a coverflow-style wheel scrolled or swiped through
+          Start Now / Start Challenge / Generate Plan / Resume / Focus Timer /
+          Week Goal / Day Goal. Selecting an item centers it; the centered
+          item is what actually runs. */}
+      <motion.div variants={fadeUp} className="flex items-center gap-4">
+        <div className="flex-1 min-w-0">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeCommand.label}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2 }}
             >
-              <div className="relative z-10">
-                {/* Header row: title + chips left, streak & action right */}
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <p className="text-sm font-medium text-primary whitespace-nowrap">Daily Challenge</p>
-                    {isCompleted && todayResults && (
-                      <div className="flex items-center gap-0.5">
-                        {[1, 2, 3].map((s) => (
-                          <svg key={s} width="14" height="14" viewBox="0 0 24 24" fill={s <= todayResults.stars ? '#f59e0b' : 'none'} stroke={s <= todayResults.stars ? '#f59e0b' : '#a1a1aa'} strokeWidth="2">
-                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                          </svg>
-                        ))}
-                      </div>
-                    )}
-                    {multiplier > 1 && (
-                      <span className="flex items-center gap-1 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                        <Zap className="h-3 w-3" />
-                        {multiplier}x
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {streak > 0 && (
-                      <motion.div
-                        animate={{ scale: [1, 1.1, 1] }}
-                        transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-                        className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20"
-                      >
-                        <Flame className="h-4 w-4 text-orange-500" />
-                        <span className="text-sm font-bold text-orange-600 dark:text-orange-400">{streak}</span>
-                      </motion.div>
-                    )}
-                    {!isCompleted ? (
-                      <Button size="sm" className="pulse-glow glow-pulse" aria-label="Start daily challenge">
-                        Start Challenge
-                        <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
-                      </Button>
-                    ) : (
-                      <span className="text-sm font-bold gradient-text whitespace-nowrap">{todayResults?.score || 0} pts</span>
-                    )}
-                  </div>
-                </div>
-                {/* Description spans the full width below the header row */}
-                {isCompleted && todayResults ? (
-                  <div className="mt-1.5">
-                    <h2 className="text-lg font-bold">Completed!</h2>
-                    <p className="text-muted-foreground text-sm">
-                      {todayResults.score}/{todayResults.total} correct -- Come back tomorrow
-                    </p>
-                  </div>
-                ) : (
-                  <div className="mt-1.5">
-                    <h2 className="text-lg font-bold">Ready to challenge yourself?</h2>
-                    <p className="text-muted-foreground text-sm">
-                      5 questions, 3 minutes. Beat the clock!
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
+              <h2 className="font-semibold text-base truncate">{activeCommand.title}</h2>
+              <p className="text-muted-foreground text-sm line-clamp-1">{activeCommand.description}</p>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        <motion.div
+          className="relative h-16 w-[220px] sm:w-[260px] shrink-0"
+          style={{ perspective: 600 }}
+          onWheel={handleCommandWheel}
+          role="listbox"
+          aria-label="Quick actions"
+          aria-activedescendant={`command-${activeCommandIndex}`}
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowRight') {
+              e.preventDefault();
+              setActiveCommandIndex((prev) => (prev + 1) % commandActions.length);
+            } else if (e.key === 'ArrowLeft') {
+              e.preventDefault();
+              setActiveCommandIndex((prev) => (prev - 1 + commandActions.length) % commandActions.length);
+            } else if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              activeCommand.onClick();
+            }
+          }}
+          onPanEnd={(_, info) => {
+            if (Math.abs(info.offset.x) > 32) {
+              const dir = info.offset.x < 0 ? 1 : -1;
+              setActiveCommandIndex((prev) => (prev + dir + commandActions.length) % commandActions.length);
+            }
+          }}
+        >
+          {commandActions.map((action, i) => {
+            let offset = i - activeCommandIndex;
+            const n = commandActions.length;
+            if (offset > n / 2) offset -= n;
+            if (offset < -n / 2) offset += n;
+            const abs = Math.abs(offset);
+            if (abs > 2) return null;
+            const isActive = offset === 0;
+            const Icon = action.icon;
+            return (
+              <motion.button
+                key={action.label}
+                id={`command-${i}`}
+                role="option"
+                aria-selected={isActive}
+                aria-label={action.title}
+                type="button"
+                onClick={() => (isActive ? activeCommand.onClick() : setActiveCommandIndex(i))}
+                initial={false}
+                animate={{
+                  x: offset * 46,
+                  scale: 1 - abs * 0.2,
+                  rotateY: offset * -30,
+                  opacity: 1 - abs * 0.4,
+                }}
+                transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+                style={{ zIndex: 10 - abs, transformStyle: 'preserve-3d' }}
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1"
+              >
+                <span
+                  className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+                    isActive
+                      ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
+                      : 'bg-muted/70 text-muted-foreground'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className={`text-[10px] font-medium whitespace-nowrap ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>
+                  {action.label}
+                </span>
+              </motion.button>
+            );
+          })}
+        </motion.div>
       </motion.div>
 
       {/* Your Study Plan - AI Generated */}

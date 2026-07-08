@@ -17,10 +17,26 @@ import {
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerTitle,
+} from '@/components/ui/drawer';
 
 const ONBOARDING_STEP_KEY = 'synapselearn_onboarding_step';
 
 const TOTAL_STEPS = 4;
+
+type OnboardingPlatform = 'ios' | 'android' | 'web';
+
+function getOnboardingPlatform(): OnboardingPlatform {
+  if (typeof navigator === 'undefined') return 'web';
+  const ua = navigator.userAgent.toLowerCase();
+  if (/android/.test(ua)) return 'android';
+  if (/iphone|ipad|ipod/.test(ua)) return 'ios';
+  return 'web';
+}
 
 const learningStyles = [
   {
@@ -28,32 +44,24 @@ const learningStyles = [
     label: 'Visual',
     icon: Eye,
     description: 'Learn best with diagrams, charts, and visual aids',
-    color: 'from-emerald-500 to-teal-500',
-    bgLight: 'bg-emerald-50 dark:bg-emerald-950/30',
   },
   {
     id: 'auditory' as const,
     label: 'Auditory',
     icon: Ear,
     description: 'Prefer listening, discussions, and verbal explanations',
-    color: 'from-violet-500 to-purple-500',
-    bgLight: 'bg-violet-50 dark:bg-violet-950/30',
   },
   {
     id: 'reading' as const,
     label: 'Reading / Writing',
     icon: BookOpen,
     description: 'Excel with text, notes, and written materials',
-    color: 'from-amber-500 to-orange-500',
-    bgLight: 'bg-amber-50 dark:bg-amber-950/30',
   },
   {
     id: 'kinesthetic' as const,
     label: 'Kinesthetic',
     icon: Hand,
     description: 'Learn by doing, hands-on practice, and movement',
-    color: 'from-rose-500 to-pink-500',
-    bgLight: 'bg-rose-50 dark:bg-rose-950/30',
   },
 ];
 
@@ -332,10 +340,10 @@ function LearningStyleStep({
               transition={{ delay: i * 0.08, type: 'spring', stiffness: 300, damping: 25 }}
               whileTap={{ scale: 0.97 }}
               onClick={() => onToggle(style.id)}
-              className={`relative text-left p-4 rounded-xl border-2 transition-colors duration-200 ${style.bgLight} ${
+              className={`relative text-left p-4 rounded-xl border transition-colors duration-200 ${
                 isSelected
-                  ? `border-primary bg-primary/5 shadow-sm`
-                  : 'border-transparent hover:border-border'
+                  ? 'border-primary/60 bg-primary/5'
+                  : 'border-border/70 bg-background/40 hover:border-primary/30 hover:bg-muted/30'
               }`}
             >
               {isSelected && (
@@ -348,11 +356,7 @@ function LearningStyleStep({
                   <Check className="h-3 w-3" />
                 </motion.div>
               )}
-              <div
-                className={`flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br ${style.color} mb-3`}
-              >
-                <style.icon className="h-5 w-5 text-white" />
-              </div>
+              <style.icon className={`mb-3 h-6 w-6 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
               <h3 className="font-semibold text-sm">{style.label}</h3>
               <p className="text-xs text-muted-foreground mt-1">{style.description}</p>
             </motion.button>
@@ -634,6 +638,7 @@ export function OnboardingFlow() {
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [selectedPace, setSelectedPace] = useState<string>('steady');
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [platform] = useState<OnboardingPlatform>(() => getOnboardingPlatform());
 
   // Persist step to localStorage whenever it changes
   useEffect(() => {
@@ -708,13 +713,25 @@ export function OnboardingFlow() {
   }, [handleFinish]);
 
   return (
-    <div className="min-h-screen mesh-gradient flex items-center justify-center p-6">
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass rounded-2xl p-6 sm:p-8 max-w-xl w-full"
+    <div className="relative min-h-screen overflow-hidden mesh-gradient">
+      <Drawer
+        open
+        dismissible={false}
+        modal={false}
+        direction="bottom"
+        shouldScaleBackground={platform === 'ios'}
       >
-        <StepIndicator currentStep={step} />
+        <DrawerContent
+          aria-describedby="onboarding-drawer-description"
+          className={`onboarding-drawer onboarding-drawer-${platform} mx-auto h-[min(86dvh,720px)] max-h-[calc(100dvh-env(safe-area-inset-top,0px)-0.75rem)] w-full max-w-2xl overflow-hidden border-border/70 bg-background/95 shadow-[0_-24px_80px_rgba(4,120,87,0.18)] backdrop-blur-2xl`}
+        >
+          <DrawerTitle className="sr-only">Welcome to SynapseLearn</DrawerTitle>
+          <DrawerDescription id="onboarding-drawer-description" className="sr-only">
+            Complete the SynapseLearn onboarding steps to personalize your learning experience.
+          </DrawerDescription>
+
+          <div className="flex min-h-0 flex-1 flex-col px-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] sm:px-6">
+            <StepIndicator currentStep={step} />
 
         {/* Resume message */}
         <AnimatePresence>
@@ -731,7 +748,7 @@ export function OnboardingFlow() {
           )}
         </AnimatePresence>
 
-        <div className="mt-4 overflow-hidden">
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-4">
           <AnimatePresence initial={false} custom={direction} mode="wait">
             {step === 1 && <WelcomeStep key="s1" onNext={goNext} onQuickStart={handleQuickStart} />}
             {step === 2 && (
@@ -767,8 +784,10 @@ export function OnboardingFlow() {
               />
             )}
           </AnimatePresence>
-        </div>
-      </motion.div>
+            </div>
+          </div>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }
