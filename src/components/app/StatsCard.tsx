@@ -43,11 +43,15 @@ export function StatsCard({ icon: Icon, label, value, trend, change, index = 0 }
             {animatedValue}
           </motion.p>
         </div>
-        {/* Right: trend chip, vertically centered */}
+        {/* Right: trend chip, vertically centered; truncates instead of
+            overflowing into the number when the tile is narrow */}
         {trend && change && (
-          <span className={`flex items-center gap-0.5 shrink-0 self-center text-xs font-medium whitespace-nowrap ${trend === 'up' ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
-            {trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-            {change}
+          <span
+            title={change}
+            className={`flex items-center gap-0.5 min-w-0 max-w-[45%] self-center text-xs font-medium ${trend === 'up' ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}
+          >
+            {trend === 'up' ? <TrendingUp className="h-3 w-3 shrink-0" /> : <TrendingDown className="h-3 w-3 shrink-0" />}
+            <span className="truncate">{change}</span>
           </span>
         )}
       </div>

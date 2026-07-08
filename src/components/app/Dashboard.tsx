@@ -2255,17 +2255,18 @@ export function Dashboard() {
       <motion.div variants={fadeUp} className="space-y-3">
         <h3 className="text-sm font-medium text-muted-foreground">Your Topics</h3>
         {topicChips.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
+          /* Uniform grid: every topic tile has the same shape and size */
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {topicChips.map((topic) => (
-              <motion.button
+              <button
                 key={topic}
+                type="button"
                 onClick={() => handleStartSession(topic)}
-                whileHover={{ rotate: [0, -2, 2, -1, 0] }}
-                transition={{ duration: 0.4, ease: 'easeInOut' }}
-                className="rounded-full border border-border bg-background/80 px-4 py-2 text-sm font-medium hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
+                title={topic}
+                className="h-10 rounded-lg border border-border bg-background/80 px-3 text-sm font-medium truncate hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
               >
                 {topic}
-              </motion.button>
+              </button>
             ))}
           </div>
         ) : (
