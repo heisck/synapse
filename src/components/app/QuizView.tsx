@@ -2204,7 +2204,7 @@ export function QuizView() {
 
   // ---------- Question Screen ----------
   return (
-    <div className="pl-14 lg:pl-0">
+    <div className="">
       <div className="relative">
         {/* Progress bar at the very top of quiz view */}
         {studyMode === 'quiz' && questions.length > 0 && (

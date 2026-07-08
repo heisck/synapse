@@ -2,7 +2,7 @@
 
 import { Suspense, lazy, useState, useRef, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Keyboard, Timer, Bell, Flame, Target, Lightbulb, Clock, CheckCheck, Trophy, BookOpen } from 'lucide-react';
+import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Search, BookMarked, Sparkles, FileUp, ArrowUp, ArrowDown, ArrowRight, Settings, Timer, Bell, Flame, Target, Lightbulb, Clock, CheckCheck, Trophy, BookOpen } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { AppSidebar } from './AppSidebar';
 import { StoreInitializer } from './StoreInitializer';
@@ -451,79 +451,16 @@ function SearchModal() {
   );
 }
 
-const shortcutGroups = [
-  {
-    title: 'Navigation',
-    shortcuts: [
-      { keys: ['⌘', '1'], description: 'Dashboard', detail: 'Go to main dashboard' },
-      { keys: ['⌘', '2'], description: 'AI Tutor', detail: 'Open AI tutoring session' },
-      { keys: ['⌘', '3'], description: 'Upload', detail: 'Upload slide files' },
-      { keys: ['⌘', '4'], description: 'Quiz', detail: 'Start a quiz session' },
-      { keys: ['⌘', '5'], description: 'Notes', detail: 'View and manage notes' },
-      { keys: ['⌘', '6'], description: 'Profile', detail: 'View learner profile' },
-      { keys: ['⌘', '7'], description: 'Settings', detail: 'App settings & preferences' },
-      { keys: ['⌘', '8'], description: 'Focus Timer', detail: 'Pomodoro focus timer' },
-    ],
-  },
-  {
-    title: 'Quick Actions',
-    shortcuts: [
-      { keys: ['⌘', 'N'], description: 'New Session', detail: 'Start a new AI tutor session' },
-      { keys: ['⌘', 'U'], description: 'Upload Slides', detail: 'Jump to slide upload view' },
-      { keys: ['⌘', 'Q'], description: 'Take Quiz', detail: 'Jump to quiz mode' },
-      { keys: ['⌘', 'D'], description: 'Dashboard', detail: 'Return to dashboard' },
-    ],
-  },
-  {
-    title: 'General',
-    shortcuts: [
-      { keys: ['⌘', 'K'], description: 'Search', detail: 'Open command palette' },
-      { keys: ['⌘', ','], description: 'Shortcuts', detail: 'Show this dialog' },
-      { keys: ['?'], description: 'Shortcuts', detail: 'Toggle shortcuts panel' },
-      { keys: ['Esc'], description: 'Close Dialog', detail: 'Close current dialog or modal' },
-    ],
-  },
-  {
-    title: 'Quiz',
-    shortcuts: [
-      { keys: ['↑', '↓'], description: 'Navigate options', detail: 'Move between answer choices' },
-      { keys: ['Enter'], description: 'Select option', detail: 'Confirm selected answer' },
-      { keys: ['1', '2', '3', '4'], description: 'Select answer', detail: 'Quick-select an answer option' },
-    ],
-  },
-];
-
+// Silent global keyboard shortcuts (Cmd+1..8 navigation, Cmd+N/U/Q/D quick
+// actions). No discoverability UI — keyboard shortcuts assume a keyboard,
+// which pairs with a desktop workflow; there's nothing to show on phones
+// or via a floating dialog that just gets in the way.
 function KeyboardShortcuts() {
   const { navigate, setActiveTopic, setActiveSession } = useAppStore();
-  const [open, setOpen] = useState(false);
 
-  // Navigation shortcuts + Cmd+, to open this dialog + Escape to close + Quick Actions
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-      // Escape key - close shortcuts dialog (and any open shadcn Dialog)
-      if (e.key === 'Escape') {
-        if (open) {
-          e.preventDefault();
-          setOpen(false);
-        }
-        return;
-      }
-
-      // ? key (Shift+/) without Cmd/Ctrl/Alt opens shortcuts dialog
-      if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault();
-        setOpen((v) => !v);
-        return;
-      }
-
-      // Cmd+, opens shortcuts dialog
-      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
-        e.preventDefault();
-        setOpen((v) => !v);
-        return;
-      }
 
       // Navigation shortcuts
       if ((e.metaKey || e.ctrlKey) && e.key === '1') { e.preventDefault(); navigate('dashboard'); }
@@ -548,79 +485,9 @@ function KeyboardShortcuts() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [navigate, open, setActiveTopic, setActiveSession]);
+  }, [navigate, setActiveTopic, setActiveSession]);
 
-  return (
-    <>
-      {/* Floating ? button */}
-      <motion.button
-        onClick={() => setOpen(true)}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        className="fixed bottom-6 right-6 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background shadow-md cursor-pointer"
-        aria-label="Keyboard shortcuts"
-      >
-        <span className="text-sm font-bold">?</span>
-      </motion.button>
-
-      {/* Shortcuts Dialog */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-lg p-0 gap-0 overflow-hidden mesh-gradient">
-          <DialogHeader className="px-6 pt-6 pb-4">
-            <DialogTitle className="flex items-center gap-2 text-lg">
-              <Keyboard className="h-5 w-5 text-primary" />
-              Keyboard Shortcuts
-            </DialogTitle>
-          </DialogHeader>
-          <div className="px-6 pb-6 space-y-5 max-h-[60vh] overflow-y-auto">
-            {shortcutGroups.map((group, gi) => (
-              <motion.div
-                key={group.title}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: gi * 0.08 }}
-                className="space-y-2"
-              >
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
-                  <span className="h-px flex-1 bg-emerald-500/20" />
-                  {group.title}
-                  <span className="h-px flex-1 bg-emerald-500/20" />
-                </h4>
-                <div className="space-y-1">
-                  {group.shortcuts.map((shortcut, si) => (
-                    <motion.div
-                      key={si}
-                      initial={{ opacity: 0, x: -8 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.25, delay: gi * 0.08 + si * 0.03 }}
-                      className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-accent/50 transition-colors"
-                    >
-                      <div className="min-w-0 flex-1 mr-3">
-                        <span className="text-sm text-foreground/80">{shortcut.description}</span>
-                        {'detail' in shortcut && shortcut.detail && (
-                          <p className="text-[11px] text-muted-foreground/60 mt-0.5 truncate">{shortcut.detail}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {shortcut.keys.map((key, ki) => (
-                          <span key={ki} className="flex items-center">
-                            {ki > 0 && <span className="text-xs text-muted-foreground/50 mx-0.5">+</span>}
-                            <kbd className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-md border border-border/60 bg-muted/60 backdrop-blur-sm px-1.5 font-mono text-[11px] font-medium text-foreground/70 shadow-sm">
-                              {key}
-                            </kbd>
-                          </span>
-                        ))}
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
+  return null;
 }
 
 // ---------- Notification Bell ----------
@@ -803,6 +670,7 @@ const viewTransitionConfig = { type: 'tween' as const, duration: 0.3, ease: 'eas
 export function AppShell() {
   const { currentView, navigate } = useAppStore();
   const compactMode = useAppStore((s) => s.settings.compactMode);
+  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const isFullViewport = fullViewportViews.includes(currentView);
   const [transitioning, setTransitioning] = useState(false);
   const prevViewRef = useRef(currentView);
@@ -934,7 +802,9 @@ export function AppShell() {
                 }}
               />
               <TransitionIndicator show={transitioning} />
-              <div className={`mx-auto max-w-6xl p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] lg:p-8 ${currentView === 'tutor' ? '!max-w-none !p-0' : ''}`}>
+              {/* Content cap grows when the sidebar is collapsed so the
+                  freed-up width actually gets used instead of leaving a gap */}
+              <div className={`mx-auto ${sidebarCollapsed ? 'max-w-[1600px]' : 'max-w-6xl'} p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] lg:p-8 ${currentView === 'tutor' ? '!max-w-none !p-0' : ''}`}>
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={currentView}

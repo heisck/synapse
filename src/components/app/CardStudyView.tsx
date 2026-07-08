@@ -267,7 +267,7 @@ export function CardStudyView() {
 
   if (loading || generating) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center pl-14 lg:pl-0">
+      <div className="flex min-h-[60vh] items-center justify-center">
         <div className="glass rounded-2xl p-8 flex flex-col items-center gap-4 max-w-sm text-center">
           <motion.div
             animate={{ rotate: 360 }}
@@ -290,7 +290,7 @@ export function CardStudyView() {
 
   if (error || total === 0) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center pl-14 lg:pl-0">
+      <div className="flex min-h-[60vh] items-center justify-center">
         <div className="glass rounded-2xl p-8 flex flex-col items-center gap-4 max-w-sm text-center">
           <Layers className="h-10 w-10 text-muted-foreground/40" />
           <p className="text-lg font-semibold">No cards available</p>
@@ -327,7 +327,7 @@ export function CardStudyView() {
   const cardChat = chatByCard[currentQ.id] || [];
 
   return (
-    <div className="space-y-4 pt-2 lg:pt-4 pl-14 lg:pl-0">
+    <div className="space-y-4 pt-2 lg:pt-4">
       {/* Header */}
       <div className="glass rounded-xl p-4 flex items-center gap-3">
         <Button

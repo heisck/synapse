@@ -799,7 +799,7 @@ export function UploadView() {
       variants={stagger}
       initial="initial"
       animate="animate"
-      className="space-y-6 pt-2 lg:pt-4 pl-14 lg:pl-0"
+      className="space-y-6 pt-2 lg:pt-4"
     >
       {/* Gradient header */}
       <motion.div

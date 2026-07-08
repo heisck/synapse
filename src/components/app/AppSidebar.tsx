@@ -448,11 +448,12 @@ export function AppSidebar() {
 
   return (
     <TooltipProvider>
-      {/* Mobile hamburger */}
-      <div className="fixed top-4 left-4 z-50 lg:hidden">
+      {/* Mobile menu trigger — bottom-right so it never sits over a page's
+          header content (top-left was getting covered on phones) */}
+      <div className="fixed bottom-6 right-6 z-50 lg:hidden">
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
           <SheetTrigger asChild>
-            <Button variant="outline" size="icon" className="glass h-10 w-10 rounded-full relative">
+            <Button variant="outline" size="icon" className="glass h-11 w-11 rounded-full shadow-lg relative">
               <Menu className="h-5 w-5" />
               {hasReminder && (
                 <motion.span
@@ -492,16 +493,23 @@ export function AppSidebar() {
         </Sheet>
       </div>
 
-      {/* Collapsed state: floating button to bring the sidebar back */}
+      {/* Collapsed state: invisible hover strip along the left edge. The
+          sidebar itself disappears entirely; hovering near the edge reveals
+          a small trigger, and clicking it brings the sidebar back. */}
       {sidebarCollapsed && (
-        <button
-          type="button"
-          onClick={() => setSidebarCollapsed(false)}
-          className="hidden lg:flex fixed top-4 left-4 z-50 h-9 w-9 items-center justify-center rounded-full bg-background/95 border border-border shadow-lg backdrop-blur-md hover:bg-accent transition-colors"
-          aria-label="Show sidebar"
+        <div
+          className="group hidden lg:block fixed left-0 top-0 h-screen w-3 z-50"
+          aria-hidden="false"
         >
-          <PanelLeftOpen className="h-4 w-4" />
-        </button>
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(false)}
+            className="absolute top-4 left-2 h-9 w-9 flex items-center justify-center rounded-full bg-background/95 border border-border shadow-lg backdrop-blur-md opacity-0 -translate-x-3 pointer-events-none transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto focus-visible:opacity-100 focus-visible:translate-x-0 focus-visible:pointer-events-auto"
+            aria-label="Show sidebar"
+          >
+            <PanelLeftOpen className="h-4 w-4" />
+          </button>
+        </div>
       )}
 
       {/* Desktop sidebar - glass morphism */}

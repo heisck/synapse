@@ -44,7 +44,7 @@ export function CoursesView() {
   }, [courses, courseCategories, selectedCategory, searchQuery]);
 
   return (
-    <motion.div variants={stagger} initial="initial" animate="animate" className="space-y-6 pt-2 lg:pt-4 pl-14 lg:pl-0">
+    <motion.div variants={stagger} initial="initial" animate="animate" className="space-y-6 pt-2 lg:pt-4">
       <motion.div variants={fadeUp} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold gradient-text">My Courses</h1>

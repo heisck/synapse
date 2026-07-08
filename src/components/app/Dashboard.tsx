@@ -1817,7 +1817,7 @@ export function Dashboard() {
       className="space-y-8 pt-2 lg:pt-4"
     >
       {/* Floating glass-morphism header card */}
-      <motion.div variants={fadeUp} className="glass-card-hover hover-lift rounded-xl p-5 pl-14 lg:pl-5">
+      <motion.div variants={fadeUp} className="glass-card-hover hover-lift rounded-xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-3 flex-wrap">

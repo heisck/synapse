@@ -534,7 +534,7 @@ export function LeaderboardView() {
     >
       {/* Header */}
       <motion.div variants={fadeUp} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="space-y-1 pl-14 lg:pl-0">
+        <div className="space-y-1">
           <motion.h1
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -549,7 +549,7 @@ export function LeaderboardView() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="flex items-center gap-2 pl-14 lg:pl-0"
+          className="flex items-center gap-2"
         >
           <Button variant="outline" size="sm" onClick={handleShareStats} className="neon-border magnetic-hover">
             <Share2 className="h-4 w-4 mr-2" />

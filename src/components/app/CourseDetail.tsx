@@ -371,7 +371,7 @@ export function CourseDetail() {
       variants={stagger}
       initial="initial"
       animate="animate"
-      className="space-y-4 pt-2 lg:pt-4 pl-14 lg:pl-0"
+      className="space-y-4 pt-2 lg:pt-4"
     >
       {/* Gradient Header Banner */}
       <motion.div

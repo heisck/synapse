@@ -571,7 +571,7 @@ export function ProfileView() {
       variants={stagger}
       initial="initial"
       animate="animate"
-      className="space-y-6 pt-2 lg:pt-4 max-w-3xl mx-auto pl-14 lg:pl-0 pb-8"
+      className="space-y-6 pt-2 lg:pt-4 max-w-3xl mx-auto pb-8"
     >
       {/* ════════════════════════════════════════════
           1. Profile Header
