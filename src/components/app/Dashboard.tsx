@@ -3426,6 +3426,13 @@ function DashboardPomodoroTimer() {
 
   return (
     <div className="glass rounded-xl p-4 border border-emerald-500/20 relative overflow-hidden">
+      {/* Session counter — round chip pinned to the card's top-right corner */}
+      <span
+        className="absolute top-2.5 right-2.5 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold tabular-nums text-emerald-700 dark:text-emerald-400"
+        title={`Session ${Math.min(completedSessions + 1, TOTAL_SESSIONS)} of ${TOTAL_SESSIONS}`}
+      >
+        {Math.min(completedSessions + 1, TOTAL_SESSIONS)}/{TOTAL_SESSIONS}
+      </span>
       <div className="relative z-10 flex items-center gap-4">
         {/* Circular timer */}
         <div className="relative shrink-0">
@@ -3468,9 +3475,6 @@ function DashboardPomodoroTimer() {
           <div className="flex items-center gap-2 min-w-0">
             <Timer className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <h3 className="font-semibold text-sm whitespace-nowrap truncate">Focus Timer</h3>
-            <Badge variant="secondary" className="text-[10px] shrink-0 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 whitespace-nowrap">
-              Session {Math.min(completedSessions + 1, TOTAL_SESSIONS)}/{TOTAL_SESSIONS}
-            </Badge>
           </div>
           <div className="flex items-center gap-1.5">
             {Array.from({ length: TOTAL_SESSIONS }).map((_, i) => (
@@ -3491,8 +3495,8 @@ function DashboardPomodoroTimer() {
           </p>
         </div>
 
-        {/* Controls — always centered on the right */}
-        <div className="flex flex-col items-center justify-center gap-2 shrink-0">
+        {/* Controls — centered on the right, below the corner session chip */}
+        <div className="flex flex-col items-center justify-center gap-2 shrink-0 pt-4">
           <Button
             size="sm"
             onClick={() => {
@@ -3772,8 +3776,7 @@ function QuickReviewCards() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
             whileHover={{ scale: 1.02 }}
-            className="glass rounded-xl p-3 cursor-pointer card-hover-shadow-lift border-l-4"
-            style={{ borderLeftColor: c.level < 30 ? '#ef4444' : c.level < 50 ? '#f59e0b' : '#10b981' }}
+            className="glass rounded-xl p-3 cursor-pointer card-hover-shadow-lift"
             onClick={() => navigate('tutor')}
           >
             <div className="flex items-center justify-between mb-1.5">
