@@ -57,3 +57,6 @@ server.log
 # Playwright
 /test-results/
 /playwright-report/
+
+# generated a11y scan output (regenerate with scripts/a11y-scan.mjs)
+/a11y-report.json

@@ -888,11 +888,12 @@ export function TutorView() {
       {/* Header - Frosted glass */}
       <header className="glass-header flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 z-10">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-          {activeTopic && (
-            <h1 className="text-base sm:text-lg font-semibold truncate min-w-0" title={activeTopic}>
-              {activeTopic}
-            </h1>
-          )}
+          <h1
+            className={activeTopic ? 'text-base sm:text-lg font-semibold truncate min-w-0' : 'sr-only'}
+            title={activeTopic || undefined}
+          >
+            {activeTopic || 'AI Tutor'}
+          </h1>
           <Badge variant="secondary" className={`${getPhaseColor(sessionPhase)} shrink-0 hidden sm:inline-flex`}>
             {sessionPhase}
           </Badge>
