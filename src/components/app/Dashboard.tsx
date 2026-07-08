@@ -1896,40 +1896,26 @@ export function Dashboard() {
             <Button variant="ghost" size="icon" onClick={() => navigate('upload')} aria-label="Upload slides" title="Upload slides">
               <Upload className="h-4 w-4" />
             </Button>
+            {/* Primary action lives on the page-header line */}
+            <Button
+              size="sm"
+              className="pulse-glow shrink-0 ml-1"
+              onClick={() => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic")}
+              aria-label={activeSessionId ? 'Continue learning session' : 'Start a study session'}
+            >
+              {activeSessionId ? 'Continue' : 'Start Now'}
+              <ArrowRight className="h-4 w-4 ml-1" />
+            </Button>
           </motion.div>
         </div>
 
-        {/* Continue Learning — merged into the greeting card as its primary action */}
-        <div
-          className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between rounded-lg border border-primary/15 bg-primary/5 px-4 py-3 cursor-pointer group"
-          onClick={() => handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic")}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleStartSession(activeSessionId ? 'Continue Session' : "Today's Topic"); } }}
-          aria-label={activeSessionId ? 'Continue learning session' : 'Start a study session'}
-        >
-          <div className="w-full min-w-0">
-            {/* Header row: title left, button right on the same line */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <Zap className="h-4 w-4 shrink-0 text-primary" />
-                <h2 className="text-sm font-bold truncate">
-                  {activeSessionId ? 'Continue Learning' : 'Start a Session'}
-                </h2>
-              </div>
-              <Button size="sm" className="pulse-glow shrink-0">
-                {activeSessionId ? 'Continue' : 'Start Now'}
-                <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
-              </Button>
-            </div>
-            {/* Description spans the full width below */}
-            <p className="text-muted-foreground text-xs mt-1">
-              {activeSessionId
-                ? 'Pick up where you left off with your AI tutor'
-                : 'Pick a topic below or upload new study material'}
-            </p>
-          </div>
-        </div>
+        {/* One-line context under the header */}
+        <p className="text-muted-foreground text-xs mt-3 flex items-center gap-1.5">
+          <Zap className="h-3.5 w-3.5 text-primary shrink-0" />
+          {activeSessionId
+            ? 'Continue learning — pick up where you left off with your AI tutor'
+            : 'Start a session — pick a topic below or upload new study material'}
+        </p>
       </motion.div>
 
       {/* Daily Challenge Card */}
