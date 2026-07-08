@@ -164,8 +164,8 @@ function TypewriterText({ text, speed = 40, className = '' }: { text: string; sp
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    setDisplayed('');
-    setDone(false);
+    // The parent keys this component by `text`, so a text/speed change
+    // remounts a fresh instance instead of needing to reset state here.
     let i = 0;
     const timer = setInterval(() => {
       i++;
@@ -754,7 +754,17 @@ function BrainLoader() {
 
 // Study Plan Widget Component
 function StudyPlanWidget({ courses }: { courses: { id: string; title: string; subject: string }[] }) {
-  const [plan, setPlan] = useState<StudyPlanData | null>(null);
+  // Lazy-initialized straight from localStorage — avoids an extra render (and
+  // the earlier effect-based approach synchronously setting state on mount).
+  const [plan, setPlan] = useState<StudyPlanData | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const saved = localStorage.getItem('synapse-study-plan');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
@@ -769,16 +779,6 @@ function StudyPlanWidget({ courses }: { courses: { id: string; title: string; su
   const [goalInput, setGoalInput] = useState('');
   const [pace, setPace] = useState('moderate');
   const [style, setStyle] = useState('balanced');
-
-  // Load persisted plan
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('synapse-study-plan');
-      if (saved) {
-        setPlan(JSON.parse(saved));
-      }
-    } catch { /* ignore */ }
-  }, []);
 
   const courseTopics = useMemo(() => {
     return courses.map((c) => c.title);
@@ -1827,7 +1827,7 @@ export function Dashboard() {
                 transition={{ duration: 0.6, delay: 0.1, ease: 'easeOut' }}
                 className="text-2xl lg:text-3xl font-bold"
               >
-                <TypewriterText text={firstName ? `${greeting}, ` : greeting} speed={40} />
+                <TypewriterText key={firstName ? `${greeting}, ` : greeting} text={firstName ? `${greeting}, ` : greeting} speed={40} />
                 {firstName && (
                   <motion.span
                     initial={{ opacity: 0, x: 10 }}

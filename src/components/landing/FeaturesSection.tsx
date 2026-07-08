@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { motion, useInView, type Variants } from 'framer-motion';
@@ -75,61 +75,48 @@ const cardVariants: Variants = {
 function FeatureCard({
   feature,
   index,
+  isActive,
+  onActivate,
 }: {
   feature: (typeof features)[0];
   index: number;
+  isActive: boolean;
+  onActivate: (index: number) => void;
 }) {
   const Icon = feature.icon;
-  const cardRef = useRef<HTMLDivElement>(null);
-  const [tiltStyle, setTiltStyle] = useState({ transform: 'translateY(0px)' });
-
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    const y = (e.clientY - rect.top) / rect.height;
-    const translateY = (0.5 - y) * -6;
-    setTiltStyle({ transform: `translateY(${translateY}px)` });
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    setTiltStyle({ transform: 'translateY(0px)' });
-  }, []);
 
   return (
     <motion.div
       variants={cardVariants}
-      className="group relative"
-      whileHover={{ y: -6 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-      ref={cardRef}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
+      className={`feature-panel group relative min-w-[11rem] flex-1 focus-within:z-10 ${isActive ? 'is-active' : ''}`}
     >
-      {/* Glow border overlay */}
-      <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-br from-emerald-500/0 via-teal-400/0 to-emerald-500/0 group-hover:from-emerald-500/40 group-hover:via-teal-400/30 group-hover:to-emerald-500/40 dark:group-hover:from-emerald-400/50 dark:group-hover:via-cyan-400/40 dark:group-hover:to-emerald-400/50 transition-all duration-500 blur-[1px] opacity-0 group-hover:opacity-100 group-hover:shadow-[0_0_20px_rgba(16,185,129,0.15)] dark:group-hover:shadow-[0_0_30px_rgba(16,185,129,0.3),0_0_60px_rgba(16,185,129,0.1)]" />
-
       <div
-        className="relative rounded-2xl glass p-6 sm:p-8 h-full transition-all duration-500 overflow-hidden dark:backdrop-blur-[24px] dark:bg-white/[0.04] dark:border-white/[0.12]"
-        style={tiltStyle}
+        role="button"
+        tabIndex={0}
+        aria-expanded={isActive}
+        onClick={() => onActivate(index)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onActivate(index);
+          }
+        }}
+        className="feature-panel-button group/feature relative flex h-full min-h-[21rem] w-full cursor-pointer flex-col items-center justify-center overflow-hidden px-5 py-8 text-center outline-none transition-colors duration-500 focus-visible:ring-2 focus-visible:ring-emerald-400/70"
       >
-        {/* Subtle background glow on hover */}
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-500/0 to-teal-500/0 group-hover:from-emerald-500/[0.03] group-hover:to-teal-500/[0.03] dark:group-hover:from-emerald-400/[0.08] dark:group-hover:to-cyan-400/[0.05] transition-all duration-500" />
+        <span className="absolute inset-0 bg-gradient-to-br from-emerald-500/[0.02] via-transparent to-cyan-500/[0.03] opacity-0 transition-opacity duration-500 group-hover:opacity-100 group-focus-within:opacity-100" />
 
-        {/* Icon */}
-        <motion.div
-          className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-gradient-to-br dark:from-emerald-400/20 dark:to-cyan-400/20 flex items-center justify-center mb-5 group-hover:bg-emerald-200 dark:group-hover:from-emerald-400/30 dark:group-hover:to-cyan-400/30 transition-all duration-300 relative"
-          whileHover={{ rotate: [0, -5, 5, 0] }}
-          transition={{ duration: 0.4 }}
+        <motion.span
+          className="relative z-10 mb-5 flex items-center justify-center text-emerald-600 transition-transform duration-500 dark:text-emerald-300"
+          whileHover={{ rotate: [0, -4, 4, 0] }}
+          transition={{ duration: 0.45 }}
         >
-          <Icon className="w-6 h-6 text-emerald-600 dark:text-emerald-300 transition-transform duration-300 group-hover:scale-110" />
-          {/* Pulse ring on hover */}
-          <div className="absolute inset-0 rounded-xl border-2 border-emerald-400/0 group-hover:border-emerald-400/30 dark:group-hover:border-emerald-400/50 transition-all duration-500 scale-100 group-hover:scale-125 opacity-0 group-hover:opacity-100" />
-        </motion.div>
+          <Icon className="feature-panel-icon h-10 w-10 stroke-[1.9] transition-all duration-500 group-hover:h-12 group-hover:w-12 group-hover:text-emerald-500 group-focus-within:h-12 group-focus-within:w-12 dark:group-hover:text-emerald-200 dark:group-focus-within:text-emerald-200" />
+        </motion.span>
 
-        <h3 className="text-lg font-semibold mb-2 text-foreground relative z-10">
+        <h3 className="feature-panel-title relative z-10 mb-3 max-w-[12rem] text-base font-semibold text-foreground transition-all duration-500">
           {feature.title}
         </h3>
-        <p className="text-sm text-muted-foreground leading-relaxed relative z-10">
+        <p className="feature-panel-copy relative z-10 max-w-[18rem] text-sm leading-relaxed text-muted-foreground">
           {feature.description}
         </p>
       </div>
@@ -141,6 +128,7 @@ export default function FeaturesSection() {
   const sectionRef = useRef<HTMLElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const isInView = useInView(sectionRef, { once: true, margin: '-100px' });
+  const [activeFeatureIndex, setActiveFeatureIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -173,7 +161,7 @@ export default function FeaturesSection() {
       ref={sectionRef}
       className="relative py-24 sm:py-32 px-4 sm:px-6 lg:px-8"
     >
-      <div className="max-w-6xl mx-auto">
+      <div className="mx-auto">
         {/* Section Header */}
         <div ref={headerRef} className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-4">
@@ -186,15 +174,21 @@ export default function FeaturesSection() {
           </p>
         </div>
 
-        {/* Feature Cards Grid */}
+        {/* Feature Cards Stack */}
         <motion.div
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+          className="feature-card-stack glass relative left-1/2 flex w-screen -translate-x-1/2 flex-col overflow-hidden border-y border-emerald-500/15 shadow-[0_24px_80px_rgba(4,120,87,0.08)] dark:border-white/[0.12] dark:bg-white/[0.04] sm:h-[21rem] sm:flex-row"
           variants={containerVariants}
           initial="hidden"
           animate={isInView ? 'visible' : 'hidden'}
         >
           {features.map((feature, index) => (
-            <FeatureCard key={feature.title} feature={feature} index={index} />
+            <FeatureCard
+              key={feature.title}
+              feature={feature}
+              index={index}
+              isActive={activeFeatureIndex === index}
+              onActivate={setActiveFeatureIndex}
+            />
           ))}
         </motion.div>
       </div>

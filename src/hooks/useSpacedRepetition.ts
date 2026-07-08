@@ -154,15 +154,16 @@ export function saveStreak(streak: DailyStreak): void {
 
 export function useSpacedRepetition() {
   const masteryMap = useAppStore((s) => s.masteryMap);
-  const [items, setItems] = useState<SRItem[]>([]);
+  // Not rendered as part of any server-rendered/hydrated route (only reached
+  // through lazy-loaded, client-only views), so lazy-loading straight from
+  // localStorage here carries no hydration-mismatch risk.
+  const [items, setItems] = useState<SRItem[]>(() => loadSRItems());
 
-  // Load from localStorage on mount
+  // Sync: create SRItems for mastered concepts that don't have one yet. Real
+  // side effect — merges against previous items and persists new ones to
+  // localStorage, not just mirroring a prop into state.
   useEffect(() => {
-    setItems(loadSRItems());
-  }, []);
-
-  // Sync: create SRItems for mastered concepts that don't have one yet
-  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setItems((prev) => {
       const existingIds = new Set(prev.map((i) => i.questionId));
       const newItems: SRItem[] = [];

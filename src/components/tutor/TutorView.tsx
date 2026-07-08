@@ -20,8 +20,6 @@ import {
   PanelRightClose,
   Send,
   Lightbulb,
-  MessageSquareText,
-  ListChecks,
   MoreHorizontal,
   BookOpen,
   MessageCircle,
@@ -41,17 +39,14 @@ import {
   ChevronRight,
   Search,
   X,
-  LogOut,
   Trophy,
   Sparkles,
   BookMarked,
   Target,
   Clock,
   CheckCircle2,
-  Download,
   Star,
   StickyNote,
-  Tag,
   Layers,
   ClipboardCheck,
 } from 'lucide-react'
@@ -330,30 +325,6 @@ export function TutorView() {
     setPomodoroTimeLeft(currentPomodoroMode.duration)
   }, [currentPomodoroMode.duration])
 
-  const handleExportChat = useCallback(() => {
-    if (messages.length === 0) {
-      toast.error('No messages to export')
-      return
-    }
-    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-    let md = `# SynapseLearn Chat Session\nDate: ${dateStr}\n\n`
-    for (const msg of messages) {
-      const time = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString() : ''
-      const role = msg.role === 'user' ? 'User' : 'Assistant'
-      md += `## ${role}${time ? ` - ${time}` : ''}\n${msg.content}\n\n---\n\n`
-    }
-    const blob = new Blob([md], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `synapse-chat-${new Date().toISOString().split('T')[0]}.md`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    toast.success('Chat exported successfully')
-  }, [messages])
-
   const handlePomodoroSkip = useCallback(() => {
     setPomodoroRunning(false)
     const nextIndex = (pomodoroModeIndex + 1) % POMODORO_MODES.length
@@ -373,7 +344,8 @@ export function TutorView() {
     setPomodoroTimeLeft(POMODORO_MODES[nextIndex].duration)
   }, [pomodoroModeIndex, pomodoroSessions])
 
-  // Pomodoro tick
+  // Pomodoro tick — stops itself the instant it hits 0, from inside the
+  // interval callback, instead of a second effect just watching for that.
   useEffect(() => {
     if (pomodoroRunning) {
       pomodoroRef.current = setInterval(() => {
@@ -381,6 +353,7 @@ export function TutorView() {
           if (prev <= 1) {
             playBeep()
             toast.success(`${currentPomodoroMode.label} session complete!`)
+            setPomodoroRunning(false)
             return 0
           }
           return prev - 1
@@ -394,13 +367,6 @@ export function TutorView() {
       if (pomodoroRef.current) clearInterval(pomodoroRef.current)
     }
   }, [pomodoroRunning, currentPomodoroMode.label])
-
-  // Auto-stop pomodoro when time reaches 0
-  useEffect(() => {
-    if (pomodoroTimeLeft === 0 && pomodoroRunning) {
-      setPomodoroRunning(false)
-    }
-  }, [pomodoroTimeLeft, pomodoroRunning])
 
   // ---------- Session Summary & Search State ----------
   const [showEndSession, setShowEndSession] = useState(false)
@@ -497,14 +463,12 @@ export function TutorView() {
   // Most recent quiz/flashcard deck the AI produced — powers the Practice
   // panel and the cards-first tutor mode
   const latestQuiz = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]
-      if (m.role === 'assistant') {
-        const q = parseQuizPayload(m.content)
-        if (q) return { payload: q.payload, messageId: m.id }
-      }
-    }
-    return null
+    const lastAssistantWithQuiz = [...messages]
+      .reverse()
+      .find((m) => m.role === 'assistant' && parseQuizPayload(m.content))
+    if (!lastAssistantWithQuiz) return null
+    const q = parseQuizPayload(lastAssistantWithQuiz.content)
+    return q ? { payload: q.payload, messageId: lastAssistantWithQuiz.id } : null
   }, [messages])
 
   // When a deck exists and the right panel is open, it answers on the side
@@ -875,10 +839,6 @@ export function TutorView() {
     setActiveTopic(topic)
     loadCourseSlidesByTitle(topic)
     handleSend(`I'd like to learn about ${topic}`)
-  }
-
-  const handleQuickAction = (prompt: string) => {
-    handleSend(prompt)
   }
 
   const handleSaveAndClose = useCallback(() => {
@@ -1326,6 +1286,12 @@ export function TutorView() {
                       variant="outline"
                       size="sm"
                       className="rounded-full text-xs"
+                      // handleTopicClick calls handleSend, which reads
+                      // textareaRef.current, but only inside this onClick
+                      // callback body — strictly after the click fires, never
+                      // during render. The rule's call-graph analysis can't
+                      // distinguish that from an unsafe render-time ref read.
+                      // eslint-disable-next-line react-hooks/refs
                       onClick={() => handleTopicClick(topic)}
                     >
                       {topic}

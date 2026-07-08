@@ -171,6 +171,11 @@ function Particles() {
       {/* Connection lines */}
       <lineSegments ref={linesRef}>
         <bufferGeometry>
+          {/* eslint-disable react-hooks/refs -- these refs hold pre-allocated
+              Float32Array buffers (see comment above), not DOM/component
+              refs; R3F needs the stable array reference here to back the
+              bufferAttribute, and it's mutated in place inside useFrame,
+              never reassigned, so there's no stale-render hazard. */}
           <bufferAttribute
             attach="attributes-position"
             args={[linePositionsRef.current, 3]}
@@ -179,6 +184,7 @@ function Particles() {
             attach="attributes-color"
             args={[lineColorsRef.current, 3]}
           />
+          {/* eslint-enable react-hooks/refs */}
         </bufferGeometry>
         <lineBasicMaterial
           vertexColors

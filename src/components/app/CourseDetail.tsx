@@ -259,7 +259,6 @@ export function CourseDetail() {
     if (lightboxIndex !== null && lightboxIndex !== currentSlideIndex) {
       setCurrentSlideIndex(lightboxIndex);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lightboxIndex]);
 
   // Mark current slide as viewed when navigating to it

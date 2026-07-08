@@ -12,6 +12,11 @@ export function ThemeToggle({ className }: { className?: string }) {
   const updateSettings = useAppStore((s) => s.updateSettings);
   const [mounted, setMounted] = useState(false);
 
+  // Deliberate hydration-safe pattern: server and the initial client render
+  // must both see `mounted === false` (next-themes can't know the resolved
+  // theme until after mount), so this can't be a lazy initializer — it has
+  // to flip via an effect, strictly after hydration commits.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
   const isDark = resolvedTheme === 'dark';

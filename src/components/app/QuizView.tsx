@@ -1083,7 +1083,15 @@ export function QuizView() {
   const [adaptiveOn, setAdaptiveOn] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<string>('all');
   const [showBookmarked, setShowBookmarked] = useState(false);
-  const [bookmarkedQuestions, setBookmarkedQuestions] = useState<Set<string>>(new Set());
+  const [bookmarkedQuestions, setBookmarkedQuestions] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const stored = localStorage.getItem('synapse-bookmarked-questions');
+      return stored ? new Set(JSON.parse(stored) as string[]) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [answered, setAnswered] = useState<Record<string, boolean>>({});
@@ -1245,7 +1253,9 @@ export function QuizView() {
     }
   }, []);
 
-  // Load daily challenge data on mount and when mode changes
+  // Load daily challenge data on mount and when mode changes. Genuinely
+  // reads/writes localStorage and depends on wall-clock "today" — not
+  // something derivable from props/state during render.
   useEffect(() => {
     if (studyMode !== 'daily') return;
     const today = getTodayStr();
@@ -1254,6 +1264,8 @@ export function QuizView() {
     // Use store streak as source of truth if available
     const effectiveStreak = storeDailyChallenge.streak > 0 ? { current: storeDailyChallenge.streak, best: Math.max(storeDailyChallenge.streak, streakData.best), lastDate: storeDailyChallenge.lastCompletedDate || streakData.lastDate } : streakData;
 
+    /* eslint-disable react-hooks/set-state-in-effect -- genuine external
+       sync (localStorage) + wall-clock date check, not render-derivable */
     if (saved && saved.date === today) {
       setDailyChallenge(saved);
       setDailyStreak(effectiveStreak);
@@ -1278,11 +1290,14 @@ export function QuizView() {
       setDailyTimerLeft(DAILY_TIMER_SECONDS);
       setDailyTimerActive(false);
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [studyMode, allQuestions, storeDailyChallenge.streak, storeDailyChallenge.lastCompletedDate]);
 
-  // Update daily countdown timer
+  // Update daily countdown timer — real wall-clock sync (time until
+  // midnight), recomputed on mode change and every second thereafter.
   useEffect(() => {
     if (studyMode !== 'daily') return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDailyTimeLeft(getTimeUntilMidnight());
     const interval = setInterval(() => {
       setDailyTimeLeft(getTimeUntilMidnight());
@@ -1294,6 +1309,9 @@ export function QuizView() {
   useEffect(() => {
     if (studyMode !== 'daily' || !dailyTimerActive || dailyShowResults) return;
     if (dailyTimerLeft <= 0) {
+      /* eslint-disable react-hooks/set-state-in-effect -- auto-completing
+         the challenge on timeout genuinely persists to localStorage/store,
+         it isn't just mirroring props into state */
       // Time's up — auto-complete challenge
       const finalScore = dailyQuestions.filter((q) => answered[q.id] && isCorrect(q, answers[q.id] || '')).length;
       const updatedStreak = updateDailyStreak();
@@ -1317,6 +1335,7 @@ export function QuizView() {
         totalCompleted: storeDailyChallenge.totalCompleted + 1,
         todayResults: { score: finalScore, total: dailyQuestions.length, timeTaken: DAILY_TIMER_SECONDS, stars },
       });
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
     const timeout = setTimeout(() => setDailyTimerLeft((s) => s - 1), 1000);
@@ -1416,16 +1435,7 @@ export function QuizView() {
   // Swipe motion values for flashcard (no re-renders)
   const dragXMotion = useMotionValue(0);
 
-  // Bookmark persistence
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('synapse-bookmarked-questions');
-      if (stored) {
-        setBookmarkedQuestions(new Set(JSON.parse(stored) as string[]));
-      }
-    } catch { /* ignore */ }
-  }, []);
-
+  // Bookmark persistence — save side only; loaded lazily at declaration above.
   useEffect(() => {
     try {
       localStorage.setItem('synapse-bookmarked-questions', JSON.stringify([...bookmarkedQuestions]));

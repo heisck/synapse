@@ -95,6 +95,10 @@ function Carousel({
 
   React.useEffect(() => {
     if (!api) return
+    // Sync scroll-button-enabled state from the embla API immediately, then
+    // subscribe for future changes — the exact "sync + subscribe to an
+    // external system" case this lint rule's own docs call out as valid.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     onSelect(api)
     api.on("reInit", onSelect)
     api.on("select", onSelect)

@@ -209,6 +209,15 @@ function SearchModal() {
   const uniqueViewItems = query ? filtered : filtered.filter((f) => !seenViews.has(f.view));
   const totalNavigable = (query ? 0 : recentViewItems.length) + (query ? 0 : recentCourseItems.length) + (query ? 0 : quickActions.length) + uniqueViewItems.length;
 
+  // Closing (from any path) always resets query + activeIndex together, so
+  // there's one place that does it instead of an effect reacting after the
+  // fact to `open` flipping false.
+  const closeSearch = useCallback(() => {
+    setOpen(false);
+    setQuery('');
+    setActiveIndex(0);
+  }, []);
+
   const handleSelect = (idx: number) => {
     let i = 0;
     if (!query) {
@@ -216,8 +225,7 @@ function SearchModal() {
         const viewItem = recentViewItems[idx];
         addRecentView(viewItem.view);
         navigate(viewItem.view);
-        setOpen(false);
-        setQuery('');
+        closeSearch();
         return;
       }
       i += recentViewItems.length;
@@ -226,8 +234,7 @@ function SearchModal() {
       if (idx < i + recentCourseItems.length) {
         const courseItem = recentCourseItems[idx - i];
         courseItem.action();
-        setOpen(false);
-        setQuery('');
+        closeSearch();
         return;
       }
       i += recentCourseItems.length;
@@ -236,8 +243,7 @@ function SearchModal() {
       if (idx < i + quickActions.length) {
         const actionItem = quickActions[idx - i];
         actionItem.action();
-        setOpen(false);
-        setQuery('');
+        closeSearch();
         return;
       }
       i += quickActions.length;
@@ -246,8 +252,7 @@ function SearchModal() {
     if (viewItem) {
       addRecentView(viewItem.view);
       navigate(viewItem.view);
-      setOpen(false);
-      setQuery('');
+      closeSearch();
     }
   };
 
@@ -261,17 +266,6 @@ function SearchModal() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
-
-  useEffect(() => {
-    if (!open) {
-      setQuery('');
-      setActiveIndex(0);
-    }
-  }, [open]);
-
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [query]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -298,7 +292,7 @@ function SearchModal() {
             placeholder="Search views, courses, actions..."
             className="flex h-10 w-full bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { setQuery(e.target.value); setActiveIndex(0); }}
             onKeyDown={handleKeyDown}
           />
           <kbd className="pointer-events-none ml-auto hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
@@ -328,8 +322,7 @@ function SearchModal() {
                     onClick={() => {
                       addRecentView(item.view);
                       navigate(item.view);
-                      setOpen(false);
-                      setQuery('');
+                      closeSearch();
                     }}
                     className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors text-left ${activeIndex === idx ? 'bg-accent' : 'hover:bg-accent'}`}
                   >
@@ -355,8 +348,7 @@ function SearchModal() {
                     key={`course-${item.id}`}
                     onClick={() => {
                       item.action();
-                      setOpen(false);
-                      setQuery('');
+                      closeSearch();
                     }}
                     className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors text-left ${activeIndex === idx ? 'bg-accent' : 'hover:bg-accent'}`}
                   >
@@ -383,8 +375,7 @@ function SearchModal() {
                     key={`action-${action.label}`}
                     onClick={() => {
                       action.action();
-                      setOpen(false);
-                      setQuery('');
+                      closeSearch();
                     }}
                     className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors text-left ${activeIndex === idx ? 'bg-accent' : 'hover:bg-accent'}`}
                   >
@@ -414,8 +405,7 @@ function SearchModal() {
                     onClick={() => {
                       addRecentView(item.view);
                       navigate(item.view);
-                      setOpen(false);
-                      setQuery('');
+                      closeSearch();
                     }}
                     className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors text-left ${activeIndex === idx ? 'bg-accent' : 'hover:bg-accent'}`}
                   >

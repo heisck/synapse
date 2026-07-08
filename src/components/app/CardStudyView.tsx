@@ -67,6 +67,7 @@ export function CardStudyView() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [prevCardId, setPrevCardId] = useState<string | undefined>(undefined);
 
   const courseId = activeCourse?.id;
 
@@ -112,11 +113,25 @@ export function CardStudyView() {
   }, [courseId]);
 
   useEffect(() => {
+    // loadQuestions sets loading/error state synchronously before its first
+    // await (the standard fetch-on-mount shape) — genuine data fetching,
+    // which is exactly what effects are for; nothing to restructure here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadQuestions();
   }, [loadQuestions]);
 
   const currentQ = questions[currentIndex];
   const total = questions.length;
+
+  // Reset transient state when the active card changes — adjusted directly
+  // during render (React's recommended pattern) rather than via an effect,
+  // so it takes effect before paint instead of one render behind.
+  if (currentQ?.id !== prevCardId) {
+    setPrevCardId(currentQ?.id);
+    setInputValue('');
+    setChatOpen(false);
+    setChatInput('');
+  }
 
   const scored = useMemo(() => {
     let correct = 0;
@@ -129,13 +144,6 @@ export function CardStudyView() {
     }
     return { correct, done };
   }, [questions, answered, answers]);
-
-  // Reset transient state when the active card changes.
-  useEffect(() => {
-    setInputValue('');
-    setChatOpen(false);
-    setChatInput('');
-  }, [currentQ?.id]);
 
   useEffect(() => {
     if (chatScrollRef.current) {

@@ -300,8 +300,12 @@ export function FocusTimerView() {
     focus: (settings.defaultSessionDuration || 25) * 60,
   }), [settings.defaultSessionDuration]);
 
-  // Refresh analytics sessions when component gains focus or timer completes
+  // Refresh analytics sessions when component gains focus or timer completes.
+  // Genuine re-sync from an external source (localStorage) triggered by a
+  // related-but-separate piece of state changing elsewhere — not something
+  // derivable during render.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAnalyticsSessions(loadSessions());
   }, [stats]);
 
