@@ -1,12 +1,9 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "libsql"
   url      = env("DATABASE_URL")
 }
 
@@ -36,7 +33,6 @@ model Course {
   thumbnail   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
   slides      Slide[]
   enrollments Enrollment[]
   sessions    Session[]
@@ -51,7 +47,6 @@ model Slide {
   content   String   @default("")
   order     Int      @default(0)
   createdAt DateTime @default(now())
-
   course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   questions Question[]
 }
@@ -68,10 +63,9 @@ model Question {
   difficulty  String   @default("medium")
   concept     String?
   createdAt   DateTime @default(now())
-
-  course  Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
-  slide   Slide?  @relation(fields: [slideId], references: [id], onDelete: SetNull)
-  quizzes QuizQuestion[]
+  course      Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  slide       Slide?   @relation(fields: [slideId], references: [id], onDelete: SetNull)
+  quizzes     QuizQuestion[]
 }
 
 model Quiz {
@@ -79,9 +73,8 @@ model Quiz {
   courseId    String?
   title       String   @default("Quiz")
   createdAt   DateTime @default(now())
-
-  course    Course?         @relation(fields: [courseId], references: [id], onDelete: SetNull)
-  questions QuizQuestion[]
+  course      Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  questions   QuizQuestion[]
 }
 
 model QuizQuestion {
@@ -89,10 +82,8 @@ model QuizQuestion {
   quizId     String
   questionId String
   createdAt  DateTime @default(now())
-
-  quiz     Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-
+  quiz       Quiz      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  question   Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
   @@unique([quizId, questionId])
 }
 
@@ -100,9 +91,7 @@ model Enrollment {
   id        String   @id @default(cuid())
   courseId  String
   createdAt DateTime @default(now())
-
-  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   @@unique([courseId])
 }
 
@@ -110,36 +99,35 @@ model Session {
   id        String   @id @default(cuid())
   courseId  String?
   createdAt DateTime @default(now())
-
-  course Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  course    Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
 }
 
 // Ephemeral presence of a client instance. Personal learning data lives in the
 // user's browser; this table only lets live instances discover each other.
-// Rows are pruned once an instance goes quiet.
+ 
 model Presence {
-  instanceId     String   @id
-  displayName    String   @default("")
-  avatarGradient String   @default("from-emerald-400 to-teal-500")
-  totalXP        Int      @default(0)
-  weeklyXP       Int      @default(0)
-  level          Int      @default(1)
-  streak         Int      @default(0)
-  coursesCompleted Int    @default(0)
-  quizAccuracy   Int      @default(0)
-  currentTopic   String   @default("")
-  lastSeen       DateTime @default(now())
-  createdAt      DateTime @default(now())
+  instanceId      String   @id
+  displayName     String   @default("")
+  avatarGradient  String   @default("from-emerald-400 to-teal-500")
+  totalXP          Int      @default(0)
+  weeklyXP         Int      @default(0)
+  level            Int      @default(1)
+  streak           Int      @default(0)
+  coursesCompleted Int      @default(0)
+  quizAccuracy     Int      @default(0)
+  currentTopic     String   @default("")
+  lastSeen         DateTime @default(now())
+  createdAt        DateTime @default(now())
 }
 
 model LearnerProfile {
-  id                 String   @id @default(cuid())
-  learningStyle      String   @default("reading")
-  pace               String   @default("steady")
+  id                String   @id @default(cuid())
+  learningStyle     String   @default("reading")
+  pace              String   @default("steady")
   vocabularySensitive Boolean @default(true)
-  prefersStory       Boolean  @default(true)
-  prefersBigPicture  Boolean  @default(false)
-  simpleGrammar      Boolean  @default(false)
+  prefersStory       Boolean @default(true)
+  prefersBigPicture  Boolean @default(false)
+  simpleGrammar      Boolean @default(false)
   jargonTolerance    String   @default("medium")
   masteryApproach    String   @default("evidence")
   updatedAt          DateTime @updatedAt
