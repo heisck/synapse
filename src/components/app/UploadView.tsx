@@ -33,6 +33,7 @@ import {
   RotateCcw,
   StopCircle,
   Plus,
+  MessageSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -416,7 +417,7 @@ async function fetchWithRetry(url: string, body: FormData): Promise<Response> {
 }
 
 export function UploadView() {
-  const { navigate, activeCourse, setActiveCourse, setActiveSlides, setCurrentQuestions, setQuizScore, setCourseCategory, addCourse } = useAppStore();
+  const { navigate, activeCourse, setActiveCourse, setActiveSlides, setCurrentQuestions, setQuizScore, setCourseCategory, addCourse, setActiveSession } = useAppStore();
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -800,7 +801,7 @@ export function UploadView() {
       variants={stagger}
       initial="initial"
       animate="animate"
-      className="space-y-6 pt-2 lg:pt-4"
+      className="space-y-6 pt-2 lg:pt-4 pb-24 sm:pb-6"
     >
       {/* Gradient header */}
       <motion.div
@@ -1239,14 +1240,26 @@ export function UploadView() {
                 {generatedCount} questions ready from {files.filter((f) => f.status === 'done').length} file(s)
               </p>
             </div>
-            <div className="flex justify-center gap-3">
+            <div className="flex flex-wrap justify-center gap-3">
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button
+                  onClick={() => {
+                    setActiveSession(`session-${Date.now()}`, activeCourse?.id, activeCourse?.title ?? 'Study Session');
+                    navigate('tutor');
+                  }}
+                  className="glow-emerald transition-shadow duration-300"
+                >
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Start Tutor
+                </Button>
+              </motion.div>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setQuizScore(0, generatedCount);
                     navigate('quiz');
                   }}
-                  className="glow-emerald transition-shadow duration-300"
                 >
                   <ClipboardCheck className="h-4 w-4 mr-2" />
                   Take Quiz

@@ -15,18 +15,22 @@ import {
   Sparkles,
   ChevronRight,
   Zap,
+  KeyRound,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Drawer,
   DrawerContent,
   DrawerDescription,
   DrawerTitle,
 } from '@/components/ui/drawer';
+import { toast } from 'sonner';
+import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
 
 const ONBOARDING_STEP_KEY = 'synapselearn_onboarding_step';
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
 
 type OnboardingPlatform = 'ios' | 'android' | 'web';
 
@@ -494,6 +498,100 @@ function PaceAndTopicsStep({
   );
 }
 
+function AiKeyStep({
+  onNext,
+  onBack,
+  onSkip,
+}: {
+  onNext: () => void;
+  onBack: () => void;
+  onSkip: () => void;
+}) {
+  const [key, setKey] = useState(() => getOpenRouterKey());
+
+  const handleContinue = () => {
+    const trimmed = key.trim();
+    if (trimmed && !/^sk-or-/.test(trimmed)) {
+      toast.error('That does not look like an OpenRouter key — it should start with "sk-or-".');
+      return;
+    }
+    setOpenRouterKey(trimmed);
+    if (trimmed) toast.success('API key saved to this browser');
+    onNext();
+  };
+
+  return (
+    <motion.div
+      key="step-4"
+      custom={1}
+      variants={slideVariants}
+      initial="enter"
+      animate="center"
+      exit="exit"
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      className="space-y-6"
+    >
+      <div className="text-center space-y-1">
+        <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
+          <KeyRound className="h-6 w-6 text-primary" />
+        </div>
+        <h2 className="text-xl font-bold">Connect Your AI</h2>
+        <p className="text-sm text-muted-foreground">
+          SynapseLearn runs on your own free OpenRouter account — we never store your key on any
+          server. It stays in this browser only.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside">
+          <li>
+            Create a free account at{' '}
+            <a
+              href="https://openrouter.ai/keys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary underline underline-offset-2 font-medium"
+            >
+              openrouter.ai/keys
+            </a>
+          </li>
+          <li>Create a key and copy it</li>
+          <li>Paste it below</li>
+        </ol>
+        <Input
+          type="password"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="sk-or-v1-..."
+          autoComplete="off"
+          className="font-mono text-xs"
+          aria-label="OpenRouter API key"
+        />
+        <p className="text-[11px] text-muted-foreground">
+          You can add or change this any time in Settings → AI Access. Without a key, the AI
+          tutor, quizzes, and study plans stay disabled.
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between pt-2">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4 mr-1" />
+          Back
+        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={onSkip}>
+            Skip for now
+          </Button>
+          <Button size="sm" onClick={handleContinue}>
+            Next
+            <ArrowRight className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 function DoneStep({
   styles,
   pace,
@@ -774,8 +872,11 @@ export function OnboardingFlow() {
               />
             )}
             {step === 4 && (
+              <AiKeyStep key="s4" onNext={goNext} onBack={goBack} onSkip={goNext} />
+            )}
+            {step === 5 && (
               <DoneStep
-                key="s4"
+                key="s5"
                 styles={selectedStyles}
                 pace={selectedPace}
                 topics={selectedTopics}
