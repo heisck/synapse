@@ -5,12 +5,36 @@ interface ChatResult {
   model?: string;
 }
 
+/**
+ * Per-request credentials. The learner supplies their own OpenRouter API key
+ * (sent as the `x-openrouter-key` header from the browser, where it lives in
+ * localStorage). The platform stores no keys: there is deliberately NO
+ * server-side OPENROUTER_API_KEY fallback.
+ */
+export interface LLMAuth {
+  apiKey?: string;
+}
+
+/** Thrown when a request needs the LLM but no user key (and no Hermes) is available. */
+export class NoApiKeyError extends Error {
+  code = 'NO_API_KEY' as const;
+  constructor() {
+    super('No OpenRouter API key. Add your free OpenRouter key in Settings to use AI features.');
+  }
+}
+
+/** Thrown when the user's key is rate-limited on every model we tried. */
+export class RateLimitedError extends Error {
+  code = 'RATE_LIMITED' as const;
+  constructor() {
+    super('Your OpenRouter key has hit its rate limit. Wait for it to reset or use a different key in Settings.');
+  }
+}
+
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // Free-tier models are frequently rate-limited upstream, so we keep a
 // rotation: try each in order, skipping any that recently failed.
 // Override with OPENROUTER_MODELS (comma-separated) or OPENROUTER_MODEL.
-// Ordering below is by measured latency (2026-07): nemotron-super answered in
-// ~0.4s while the popular llama/gpt-oss free slots were 429ing upstream.
 const OPENROUTER_MODELS = (
   process.env.OPENROUTER_MODELS ||
   process.env.OPENROUTER_MODEL ||
@@ -33,86 +57,36 @@ const APP_URL =
 const POLLINATIONS_URL = 'https://text.pollinations.ai/openai';
 const POLLINATIONS_MODEL = process.env.POLLINATIONS_MODEL || 'openai';
 
-// Per-model circuit breaker: a model that just returned 429/5xx is skipped
-// for a cooldown instead of paying a failed round-trip on every message.
+/**
+ * Hermes agent hook. When HERMES_AGENT_URL is configured, ALL chat traffic is
+ * routed to that endpoint first (an OpenAI-compatible /chat/completions
+ * server). This is the integration point for a future cloud-hosted Hermes
+ * orchestrator agent — plug it in by setting the env vars; nothing else in the
+ * codebase needs to change. Falls back to the learner's own OpenRouter key if
+ * Hermes is unreachable.
+ */
+const HERMES_AGENT_URL = process.env.HERMES_AGENT_URL;
+const HERMES_AGENT_API_KEY = process.env.HERMES_AGENT_API_KEY;
+const HERMES_AGENT_MODEL = process.env.HERMES_AGENT_MODEL || 'hermes';
+
+// Per-key, per-model circuit breaker: a model that just returned 429/5xx for a
+// given key is skipped for a cooldown instead of paying a failed round-trip on
+// every message. Keyed by key fingerprint so one learner's rate limit never
+// cools a model down for everyone else.
 const modelDownUntil = new Map<string, number>();
 const MODEL_COOLDOWN_MS = 5 * 60 * 1000;
 
-async function chatViaOpenRouterModel(model: string, messages: ChatMessage[]): Promise<ChatResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY is not set');
-  }
-
-  const res = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-      'HTTP-Referer': APP_URL,
-      'X-Title': 'SynapseLearn',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.7,
-      max_tokens: 2048,
-      // Route to the fastest provider currently serving this model
-      provider: { sort: 'throughput' },
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`OpenRouter request failed (${res.status}): ${text.slice(0, 300)}`);
-  }
-
-  const data = await res.json();
-  if (!data?.choices?.[0]?.message?.content) {
-    throw new Error('OpenRouter returned no content');
-  }
-  return { choices: data.choices, model: data.model || model };
+function keyFingerprint(apiKey: string): string {
+  return apiKey.slice(-10);
 }
 
-/**
- * Streaming variant: opens an SSE connection to OpenRouter and yields text
- * deltas as they arrive. The caller gets tokens the moment the model emits
- * them instead of waiting for the full completion.
- */
-async function chatStreamViaOpenRouterModel(
-  model: string,
-  messages: ChatMessage[],
-): Promise<{ stream: ReadableStream<string>; model: string }> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY is not set');
-  }
+function cooldownKey(apiKey: string, model: string): string {
+  return `${keyFingerprint(apiKey)}:${model}`;
+}
 
-  const res = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-      'HTTP-Referer': APP_URL,
-      'X-Title': 'SynapseLearn',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.7,
-      max_tokens: 2048,
-      stream: true,
-      provider: { sort: 'throughput' },
-    }),
-  });
-
-  if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`OpenRouter stream failed (${res.status}): ${text.slice(0, 300)}`);
-  }
-
-  const body = res.body;
-  const stream = new ReadableStream<string>({
+/** Parses an OpenAI-style SSE body into a stream of text deltas. */
+function sseTextStream(body: ReadableStream<Uint8Array>): ReadableStream<string> {
+  return new ReadableStream<string>({
     async start(controller) {
       const reader = body.getReader();
       const decoder = new TextDecoder();
@@ -148,28 +122,158 @@ async function chatStreamViaOpenRouterModel(
       body.cancel(reason).catch(() => {});
     },
   });
-
-  return { stream, model };
 }
 
-async function chatViaOpenRouter(messages: ChatMessage[]): Promise<ChatResult> {
+function openRouterHeaders(apiKey: string): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+    'HTTP-Referer': APP_URL,
+    'X-Title': 'SynapseLearn',
+  };
+}
+
+async function chatViaOpenRouterModel(
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+): Promise<ChatResult> {
+  const res = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: openRouterHeaders(apiKey),
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 0.7,
+      max_tokens: 2048,
+      // Route to the fastest provider currently serving this model
+      provider: { sort: 'throughput' },
+    }),
+  });
+
+  if (res.status === 429) {
+    await res.text().catch(() => '');
+    throw new RateLimitedError();
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`OpenRouter request failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+  if (!data?.choices?.[0]?.message?.content) {
+    throw new Error('OpenRouter returned no content');
+  }
+  return { choices: data.choices, model: data.model || model };
+}
+
+/**
+ * Streaming variant: opens an SSE connection to OpenRouter and yields text
+ * deltas as they arrive.
+ */
+async function chatStreamViaOpenRouterModel(
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+): Promise<{ stream: ReadableStream<string>; model: string }> {
+  const res = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: openRouterHeaders(apiKey),
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 0.7,
+      max_tokens: 2048,
+      stream: true,
+      provider: { sort: 'throughput' },
+    }),
+  });
+
+  if (res.status === 429) {
+    await res.text().catch(() => '');
+    throw new RateLimitedError();
+  }
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`OpenRouter stream failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+
+  return { stream: sseTextStream(res.body), model };
+}
+
+async function chatViaOpenRouter(apiKey: string, messages: ChatMessage[]): Promise<ChatResult> {
   const now = Date.now();
-  const available = OPENROUTER_MODELS.filter((m) => now >= (modelDownUntil.get(m) || 0));
+  const available = OPENROUTER_MODELS.filter(
+    (m) => now >= (modelDownUntil.get(cooldownKey(apiKey, m)) || 0),
+  );
   if (available.length === 0) {
-    throw new Error('All OpenRouter models are cooling down after recent failures');
+    throw new RateLimitedError();
   }
 
   let lastError: unknown;
   for (const model of available) {
     try {
-      return await chatViaOpenRouterModel(model, messages);
+      return await chatViaOpenRouterModel(apiKey, model, messages);
     } catch (err) {
-      modelDownUntil.set(model, Date.now() + MODEL_COOLDOWN_MS);
+      modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + MODEL_COOLDOWN_MS);
       console.warn(`[LLM.chat] OpenRouter model ${model} failed (cooling down 5 min):`, err);
       lastError = err;
     }
   }
   throw lastError instanceof Error ? lastError : new Error('All OpenRouter models failed');
+}
+
+async function chatViaHermes(messages: ChatMessage[]): Promise<ChatResult> {
+  const res = await fetch(HERMES_AGENT_URL!, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(HERMES_AGENT_API_KEY ? { Authorization: `Bearer ${HERMES_AGENT_API_KEY}` } : {}),
+    },
+    body: JSON.stringify({
+      model: HERMES_AGENT_MODEL,
+      messages,
+      temperature: 0.7,
+      max_tokens: 2048,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Hermes agent request failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+  if (!data?.choices?.[0]?.message?.content) {
+    throw new Error('Hermes agent returned no content');
+  }
+  return { choices: data.choices, model: data.model || HERMES_AGENT_MODEL };
+}
+
+async function chatStreamViaHermes(
+  messages: ChatMessage[],
+): Promise<{ stream: ReadableStream<string>; model: string }> {
+  const res = await fetch(HERMES_AGENT_URL!, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(HERMES_AGENT_API_KEY ? { Authorization: `Bearer ${HERMES_AGENT_API_KEY}` } : {}),
+    },
+    body: JSON.stringify({
+      model: HERMES_AGENT_MODEL,
+      messages,
+      temperature: 0.7,
+      max_tokens: 2048,
+      stream: true,
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Hermes agent stream failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+
+  return { stream: sseTextStream(res.body), model: HERMES_AGENT_MODEL };
 }
 
 async function chatViaPollinations(messages: ChatMessage[]): Promise<ChatResult> {
@@ -202,6 +306,7 @@ async function chatViaPollinations(messages: ChatMessage[]): Promise<ChatResult>
  * latency/cost on top of the primary response.
  */
 async function critique(
+  auth: LLMAuth,
   userMessage: string,
   assistantResponse: string,
   contextSummary?: string,
@@ -225,6 +330,7 @@ ISSUE: <one short sentence on what's wrong and what should be addressed instead>
         { role: 'system', content: prompt },
         { role: 'user', content: 'Judge the response now.' },
       ],
+      auth,
     });
     const raw = result?.choices?.[0]?.message?.content?.trim() || '';
     if (!raw || raw.toUpperCase().startsWith('OK')) return { ok: true };
@@ -237,41 +343,75 @@ ISSUE: <one short sentence on what's wrong and what should be addressed instead>
 }
 
 export const LLM = {
-  // Free, key-optional providers: OpenRouter (needs OPENROUTER_API_KEY) first,
-  // rotating through several free models, falling back to Pollinations
-  // (no key required) if all of them are unavailable.
-  async chat({ messages }: { messages: ChatMessage[]; model?: string }): Promise<ChatResult | null> {
+  /**
+   * Provider order: Hermes agent (when configured for this deployment) →
+   * the learner's own OpenRouter key (rotating free models) → Pollinations
+   * (keyless) as a last resort AFTER a key was tried. With no Hermes and no
+   * user key this throws NoApiKeyError — routes surface it as a 401 telling
+   * the learner to add their key in Settings.
+   */
+  async chat({ messages, auth }: { messages: ChatMessage[]; auth?: LLMAuth }): Promise<ChatResult | null> {
+    if (HERMES_AGENT_URL) {
+      try {
+        return await chatViaHermes(messages);
+      } catch (hermesError) {
+        console.error('[LLM.chat] Hermes agent unavailable, falling back:', hermesError);
+      }
+    }
+
+    const apiKey = auth?.apiKey?.trim();
+    if (!apiKey) {
+      if (HERMES_AGENT_URL) return null; // Hermes deployment, agent down — no key to fall back to
+      throw new NoApiKeyError();
+    }
+
+    let rateLimited = false;
     try {
-      return await chatViaOpenRouter(messages);
+      return await chatViaOpenRouter(apiKey, messages);
     } catch (openRouterError) {
+      rateLimited = openRouterError instanceof RateLimitedError;
       console.error('[LLM.chat] OpenRouter unavailable, falling back to Pollinations:', openRouterError);
     }
     try {
       return await chatViaPollinations(messages);
     } catch (pollinationsError) {
       console.error('[LLM.chat] Pollinations fallback also failed:', pollinationsError);
+      if (rateLimited) throw new RateLimitedError();
       return null;
     }
   },
 
   /**
-   * Streaming chat: resolves to a stream of text deltas. Rotates through the
-   * model list like chat(); if no model can stream, falls back to the
-   * non-streaming path and emits its full text as a single chunk.
+   * Streaming chat: resolves to a stream of text deltas. Same provider order
+   * as chat(); if no provider can stream, falls back to the non-streaming
+   * path and emits its full text as a single chunk.
    */
-  async chatStream({ messages }: { messages: ChatMessage[] }): Promise<{ stream: ReadableStream<string>; model: string } | null> {
-    const now = Date.now();
-    const available = OPENROUTER_MODELS.filter((m) => now >= (modelDownUntil.get(m) || 0));
-    for (const model of available) {
+  async chatStream({ messages, auth }: { messages: ChatMessage[]; auth?: LLMAuth }): Promise<{ stream: ReadableStream<string>; model: string } | null> {
+    if (HERMES_AGENT_URL) {
       try {
-        return await chatStreamViaOpenRouterModel(model, messages);
-      } catch (err) {
-        modelDownUntil.set(model, Date.now() + MODEL_COOLDOWN_MS);
-        console.warn(`[LLM.chatStream] OpenRouter model ${model} failed (cooling down 5 min):`, err);
+        return await chatStreamViaHermes(messages);
+      } catch (hermesError) {
+        console.error('[LLM.chatStream] Hermes agent stream unavailable, falling back:', hermesError);
       }
     }
 
-    const result = await this.chat({ messages });
+    const apiKey = auth?.apiKey?.trim();
+    if (apiKey) {
+      const now = Date.now();
+      const available = OPENROUTER_MODELS.filter(
+        (m) => now >= (modelDownUntil.get(cooldownKey(apiKey, m)) || 0),
+      );
+      for (const model of available) {
+        try {
+          return await chatStreamViaOpenRouterModel(apiKey, model, messages);
+        } catch (err) {
+          modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + MODEL_COOLDOWN_MS);
+          console.warn(`[LLM.chatStream] OpenRouter model ${model} failed (cooling down 5 min):`, err);
+        }
+      }
+    }
+
+    const result = await this.chat({ messages, auth });
     const text = result?.choices?.[0]?.message?.content;
     if (!text) return null;
     return {
@@ -294,11 +434,13 @@ export const LLM = {
   async chatWithReview({
     messages,
     contextSummary,
+    auth,
   }: {
     messages: ChatMessage[];
     contextSummary?: string;
+    auth?: LLMAuth;
   }): Promise<(ChatResult & { corrected?: boolean }) | null> {
-    const result = await this.chat({ messages });
+    const result = await this.chat({ messages, auth });
     if (!result) return null;
 
     // Speed: the reviewer pass adds 1–2 extra LLM round-trips per message,
@@ -314,7 +456,7 @@ export const LLM = {
     const exchangeCount = messages.filter((m) => m.role === 'user').length;
     if (exchangeCount > 2) return result;
 
-    const review = await critique(lastUserMessage, assistantText, contextSummary);
+    const review = await critique(auth ?? {}, lastUserMessage, assistantText, contextSummary);
     if (review.ok) return result;
 
     console.warn('[LLM.chatWithReview] Reviewer flagged response, regenerating:', review.feedback);
@@ -327,7 +469,25 @@ export const LLM = {
       },
     ];
 
-    const retried = await this.chat({ messages: correctedMessages });
+    const retried = await this.chat({ messages: correctedMessages, auth });
     return retried ? { ...retried, corrected: true } : result;
   },
 };
+
+/**
+ * Pulls the learner's OpenRouter key out of a request and maps LLM errors to
+ * HTTP responses. Shared by every AI route.
+ */
+export function authFromRequest(request: Request): LLMAuth {
+  return { apiKey: request.headers.get('x-openrouter-key') || undefined };
+}
+
+export function llmErrorResponse(error: unknown): { status: number; body: { error: string; code: string } } | null {
+  if (error instanceof NoApiKeyError) {
+    return { status: 401, body: { error: error.message, code: error.code } };
+  }
+  if (error instanceof RateLimitedError) {
+    return { status: 429, body: { error: error.message, code: error.code } };
+  }
+  return null;
+}

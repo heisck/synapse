@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { LLM } from '@/lib/ai';
+import { LLM, authFromRequest, llmErrorResponse } from '@/lib/ai';
+import { validateOneQuestion } from '@/lib/validate';
 import { db } from '@/lib/db';
 
 function tryParseJSON(text: string): unknown | null {
@@ -82,16 +83,34 @@ Respond with ONLY a valid JSON object:
   "difficulty": "${difficulty}"
 }`;
 
+    // Validation layer: the parsed object must survive full schema checks
+    // (non-empty fields, 4 distinct options, answer among them, no leaked
+    // task/persona text) — retries carry the specific errors back to the model.
     let obj: Record<string, unknown> | null = null;
+    let lastErrors: string[] = [];
     for (let attempt = 0; attempt < 3 && !obj; attempt++) {
+      const retryNote = lastErrors.length
+        ? `\n\nYour previous attempt was rejected: ${lastErrors.join('; ')}. Fix every issue.`
+        : '';
       const result = await LLM.chat({
         messages: [
-          { role: 'system', content: prompt },
+          { role: 'system', content: prompt + retryNote },
           { role: 'user', content: 'Generate the new question variation now. Output only valid JSON.' },
         ],
+        auth: authFromRequest(request),
       });
       const raw = result?.choices?.[0]?.message?.content;
-      if (raw) obj = extractObject(raw);
+      const candidate = raw ? extractObject(raw) : null;
+      if (!candidate) {
+        lastErrors = ['response was not a JSON object'];
+        continue;
+      }
+      const { valid, errors } = validateOneQuestion(candidate);
+      if (valid) {
+        obj = candidate;
+      } else {
+        lastErrors = errors;
+      }
     }
 
     if (!obj || !obj.question || !obj.answer) {
@@ -134,6 +153,8 @@ Respond with ONLY a valid JSON object:
       },
     });
   } catch (error) {
+    const mapped = llmErrorResponse(error);
+    if (mapped) return NextResponse.json(mapped.body, { status: mapped.status });
     console.error('[/api/questions/regenerate] Error:', error);
     return NextResponse.json(
       { error: 'Failed to regenerate question. Please try again.' },

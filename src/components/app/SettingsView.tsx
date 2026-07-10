@@ -21,8 +21,10 @@ import {
   ClipboardPaste,
   Check,
   X,
+  KeyRound,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import {
   Select,
@@ -48,6 +50,7 @@ import { toast } from 'sonner';
 import { useAppStore } from '@/stores/appStore';
 import { useTheme } from 'next-themes';
 import { exportProfileCode, importProfileCode, resetAllData } from '@/lib/transfer';
+import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
 
 /** Personas must match the tutor's PersonaSelector so the default applies. */
 const PERSONA_OPTIONS = [
@@ -190,6 +193,24 @@ export function SettingsView() {
   const [transferCode, setTransferCode] = useState('');
   const [importCode, setImportCode] = useState('');
   const [copied, setCopied] = useState(false);
+  // The learner's own OpenRouter key — browser-only, never in our DB
+  const [orKey, setOrKey] = useState('');
+  const [orKeySaved, setOrKeySaved] = useState(false);
+  useEffect(() => {
+    const existing = getOpenRouterKey();
+    setOrKey(existing);
+    setOrKeySaved(!!existing);
+  }, []);
+  const handleSaveOrKey = () => {
+    const trimmed = orKey.trim();
+    if (trimmed && !/^sk-or-/.test(trimmed)) {
+      toast.error('That does not look like an OpenRouter key — it should start with "sk-or-".');
+      return;
+    }
+    setOpenRouterKey(trimmed);
+    setOrKeySaved(!!trimmed);
+    toast.success(trimmed ? 'API key saved to this browser' : 'API key removed');
+  };
 
   // Compact mode: apply/remove a root class the stylesheet reacts to
   useEffect(() => {
@@ -417,6 +438,56 @@ export function SettingsView() {
             <SelectItem value="Japanese">Japanese</SelectItem>
           </SelectWithGlow>
         </SettingRow>
+      </SectionCard>
+
+      {/* AI Access — the learner's own OpenRouter key */}
+      <SectionCard icon={KeyRound} title="AI Access">
+        <div className="space-y-3">
+          <div>
+            <p className="text-sm font-medium">OpenRouter API Key</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              All AI features run on your own free OpenRouter account. Your key is stored only in
+              this browser — never on our servers. Get a free key at{' '}
+              <a
+                href="https://openrouter.ai/keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline underline-offset-2"
+              >
+                openrouter.ai/keys
+              </a>
+              .
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              type="password"
+              value={orKey}
+              onChange={(e) => setOrKey(e.target.value)}
+              placeholder="sk-or-v1-..."
+              autoComplete="off"
+              className="font-mono text-xs"
+              aria-label="OpenRouter API key"
+            />
+            <Button size="sm" onClick={handleSaveOrKey} className="shrink-0">
+              {orKeySaved ? 'Update' : 'Save'}
+            </Button>
+          </div>
+          {orKeySaved ? (
+            <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+              <Check className="h-3 w-3" /> Key active on this device
+            </p>
+          ) : (
+            <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" /> No key yet — AI tutor, quizzes, and study plans
+              will not work until you add one
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            If AI replies stop with a rate-limit message, your key has hit its free limit — wait
+            for it to reset or paste a different key.
+          </p>
+        </div>
       </SectionCard>
 
       {/* Study Settings */}

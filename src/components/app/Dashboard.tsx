@@ -1,5 +1,6 @@
 'use client';
 
+import { aiFetch } from '@/lib/aiKey';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
@@ -823,7 +824,7 @@ function StudyPlanWidget({ courses }: { courses: { id: string; title: string; su
     setDialogOpen(false);
 
     try {
-      const res = await fetch('/api/study-plan', {
+      const res = await aiFetch('/api/study-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

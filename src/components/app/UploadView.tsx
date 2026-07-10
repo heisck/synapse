@@ -1,5 +1,6 @@
 'use client';
 
+import { aiFetch } from '@/lib/aiKey';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
@@ -718,7 +719,7 @@ export function UploadView() {
         body.courseId = activeCourse.id;
       }
 
-      const res = await fetch('/api/questions', {
+      const res = await aiFetch('/api/questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

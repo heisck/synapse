@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { LLM } from '@/lib/ai';
+import { LLM, authFromRequest, llmErrorResponse, type LLMAuth } from '@/lib/ai';
+import { validateQuestions, type ValidatedQuestion } from '@/lib/validate';
 import { buildQuizGenPrompt } from '@/lib/prompts';
 import { db } from '@/lib/db';
 import type { Question } from '@prisma/client';
@@ -42,7 +43,7 @@ function tryParseJSON(text: string): unknown | null {
   }
 }
 
-async function generateQuestions(content: string): Promise<unknown[]> {
+async function generateQuestions(content: string, auth: LLMAuth): Promise<ValidatedQuestion[]> {
   const promptVariants = [
     buildQuizGenPrompt('General', 'Content Analysis', 'medium', 'multiple_choice'),
     `Based on this educational content, generate quiz questions in valid JSON array format.
@@ -52,7 +53,7 @@ Content:
 ${content.slice(0, 3000)}
 """
 
-Generate 3-5 questions. Each question must be a JSON object with:
+Generate 6-10 questions. Each question must be a JSON object with:
 - "question": the question text
 - "type": "multiple_choice"
 - "options": array of 4 options
@@ -70,8 +71,22 @@ ${content.slice(0, 3000)}
 Each object: { "question", "type": "multiple_choice", "options": ["A","B","C","D"], "answer", "explanation", "concept", "difficulty" }`,
   ];
 
+  // Validation layer (docs/ROADMAP.md Phase 0.1): the model's array is never
+  // trusted as-is. Each attempt is schema-checked; the next attempt gets the
+  // concrete validation errors appended so the model can fix them. Only items
+  // that pass every check are ever returned or saved.
+  const collected: ValidatedQuestion[] = [];
+  let lastErrors: string[] = [];
+
   for (let attempt = 0; attempt < 3; attempt++) {
-    const prompt = promptVariants[attempt];
+    let prompt = promptVariants[attempt];
+    if (lastErrors.length > 0) {
+      prompt += `\n\nYour previous attempt was rejected by validation:\n${lastErrors
+        .slice(0, 8)
+        .map((e) => `- ${e}`)
+        .join('\n')}\nFix every issue. Return ONLY the corrected JSON array.`;
+    }
+
     const result = await LLM.chat({
       messages: [
         { role: 'system', content: prompt },
@@ -80,31 +95,38 @@ Each object: { "question", "type": "multiple_choice", "options": ["A","B","C","D
           content: 'Generate the quiz questions now. Output only valid JSON.',
         },
       ],
+      auth,
     });
 
     const raw = result?.choices?.[0]?.message?.content;
     if (!raw) continue;
 
-    // Try direct parse
+    // Parse: direct → fenced code block → first [...] span
     let parsed = tryParseJSON(raw);
-    if (parsed && Array.isArray(parsed)) return parsed;
-
-    // Try extracting JSON from markdown code blocks
-    const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      parsed = tryParseJSON(jsonMatch[1].trim());
-      if (parsed && Array.isArray(parsed)) return parsed;
+    if (!Array.isArray(parsed)) {
+      const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) parsed = tryParseJSON(jsonMatch[1].trim());
+    }
+    if (!Array.isArray(parsed)) {
+      const bracketMatch = raw.match(/\[[\s\S]*\]/);
+      if (bracketMatch) parsed = tryParseJSON(bracketMatch[0]);
+    }
+    if (!Array.isArray(parsed)) {
+      lastErrors = ['response was not a JSON array of question objects'];
+      continue;
     }
 
-    // Try finding array brackets
-    const bracketMatch = raw.match(/\[[\s\S]*\]/);
-    if (bracketMatch) {
-      parsed = tryParseJSON(bracketMatch[0]);
-      if (parsed && Array.isArray(parsed)) return parsed;
+    const { valid, errors } = validateQuestions(parsed);
+    // Accumulate across attempts, deduping against what we already have
+    const have = new Set(collected.map((q) => q.question.toLowerCase()));
+    for (const q of valid) {
+      if (!have.has(q.question.toLowerCase())) collected.push(q);
     }
+    if (collected.length >= 5) return collected;
+    lastErrors = errors.length > 0 ? errors : ['too few valid questions — generate more'];
   }
 
-  return [];
+  return collected;
 }
 
 export async function POST(request: NextRequest) {
@@ -134,7 +156,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const questions = await generateQuestions(content);
+    const questions = await generateQuestions(content, authFromRequest(request));
 
     if (questions.length === 0) {
       return NextResponse.json(
@@ -143,21 +165,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Save questions to database if courseId is provided
+    // Save questions to database if courseId is provided. Everything here has
+    // already passed the validation layer — no empty rows can be written.
     const savedQuestions: Question[] = [];
     for (const q of questions) {
-      const question = q as Record<string, unknown>;
       const saved = await db.question.create({
         data: {
           courseId: courseId || null,
           slideId: slideId || null,
-          type: (question.type as string) || 'multiple_choice',
-          question: (question.question as string) || '',
-          options: question.options ? JSON.stringify(question.options) : null,
-          answer: (question.answer as string) || '',
-          explanation: (question.explanation as string) || null,
-          difficulty: (question.difficulty as string) || 'medium',
-          concept: (question.concept as string) || null,
+          type: q.type,
+          question: q.question,
+          options: q.options ? JSON.stringify(q.options) : null,
+          answer: q.answer,
+          explanation: q.explanation,
+          difficulty: q.difficulty,
+          concept: q.concept ?? null,
         },
       });
       savedQuestions.push(saved);
@@ -168,6 +190,8 @@ export async function POST(request: NextRequest) {
       questions: savedQuestions.map(toClientQuestion),
     });
   } catch (error) {
+    const mapped = llmErrorResponse(error);
+    if (mapped) return NextResponse.json(mapped.body, { status: mapped.status });
     console.error('[/api/questions] Error:', error);
     return NextResponse.json(
       { error: 'Failed to generate questions. Please try again.' },

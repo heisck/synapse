@@ -1,5 +1,6 @@
 'use client'
 
+import { aiFetch } from '@/lib/aiKey';
 import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { useAppStore } from '@/stores/appStore'
 import { Badge } from '@/components/ui/badge'
@@ -727,7 +728,7 @@ export function TutorView() {
     try {
       const history = messages.map((m) => ({ role: m.role, content: m.content }))
 
-      const res = await fetch('/api/chat', {
+      const res = await aiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

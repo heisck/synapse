@@ -1,5 +1,6 @@
 'use client';
 
+import { aiFetch } from '@/lib/aiKey';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
@@ -137,7 +138,7 @@ export function CourseDetail() {
 
     setGeneratingSlideId(slide.id);
     try {
-      const res = await fetch('/api/questions', {
+      const res = await aiFetch('/api/questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slideId: slide.id, courseId: activeCourse?.id }),
@@ -328,7 +329,7 @@ export function CourseDetail() {
       }
 
       // No questions generated for this course yet — generate them now
-      const genRes = await fetch('/api/questions', {
+      const genRes = await aiFetch('/api/questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ courseId: activeCourse.id }),

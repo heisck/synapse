@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { LLM } from '@/lib/ai';
+import { LLM, authFromRequest, llmErrorResponse } from '@/lib/ai';
 import { z } from 'zod';
 
 // --- In-memory rate limiter (10 req/min per IP) ---
@@ -225,6 +225,7 @@ export async function POST(request: NextRequest) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
       ],
+      auth: authFromRequest(request),
     });
 
     if (!result?.choices?.[0]?.message?.content) {
@@ -241,6 +242,8 @@ export async function POST(request: NextRequest) {
     // Return fallback if AI response can't be parsed
     return NextResponse.json(FALLBACK_REPORT);
   } catch (error) {
+    const mapped = llmErrorResponse(error);
+    if (mapped) return NextResponse.json(mapped.body, { status: mapped.status });
     console.error('[/api/error-analysis] Error:', error);
     return NextResponse.json(FALLBACK_REPORT);
   }

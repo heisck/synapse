@@ -1,5 +1,6 @@
 'use client';
 
+import { aiFetch } from '@/lib/aiKey';
 import { useState, useCallback, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import {
@@ -1095,7 +1096,7 @@ export function QuizView() {
           return;
         }
       }
-      const genRes = await fetch('/api/questions', {
+      const genRes = await aiFetch('/api/questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ courseId: course.id }),
@@ -1717,7 +1718,7 @@ export function QuizView() {
     setWeaknessReport(null);
     try {
       const { learnerProfile } = useAppStore.getState();
-      const res = await fetch('/api/error-analysis', {
+      const res = await aiFetch('/api/error-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

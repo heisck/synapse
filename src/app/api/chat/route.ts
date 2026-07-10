@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { LLM, type ChatMessage } from '@/lib/ai';
+import { LLM, authFromRequest, llmErrorResponse, type ChatMessage } from '@/lib/ai';
 import {
   buildDiscoveryPrompt,
   buildSessionStarterPrompt,
@@ -188,6 +188,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const auth = authFromRequest(request);
 
     // --- Provider mode: body has `messages` array ---
     if (body.messages && Array.isArray(body.messages)) {
@@ -197,7 +198,7 @@ export async function POST(request: NextRequest) {
       }));
       const deduped = dedupeMessages(sanitized);
 
-      const result = await LLM.chatWithReview({ messages: deduped });
+      const result = await LLM.chatWithReview({ messages: deduped, auth });
       if (!result?.choices?.[0]?.message?.content) {
         return NextResponse.json(
           { error: 'No response from AI provider.' },
@@ -381,7 +382,7 @@ export async function POST(request: NextRequest) {
 
     // --- Streaming mode: emit tokens as the model produces them ---
     if (body.stream === true) {
-      const streamResult = await LLM.chatStream({ messages: deduped });
+      const streamResult = await LLM.chatStream({ messages: deduped, auth });
       if (!streamResult) {
         return NextResponse.json(
           { error: 'No response from AI. Please try again.' },
@@ -407,7 +408,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const result = await LLM.chatWithReview({ messages: deduped, contextSummary: topic ? `Study topic: ${topic}` : undefined });
+    const result = await LLM.chatWithReview({ messages: deduped, contextSummary: topic ? `Study topic: ${topic}` : undefined, auth });
     if (!result?.choices?.[0]?.message?.content) {
       return NextResponse.json(
         { error: 'No response from AI. Please try again.' },
@@ -424,6 +425,10 @@ export async function POST(request: NextRequest) {
       corrected: result.corrected || false,
     });
   } catch (error) {
+    const mapped = llmErrorResponse(error);
+    if (mapped) {
+      return NextResponse.json({ ...mapped.body, response: mapped.body.error }, { status: mapped.status });
+    }
     console.error('[/api/chat] Error:', error);
     return NextResponse.json(
       {

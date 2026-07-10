@@ -1,5 +1,6 @@
 'use client';
 
+import { aiFetch } from '@/lib/aiKey';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -88,7 +89,7 @@ export function CardStudyView() {
       if (list.length === 0) {
         // No persisted questions yet — generate a fresh set via the LLM.
         setGenerating(true);
-        const genRes = await fetch('/api/questions', {
+        const genRes = await aiFetch('/api/questions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ courseId }),
@@ -190,7 +191,7 @@ export function CardStudyView() {
     if (!currentQ || regenerating) return;
     setRegenerating(true);
     try {
-      const res = await fetch('/api/questions/regenerate', {
+      const res = await aiFetch('/api/questions/regenerate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: { ...currentQ, courseId } }),
@@ -243,7 +244,7 @@ export function CardStudyView() {
       (currentQ.explanation ? `Explanation: ${currentQ.explanation}\n` : '');
 
     try {
-      const res = await fetch('/api/chat', {
+      const res = await aiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
