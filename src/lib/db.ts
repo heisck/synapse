@@ -1,29 +1,38 @@
 import { PrismaClient } from '@prisma/client'
+import { PrismaLibSql } from '@prisma/adapter-libsql'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
 /**
- * Vercel's serverless filesystem is read-only and ephemeral, so the local
- * SQLite file (DATABASE_URL=file:...) only works in dev / self-hosting.
- * When TURSO_DATABASE_URL is set (production), connect to hosted libSQL
- * via the Prisma driver adapter instead — same SQLite schema, zero code
- * changes anywhere else.
+ * Prisma 7 no longer reads the connection URL from the schema — the client must
+ * be constructed with a driver adapter. The libSQL adapter speaks both plain
+ * SQLite files (`file:...`, used in local dev / self-hosting) and hosted libSQL
+ * over the network (`libsql://...`, used on Vercel where the filesystem is
+ * read-only and ephemeral), so the same code path works everywhere.
+ *
+ * TURSO_DATABASE_URL wins when present (production / hosted); otherwise we fall
+ * back to DATABASE_URL, then a local dev file.
  */
+// Treat blank / whitespace-only env values as unset. `.env.development.local`
+// deliberately sets TURSO_DATABASE_URL="" to force local dev onto a file DB, and
+// `??` alone would pass that empty string straight through to the adapter.
+const firstSet = (...values: (string | undefined)[]) =>
+  values.find((v) => v && v.trim().length > 0)
+
 export function createPrismaClient(): PrismaClient {
-  const tursoUrl = process.env.TURSO_DATABASE_URL
-  if (tursoUrl) {
-    // Lazy require so local dev doesn't need the adapter's native bits loaded
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { PrismaLibSQL } = require('@prisma/adapter-libsql')
-    const adapter = new PrismaLibSQL({
-      url: tursoUrl,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-    })
-    return new PrismaClient({ adapter })
-  }
+  const url =
+    firstSet(process.env.TURSO_DATABASE_URL, process.env.DATABASE_URL) ??
+    'file:./dev.db'
+
+  const adapter = new PrismaLibSql({
+    url,
+    authToken: process.env.TURSO_AUTH_TOKEN,
+  })
+
   return new PrismaClient({
+    adapter,
     log: process.env.NODE_ENV === 'production' ? ['error'] : ['query'],
   })
 }
