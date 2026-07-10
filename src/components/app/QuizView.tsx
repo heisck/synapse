@@ -1075,11 +1075,44 @@ function WeaknessReportDialog({
 
 // ---------- Main QuizView ----------
 export function QuizView() {
-  const { navigate, currentQuestions, activeCourse, updateMastery, adaptiveResults, addAdaptiveResult, masteryMap } = useAppStore();
+  const { navigate, currentQuestions, activeCourse, updateMastery, adaptiveResults, addAdaptiveResult, masteryMap, courses, setCurrentQuestions, setActiveCourse } = useAppStore();
 
   const allQuestions = currentQuestions;
 
   const [studyMode, setStudyMode] = useState<StudyMode>('quiz');
+  // Course picker in the empty state: reuse existing questions for a course,
+  // or generate them from its slides — never force a re-upload
+  const [preparingCourseId, setPreparingCourseId] = useState<string | null>(null);
+  const handlePracticeCourse = useCallback(async (course: (typeof courses)[number]) => {
+    setPreparingCourseId(course.id);
+    try {
+      const existingRes = await fetch(`/api/questions?courseId=${course.id}`);
+      if (existingRes.ok) {
+        const existingData = await existingRes.json();
+        if (existingData.questions?.length > 0) {
+          setActiveCourse(course);
+          setCurrentQuestions(existingData.questions);
+          return;
+        }
+      }
+      const genRes = await fetch('/api/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseId: course.id }),
+      });
+      if (!genRes.ok) {
+        const err = await genRes.json().catch(() => ({ error: 'Failed to generate questions.' }));
+        throw new Error(err.error || 'Failed to generate questions.');
+      }
+      const genData = await genRes.json();
+      setActiveCourse(course);
+      setCurrentQuestions(genData.questions);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to prepare quiz. Please try again.');
+    } finally {
+      setPreparingCourseId(null);
+    }
+  }, [courses, setActiveCourse, setCurrentQuestions]);
   const [adaptiveOn, setAdaptiveOn] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<string>('all');
   const [showBookmarked, setShowBookmarked] = useState(false);
@@ -1872,16 +1905,36 @@ export function QuizView() {
         animate={{ opacity: 1, y: 0 }}
         className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
       >
-        <div className="glass rounded-2xl p-8 text-center space-y-4 max-w-md">
+        <div className="glass rounded-2xl p-8 text-center space-y-4 max-w-md w-full">
           <BookOpen className="h-16 w-16 text-primary/30 mx-auto" />
-          <h2 className="text-xl font-bold">No questions available</h2>
+          <h2 className="text-xl font-bold">{courses.length > 0 ? 'Pick a course to practice' : 'No questions available'}</h2>
           <p className="text-muted-foreground text-sm">
-            {selectedCourse !== 'all'
-              ? `No questions found for this course. Try selecting a different category.`
-              : 'Upload some study materials or generate questions from your courses to start practicing.'}
+            {courses.length > 0
+              ? 'Generate a quiz straight from one of your courses — no need to upload the slides again.'
+              : 'Upload some study materials to start practicing.'}
           </p>
+          {courses.length > 0 && (
+            <div className="space-y-2 text-left max-h-64 overflow-y-auto pr-1">
+              {courses.map((course) => (
+                <button
+                  key={course.id}
+                  onClick={() => handlePracticeCourse(course)}
+                  disabled={preparingCourseId !== null}
+                  className="w-full flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 text-sm hover:border-primary/40 hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  <BookOpen className="h-4 w-4 text-primary shrink-0" />
+                  <span className="flex-1 truncate font-medium">{course.title}</span>
+                  {preparingCourseId === course.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                  ) : (
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex justify-center gap-3">
-            <Button onClick={() => navigate('upload')}>
+            <Button variant={courses.length > 0 ? 'outline' : 'default'} onClick={() => navigate('upload')}>
               <BookOpen className="h-4 w-4 mr-2" />
               Upload Slides
             </Button>

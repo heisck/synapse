@@ -29,7 +29,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 
 type NotificationFilter = 'all' | 'unread' | 'achievements' | 'study' | 'social';
@@ -129,17 +128,20 @@ export function NotificationCenter({ open, onOpenChange }: NotificationCenterPro
     markAllNotificationsRead();
   }, [markAllNotificationsRead]);
 
-  // Scroll fade effect
+  // Scroll fade effect — re-run when the dialog opens because the list only
+  // exists while mounted, and when the list length changes.
   useEffect(() => {
+    if (!open) return;
     const el = scrollRef.current;
     if (!el) return;
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = el;
       setShowScrollFade(scrollHeight > clientHeight && scrollTop < scrollHeight - clientHeight - 20);
     };
+    handleScroll();
     el.addEventListener('scroll', handleScroll);
     return () => el.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [open, filteredNotifications.length]);
 
   const emptyStateMessages: Record<NotificationFilter, { icon: typeof Bell; message: string }> = {
     all: { icon: Bell, message: 'No notifications yet. Keep studying!' },
@@ -154,7 +156,7 @@ export function NotificationCenter({ open, onOpenChange }: NotificationCenterPro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg p-0 gap-0 max-h-[80vh] flex flex-col">
+      <DialogContent className="sm:max-w-lg p-0 gap-0 h-[min(80vh,40rem)] flex flex-col overflow-hidden">
         <DialogHeader className="p-5 pb-3 shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -168,7 +170,8 @@ export function NotificationCenter({ open, onOpenChange }: NotificationCenterPro
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-1">
+            {/* mr-8 keeps Clear All clear of the dialog's absolute top-right X */}
+            <div className="flex items-center gap-1 mr-8">
               <Button
                 variant="ghost"
                 size="sm"
@@ -225,8 +228,10 @@ export function NotificationCenter({ open, onOpenChange }: NotificationCenterPro
 
         <Separator />
 
-        {/* Notification List */}
-        <ScrollArea className="flex-1 px-5" ref={scrollRef}>
+        {/* Notification List — native overflow scrolling; min-h-0 lets the
+            flex child shrink so long lists scroll inside the panel instead of
+            pushing past the dialog bounds */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-5" ref={scrollRef}>
           <div className="py-2 relative">
             {filteredNotifications.length > 0 ? (
               <AnimatePresence mode="popLayout">
@@ -322,7 +327,7 @@ export function NotificationCenter({ open, onOpenChange }: NotificationCenterPro
               </motion.div>
             )}
           </div>
-        </ScrollArea>
+        </div>
 
         {/* Scroll Fade Effect */}
         <AnimatePresence>

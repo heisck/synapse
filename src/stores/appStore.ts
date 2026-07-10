@@ -43,6 +43,8 @@ export interface AppState {
   // Chat
   messages: ChatMessage[];
   addMessage: (msg: ChatMessage) => void;
+  /** Replace one message's content in place — used for streamed responses */
+  updateMessage: (id: string, content: string) => void;
   clearMessages: () => void;
 
   // Mastery Map
@@ -260,6 +262,8 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get): 
   setActiveTopic: (topic) => set({ activeTopic: topic, sessionPhase: 'starter' }),
   messages: [],
   addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
+  updateMessage: (id, content) =>
+    set((s) => ({ messages: s.messages.map((m) => (m.id === id ? { ...m, content } : m)) })),
   clearMessages: () => set({ messages: [] }),
   masteryMap: {},
   updateMastery: (concept, level, evidence) => set((s) => ({

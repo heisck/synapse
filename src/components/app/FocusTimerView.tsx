@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, RotateCcw, SkipForward, CloudRain, Trees, Waves, Volume2, VolumeX, ChevronDown, ChevronUp, ArrowRight, Flame, Trophy, Lightbulb, Trash2, Clock, Target, TrendingUp, AlertCircle } from 'lucide-react';
+import { Play, Pause, RotateCcw, SkipForward, ChevronDown, ChevronUp, ArrowRight, Flame, Trophy, Lightbulb, Trash2, Clock, Target, TrendingUp, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAppStore } from '@/stores/appStore';
+import { StudySoundscapes } from './StudySoundscapes';
 import { useCountUp } from '@/hooks/useCountUp';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -21,15 +21,6 @@ interface FocusSession {
   completedAt: number; // timestamp
   topic?: string;
   mode?: string;
-}
-
-interface AmbientSound {
-  id: string;
-  label: string;
-  icon: typeof CloudRain;
-  volume: number;     // 0-100
-  muted: boolean;
-  playing: boolean;
 }
 
 const FOCUS_QUOTES = [
@@ -122,156 +113,6 @@ function getDayNameFull(dateStr: string): string {
   return date.toLocaleDateString('en-US', { weekday: 'long' });
 }
 
-// ─── Web Audio API Ambient Sounds ───────────────────────────────────────────
-
-class AmbientSoundEngine {
-  private ctx: AudioContext | null = null;
-  private nodes: Map<string, { source: AudioNode; gain: GainNode; cleanup?: () => void }> = new Map();
-
-  private getCtx(): AudioContext {
-    if (!this.ctx) {
-      this.ctx = new AudioContext();
-    }
-    if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
-    }
-    return this.ctx;
-  }
-
-  startRain(volume: number) {
-    this.stop('rain');
-    const ctx = this.getCtx();
-    const bufferSize = 2 * ctx.sampleRate;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
-    }
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-
-    const lowpass = ctx.createBiquadFilter();
-    lowpass.type = 'lowpass';
-    lowpass.frequency.value = 800;
-    lowpass.Q.value = 0.7;
-
-    const gain = ctx.createGain();
-    gain.gain.value = volume / 100 * 0.5;
-
-    source.connect(lowpass);
-    lowpass.connect(gain);
-    gain.connect(ctx.destination);
-    source.start();
-
-    this.nodes.set('rain', { source, gain });
-  }
-
-  startForest(volume: number) {
-    this.stop('forest');
-    const ctx = this.getCtx();
-    const bufferSize = 4 * ctx.sampleRate;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    // Brown noise generation
-    let lastOut = 0;
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      data[i] = (lastOut + 0.02 * white) / 1.02;
-      lastOut = data[i];
-      data[i] *= 3.5;
-    }
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-
-    const bandpass = ctx.createBiquadFilter();
-    bandpass.type = 'bandpass';
-    bandpass.frequency.value = 400;
-    bandpass.Q.value = 0.5;
-
-    const gain = ctx.createGain();
-    gain.gain.value = volume / 100 * 0.4;
-
-    source.connect(bandpass);
-    bandpass.connect(gain);
-    gain.connect(ctx.destination);
-    source.start();
-
-    this.nodes.set('forest', { source, gain });
-  }
-
-  startWaves(volume: number) {
-    this.stop('waves');
-    const ctx = this.getCtx();
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = 0.15;
-
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 200;
-
-    const lfo = ctx.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.08;
-
-    const mainOsc = ctx.createOscillator();
-    mainOsc.type = 'sine';
-    mainOsc.frequency.value = 100;
-
-    const mainGain = ctx.createGain();
-    mainGain.gain.value = volume / 100 * 0.3;
-
-    lfo.connect(lfoGain);
-    lfoGain.connect(mainOsc.frequency);
-    mainOsc.connect(mainGain);
-    mainGain.connect(ctx.destination);
-
-    lfo.start();
-    mainOsc.start();
-
-    this.nodes.set('waves', {
-      source: mainOsc,
-      gain: mainGain,
-      cleanup: () => {
-        try { lfo.stop(); } catch { /* ignore */ }
-      },
-    });
-  }
-
-  setVolume(id: string, volume: number) {
-    const entry = this.nodes.get(id);
-    if (entry) {
-      entry.gain.gain.setTargetAtTime(volume / 100 * 0.5, this.ctx?.currentTime ?? 0, 0.1);
-    }
-  }
-
-  stop(id: string) {
-    const entry = this.nodes.get(id);
-    if (entry) {
-      entry.cleanup?.();
-      try {
-        if (entry.source instanceof AudioBufferSourceNode || entry.source instanceof OscillatorNode) {
-          entry.source.stop();
-        }
-      } catch { /* ignore */ }
-      this.nodes.delete(id);
-    }
-  }
-
-  stopAll() {
-    this.nodes.forEach((_, id) => this.stop(id));
-  }
-
-  dispose() {
-    this.stopAll();
-    if (this.ctx) {
-      this.ctx.close();
-      this.ctx = null;
-    }
-  }
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function FocusTimerView() {
@@ -284,7 +125,6 @@ export function FocusTimerView() {
   const [sessionCount, setSessionCount] = useState(1);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [stats, setStats] = useState(() => getTodayStats());
-  const [showCustomInput, setShowCustomInput] = useState(false);
   const [showGoToTutor, setShowGoToTutor] = useState(false);
 
   // Analytics expand state
@@ -309,25 +149,9 @@ export function FocusTimerView() {
     setAnalyticsSessions(loadSessions());
   }, [stats]);
 
-  // Ambient sounds state
-  const [sounds, setSounds] = useState<AmbientSound[]>([
-    { id: 'rain', label: 'Rain', icon: CloudRain, volume: 60, muted: false, playing: false },
-    { id: 'forest', label: 'Forest', icon: Trees, volume: 50, muted: false, playing: false },
-    { id: 'waves', label: 'Waves', icon: Waves, volume: 40, muted: false, playing: false },
-  ]);
-
-  const engineRef = useRef<AmbientSoundEngine | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimestampRef = useRef<number>(0);
   const initialRemainingRef = useRef<number>(0);
-
-  // Initialize audio engine
-  useEffect(() => {
-    engineRef.current = new AmbientSoundEngine();
-    return () => {
-      engineRef.current?.dispose();
-    };
-  }, []);
 
   // switchMode must be declared before handleTimerComplete (which calls it)
   const switchMode = useCallback((newMode: TimerMode) => {
@@ -498,54 +322,6 @@ export function FocusTimerView() {
     } else {
       switchMode('focus');
     }
-  };
-
-  const toggleSound = (id: string) => {
-    setSounds((prev) => {
-      const next = prev.map((s) => {
-        if (s.id !== id) return s;
-        const willPlay = !s.playing;
-        if (willPlay && engineRef.current) {
-          const effectiveVolume = s.muted ? 0 : s.volume;
-          if (id === 'rain') engineRef.current.startRain(effectiveVolume);
-          if (id === 'forest') engineRef.current.startForest(effectiveVolume);
-          if (id === 'waves') engineRef.current.startWaves(effectiveVolume);
-        } else if (!willPlay && engineRef.current) {
-          engineRef.current.stop(id);
-        }
-        return { ...s, playing: willPlay };
-      });
-      return next;
-    });
-  };
-
-  const setSoundVolume = (id: string, volume: number) => {
-    setSounds((prev) => {
-      const next = prev.map((s) => {
-        if (s.id !== id) return s;
-        if (s.playing && engineRef.current && !s.muted) {
-          if (id === 'rain') engineRef.current.setVolume(id, volume);
-          if (id === 'forest') engineRef.current.setVolume(id, volume);
-          if (id === 'waves') engineRef.current.setVolume(id, volume);
-        }
-        return { ...s, volume };
-      });
-      return next;
-    });
-  };
-
-  const toggleSoundMute = (id: string) => {
-    setSounds((prev) => {
-      const next = prev.map((s) => {
-        if (s.id !== id) return s;
-        const willMute = !s.muted;
-        if (s.playing && engineRef.current) {
-          engineRef.current.setVolume(id, willMute ? 0 : s.volume);
-        }
-        return { ...s, muted: willMute };
-      });
-      return next;
-    });
   };
 
   // Progress calculation
@@ -976,110 +752,18 @@ export function FocusTimerView() {
         </p>
       </motion.div>
 
-      {/* Ambient Sounds */}
+      {/* Ambient Sounds — the same soundscapes as the tutor page */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
-        className="w-full max-w-md glass-accent-top glass rounded-2xl p-4 space-y-3"
+        className="relative z-30 w-full max-w-md glass-accent-top glass rounded-2xl p-4 flex items-center justify-between gap-3"
       >
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground/80">Ambient Sounds</h3>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowCustomInput((v) => !v)}
-            className="h-7 px-2 text-xs text-muted-foreground"
-          >
-            {showCustomInput ? <ChevronUp className="h-3.5 w-3.5 mr-1" /> : <ChevronDown className="h-3.5 w-3.5 mr-1" />}
-            {showCustomInput ? 'Collapse' : 'Expand'}
-          </Button>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground/80">Soundscapes</h3>
+          <p className="text-xs text-muted-foreground truncate">Rain, cafe, waves & more to help you focus</p>
         </div>
-
-        <AnimatePresence>
-          {showCustomInput && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="space-y-3 overflow-hidden"
-            >
-              {sounds.map((sound) => {
-                const Icon = sound.icon;
-                return (
-                  <div key={sound.id} className="flex items-center gap-3">
-                    <Button
-                      variant={sound.playing ? 'default' : 'outline'}
-                      size="icon"
-                      onClick={() => toggleSound(sound.id)}
-                      className={`h-9 w-9 rounded-lg shrink-0 transition-all duration-200 ${
-                        sound.playing
-                          ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white'
-                          : 'glass hover:bg-accent/50'
-                      }`}
-                      aria-label={`${sound.playing ? 'Stop' : 'Play'} ${sound.label}`}
-                    >
-                      <Icon className="h-4 w-4" />
-                    </Button>
-                    <span className="text-xs font-medium text-foreground/70 w-14 shrink-0">{sound.label}</span>
-                    <Slider
-                      value={[sound.volume]}
-                      onValueChange={([v]) => setSoundVolume(sound.id, v)}
-                      min={0}
-                      max={100}
-                      step={1}
-                      className="flex-1"
-                      disabled={!sound.playing}
-                    />
-                    <span className="text-[10px] text-muted-foreground w-7 text-right tabular-nums">
-                      {sound.muted ? 'M' : `${sound.volume}`}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => toggleSoundMute(sound.id)}
-                      className="h-7 w-7 shrink-0"
-                      aria-label={sound.muted ? 'Unmute' : 'Mute'}
-                      disabled={!sound.playing}
-                    >
-                      {sound.muted ? (
-                        <VolumeX className="h-3.5 w-3.5 text-muted-foreground" />
-                      ) : (
-                        <Volume2 className="h-3.5 w-3.5 text-muted-foreground" />
-                      )}
-                    </Button>
-                  </div>
-                );
-              })}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Quick toggle buttons when collapsed */}
-        {!showCustomInput && (
-          <div className="flex items-center justify-center gap-2 pt-1">
-            {sounds.map((sound) => {
-              const Icon = sound.icon;
-              return (
-                <Button
-                  key={sound.id}
-                  variant={sound.playing ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => toggleSound(sound.id)}
-                  className={`rounded-lg text-xs transition-all duration-200 gap-1.5 ${
-                    sound.playing
-                      ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
-                      : 'glass text-muted-foreground hover:text-foreground'
-                  }`}
-                  aria-label={`${sound.playing ? 'Stop' : 'Play'} ${sound.label}`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {sound.label}
-                </Button>
-              );
-            })}
-          </div>
-        )}
+        <StudySoundscapes />
       </motion.div>
 
       {/* Stats Bar */}
@@ -1286,28 +970,28 @@ export function FocusTimerView() {
                           <stop offset="100%" stopColor="#14b8a6" />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                       <XAxis
                         dataKey="day"
-                        tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                        tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
                         axisLine={false}
                         tickLine={false}
                       />
                       <YAxis
-                        tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                        tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
                         axisLine={false}
                         tickLine={false}
                         allowDecimals={false}
                       />
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
+                          backgroundColor: 'var(--card)',
+                          border: '1px solid var(--border)',
                           borderRadius: '8px',
                           fontSize: '12px',
-                          color: 'hsl(var(--foreground))',
+                          color: 'var(--foreground)',
                         }}
-                        cursor={{ fill: 'hsl(var(--accent))', opacity: 0.3 }}
+                        cursor={{ fill: 'var(--accent)', opacity: 0.3 }}
                         formatter={(value: number) => [`${value} min`, 'Focus Time']}
                       />
                       <Bar

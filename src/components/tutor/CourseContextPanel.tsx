@@ -15,7 +15,6 @@ import {
   ChevronLeft,
   ChevronRight,
   BookOpen,
-  Upload,
   Layers,
   Tag,
 } from 'lucide-react'
@@ -54,7 +53,6 @@ const TAG_COLORS = [
 ]
 
 export function CourseContextPanel() {
-  const navigate = useAppStore((s) => s.navigate)
   const activeSlides = useAppStore((s) => s.activeSlides)
   const currentSlideIndex = useAppStore((s) => s.currentSlideIndex)
   const setCurrentSlideIndex = useAppStore((s) => s.setCurrentSlideIndex)
@@ -62,22 +60,9 @@ export function CourseContextPanel() {
   // Collapsed by default so the chat gets the vertical space
   const [isOpen, setIsOpen] = useState(false)
 
-  // Empty state: one slim row — the chat keeps its height
-  if (activeSlides.length === 0) {
-    return (
-      <div className="mx-auto w-full max-w-3xl px-4 mb-1">
-        <button
-          type="button"
-          onClick={() => navigate('upload')}
-          className="flex w-full items-center gap-2 rounded-lg border border-dashed border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
-          aria-label="No course loaded — upload slides"
-        >
-          <Upload className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">No course loaded — tap to upload slides</span>
-        </button>
-      </div>
-    )
-  }
+  // No slides: render nothing — the chat's own empty state already offers an
+  // upload CTA, so a second banner here was redundant
+  if (activeSlides.length === 0) return null
 
   const currentSlide = activeSlides[currentSlideIndex]
   if (!currentSlide) return null

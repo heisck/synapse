@@ -52,10 +52,14 @@ export function CoursesView() {
             {courses.length} course{courses.length !== 1 ? 's' : ''} in your library
           </p>
         </div>
-        <Button onClick={() => navigate('upload')} className="glow-emerald transition-shadow duration-300 shrink-0">
-          <Upload className="h-4 w-4 mr-2" />
-          Upload Slides
-        </Button>
+        {/* Hidden while the empty state below shows its own upload CTA —
+            two upload buttons on one screen was confusing */}
+        {courses.length > 0 && (
+          <Button onClick={() => navigate('upload')} className="glow-emerald transition-shadow duration-300 shrink-0">
+            <Upload className="h-4 w-4 mr-2" />
+            Upload Slides
+          </Button>
+        )}
       </motion.div>
 
       {courses.length > 0 && (

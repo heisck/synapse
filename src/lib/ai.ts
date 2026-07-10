@@ -74,6 +74,84 @@ async function chatViaOpenRouterModel(model: string, messages: ChatMessage[]): P
   return { choices: data.choices, model: data.model || model };
 }
 
+/**
+ * Streaming variant: opens an SSE connection to OpenRouter and yields text
+ * deltas as they arrive. The caller gets tokens the moment the model emits
+ * them instead of waiting for the full completion.
+ */
+async function chatStreamViaOpenRouterModel(
+  model: string,
+  messages: ChatMessage[],
+): Promise<{ stream: ReadableStream<string>; model: string }> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENROUTER_API_KEY is not set');
+  }
+
+  const res = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      'HTTP-Referer': APP_URL,
+      'X-Title': 'SynapseLearn',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 0.7,
+      max_tokens: 2048,
+      stream: true,
+      provider: { sort: 'throughput' },
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`OpenRouter stream failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+
+  const body = res.body;
+  const stream = new ReadableStream<string>({
+    async start(controller) {
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          // SSE frames are newline-delimited "data: {...}" lines
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:')) continue;
+            const payload = trimmed.slice(5).trim();
+            if (payload === '[DONE]') continue;
+            try {
+              const json = JSON.parse(payload);
+              const delta = json?.choices?.[0]?.delta?.content;
+              if (typeof delta === 'string' && delta) controller.enqueue(delta);
+            } catch {
+              // partial/keep-alive frame — ignore
+            }
+          }
+        }
+        controller.close();
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    cancel(reason) {
+      body.cancel(reason).catch(() => {});
+    },
+  });
+
+  return { stream, model };
+}
+
 async function chatViaOpenRouter(messages: ChatMessage[]): Promise<ChatResult> {
   const now = Date.now();
   const available = OPENROUTER_MODELS.filter((m) => now >= (modelDownUntil.get(m) || 0));
@@ -174,6 +252,37 @@ export const LLM = {
       console.error('[LLM.chat] Pollinations fallback also failed:', pollinationsError);
       return null;
     }
+  },
+
+  /**
+   * Streaming chat: resolves to a stream of text deltas. Rotates through the
+   * model list like chat(); if no model can stream, falls back to the
+   * non-streaming path and emits its full text as a single chunk.
+   */
+  async chatStream({ messages }: { messages: ChatMessage[] }): Promise<{ stream: ReadableStream<string>; model: string } | null> {
+    const now = Date.now();
+    const available = OPENROUTER_MODELS.filter((m) => now >= (modelDownUntil.get(m) || 0));
+    for (const model of available) {
+      try {
+        return await chatStreamViaOpenRouterModel(model, messages);
+      } catch (err) {
+        modelDownUntil.set(model, Date.now() + MODEL_COOLDOWN_MS);
+        console.warn(`[LLM.chatStream] OpenRouter model ${model} failed (cooling down 5 min):`, err);
+      }
+    }
+
+    const result = await this.chat({ messages });
+    const text = result?.choices?.[0]?.message?.content;
+    if (!text) return null;
+    return {
+      stream: new ReadableStream<string>({
+        start(controller) {
+          controller.enqueue(text);
+          controller.close();
+        },
+      }),
+      model: result?.model || 'fallback',
+    };
   },
 
   /**

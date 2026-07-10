@@ -718,13 +718,15 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
             </span>
           </motion.div>
 
-          {/* Hover action buttons for assistant messages */}
+          {/* Hover actions + reactions collapse together in ONE container —
+              two separately-animated collapses made the bubble jump twice
+              when the pointer left the message */}
           {isAssistant && !isStreaming && (
             <div
               className="overflow-hidden transition-all duration-200 ease-out"
               style={{
                 opacity: isHovered ? 1 : 0,
-                maxHeight: isHovered ? 40 : 0,
+                maxHeight: isHovered ? 88 : 0,
                 marginTop: isHovered ? 0 : -4,
               }}
             >
@@ -738,16 +740,8 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
                 onToggleStar={() => toggleStarMessage(message.id)}
                 onSaveAsNote={onSaveAsNote ? () => onSaveAsNote(message) : undefined}
               />
+              <ReactionBar reactions={reactions} onToggle={handleReaction} />
             </div>
-          )}
-
-          {/* Reaction bar for assistant messages */}
-          {isAssistant && !isStreaming && (
-            <AnimatePresence>
-              {isHovered && (
-                <ReactionBar reactions={reactions} onToggle={handleReaction} />
-              )}
-            </AnimatePresence>
           )}
 
           {/* TTS button during streaming */}

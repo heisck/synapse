@@ -193,8 +193,9 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
 
       <Separator />
 
-      {/* Navigation */}
-      <ScrollArea className="flex-1 px-3 py-4">
+      {/* Navigation — min-h-0 lets this flex child shrink below its content
+          height so the scroll area actually scrolls on short viewports */}
+      <ScrollArea className="flex-1 min-h-0 px-3 py-4">
         <LayoutGroup>
           <nav className="flex flex-col gap-1" role="navigation" aria-label="Main navigation">
             {navItems.map((item, index) => {
@@ -474,6 +475,7 @@ export function AppSidebar() {
           </SheetTrigger>
           <SheetContent
             side="left"
+            showClose={false}
             className="w-72 p-0 backdrop-blur-2xl bg-background/80 border-border/30"
           >
             <SheetTitle className="sr-only">Navigation</SheetTitle>

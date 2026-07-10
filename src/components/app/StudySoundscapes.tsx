@@ -4,7 +4,8 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Volume2, VolumeX, Waves, TreePine, Coffee, Wind, CloudRain, Flame, Droplets, Music } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { motion } from 'framer-motion';
 import { useAppStore } from '@/stores/appStore';
 
 interface SoundChannel {
@@ -229,39 +230,32 @@ export function StudySoundscapes() {
   const activeCount = activeSoundIds.size;
 
   return (
-    <div className="relative">
-      {/* Toggle Button */}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setIsOpen(!isOpen)}
-        className={`gap-2 relative ${isOpen ? 'glass-card-shine' : ''}`}
-      >
-        {masterMuted ? (
-          <VolumeX className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <Volume2 className="h-4 w-4 text-primary" />
-        )}
-        <span className="hidden sm:inline text-xs">Soundscapes</span>
-        {activeCount > 0 && !isOpen && (
-          <motion.span
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-primary glow-dot"
-          />
-        )}
-      </Button>
+    // Radix popover renders in a portal, so no ancestor stacking context,
+    // transform, or overflow clipping can cover or hide the panel
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className={`gap-2 relative ${isOpen ? 'glass-card-shine' : ''}`}
+        >
+          {masterMuted ? (
+            <VolumeX className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <Volume2 className="h-4 w-4 text-primary" />
+          )}
+          <span className="hidden sm:inline text-xs">Soundscapes</span>
+          {activeCount > 0 && !isOpen && (
+            <motion.span
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-primary glow-dot"
+            />
+          )}
+        </Button>
+      </PopoverTrigger>
 
-      {/* Expanded Panel */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.95 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className="absolute top-full mt-2 right-0 z-50 w-80 glass-blur-strong rounded-xl p-4 shadow-xl border border-border/50"
-          >
+      <PopoverContent align="end" sideOffset={8} className="w-80 rounded-xl p-4 shadow-xl">
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-foreground">Study Soundscapes</h3>
@@ -338,9 +332,7 @@ export function StudySoundscapes() {
                 </Button>
               ))}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }

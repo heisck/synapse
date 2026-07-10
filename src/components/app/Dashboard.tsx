@@ -773,6 +773,13 @@ function StudyPlanWidget({ courses }: { courses: { id: string; title: string; su
   // Dialog state
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [customTopic, setCustomTopic] = useState('');
+
+  // The command dial's "Generate Plan" action opens this dialog from outside
+  useEffect(() => {
+    const openDialog = () => setDialogOpen(true);
+    window.addEventListener('open-study-plan-dialog', openDialog);
+    return () => window.removeEventListener('open-study-plan-dialog', openDialog);
+  }, []);
   const [hoursPerWeek, setHoursPerWeek] = useState([10]);
   const [level, setLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('intermediate');
   const [goals, setGoals] = useState<string[]>([]);
@@ -1053,27 +1060,10 @@ function StudyPlanWidget({ courses }: { courses: { id: string; title: string; su
     );
   }
 
-  // Default state: Generate Plan button
+  // No saved plan: no visible card — the command dial's "Generate Plan"
+  // opens this dialog directly, so the dashboard doesn't carry a duplicate CTA
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-      <div className="glass rounded-xl p-6 border-glow">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            <h3 className="font-semibold text-sm">Your Study Plan</h3>
-          </div>
-          <DialogTrigger asChild>
-            <Button size="sm" className="glow-emerald">
-              <Sparkles className="h-4 w-4 mr-2" />
-              Generate Plan
-            </Button>
-          </DialogTrigger>
-        </div>
-        <p className="text-sm text-muted-foreground mt-2">
-          Get a personalized weekly study plan powered by AI based on your topics and goals.
-        </p>
-      </div>
-
       <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -1387,11 +1377,8 @@ export function Dashboard() {
           description: 'Your knowledge is waiting. Pick up where you left off.',
           icon: <Sparkles className="h-4 w-4 text-emerald-500" />,
           duration: 5000,
-          style: {
-            border: '1px solid oklch(0.627 0.194 149.214 / 0.3)',
-            background: 'oklch(0.995 0.002 155)',
-            color: 'oklch(0.185 0.02 155)',
-          },
+          // Theme-provided colors: hard-coding a light background here made
+          // the text unreadable in dark mode
           className: '!border-l-4 !border-l-emerald-500',
         });
         setToastShown(true);
@@ -1809,7 +1796,6 @@ export function Dashboard() {
 
   const today = new Date().toISOString().split('T')[0];
   const dailyChallengeDone = storeDailyChallenge.lastCompletedDate === today;
-  const activeWeeklyGoal = studyGoals[0];
   const commandActions = [
     {
       label: activeSessionId ? 'Continue' : 'Start Now',
@@ -1834,7 +1820,12 @@ export function Dashboard() {
       title: 'Build a weekly plan',
       description: 'Generate a study plan from your courses, topics, and goals.',
       icon: Sparkles,
-      onClick: () => document.getElementById('dashboard-study-plan')?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+      onClick: () => {
+        // Scroll to the plan when one exists; otherwise open the generate dialog
+        const planEl = document.getElementById('dashboard-study-plan');
+        if (planEl) planEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        window.dispatchEvent(new CustomEvent('open-study-plan-dialog'));
+      },
     },
     {
       label: 'Resume',
@@ -1852,15 +1843,6 @@ export function Dashboard() {
       description: 'Use a timed session to keep attention tight and measurable.',
       icon: Timer,
       onClick: () => navigate('focus-timer'),
-    },
-    {
-      label: 'Week Goal',
-      title: activeWeeklyGoal ? activeWeeklyGoal.label : 'Set a weekly goal',
-      description: activeWeeklyGoal
-        ? `${weeklyGoalPct}% overall progress across your weekly study goals.`
-        : 'Create a weekly target for sessions, reviews, hours, or score.',
-      icon: Flame,
-      onClick: () => document.getElementById('dashboard-weekly-goals')?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
     },
     {
       label: 'Day Goal',
@@ -1892,7 +1874,7 @@ export function Dashboard() {
     >
       {/* Greeting — bare, no card wrapper */}
       <motion.div variants={fadeUp}>
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div className="flex flex-col-reverse sm:flex-row sm:items-start sm:justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-3 flex-wrap">
               <motion.h1
@@ -1959,7 +1941,7 @@ export function Dashboard() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="flex items-center gap-0.5 rounded-full border border-border/60 p-1 shrink-0"
+            className="flex w-full justify-evenly sm:w-auto sm:justify-normal items-center gap-0.5 rounded-full border border-border/60 p-1 shrink-0"
           >
             <StudyBuddiesChip />
             <ThemeToggle />
@@ -1969,8 +1951,9 @@ export function Dashboard() {
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleExportStudyData} aria-label="Export study data" title="Export data">
               <Download className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('upload')} aria-label="Upload slides" title="Upload slides">
+            <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2.5" onClick={() => navigate('upload')} aria-label="Upload slides">
               <Upload className="h-4 w-4" />
+              <span className="text-xs font-medium">Upload slides</span>
             </Button>
           </motion.div>
         </div>
@@ -1993,14 +1976,14 @@ export function Dashboard() {
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.2 }}
             >
-              <h2 className="font-semibold text-base truncate">{activeCommand.title}</h2>
-              <p className="text-muted-foreground text-sm line-clamp-1">{activeCommand.description}</p>
+              <h2 className="font-bold text-xl lg:text-2xl truncate">{activeCommand.title}</h2>
+              <p className="text-muted-foreground text-sm lg:text-base line-clamp-1">{activeCommand.description}</p>
             </motion.div>
           </AnimatePresence>
         </div>
 
         <motion.div
-          className="relative h-16 w-[220px] sm:w-[260px] shrink-0"
+          className="relative h-24 w-[260px] sm:w-[320px] shrink-0"
           style={{ perspective: 600 }}
           onWheel={handleCommandWheel}
           role="listbox"
@@ -2046,36 +2029,31 @@ export function Dashboard() {
                 onClick={() => (isActive ? activeCommand.onClick() : setActiveCommandIndex(i))}
                 initial={false}
                 animate={{
-                  x: offset * 46,
+                  x: offset * 60,
                   scale: 1 - abs * 0.2,
-                  rotateY: offset * -30,
+                  rotateY: offset * -22,
                   opacity: 1 - abs * 0.4,
                 }}
                 transition={{ type: 'spring', stiffness: 320, damping: 28 }}
                 style={{ zIndex: 10 - abs, transformStyle: 'preserve-3d' }}
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1 cursor-pointer"
               >
                 <span
-                  className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+                  className={`flex items-center justify-center rounded-full transition-all ${
                     isActive
-                      ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
-                      : 'bg-muted/70 text-muted-foreground'
+                      ? 'h-14 w-14 bg-primary text-primary-foreground shadow-lg shadow-primary/25'
+                      : 'h-11 w-11 bg-muted/70 text-muted-foreground'
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className={isActive ? 'h-5 w-5' : 'h-4 w-4'} />
                 </span>
-                <span className={`text-[10px] font-medium whitespace-nowrap ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>
+                <span className={`whitespace-nowrap text-sm font-semibold text-foreground ${isActive ? 'opacity-100' : 'opacity-0'}`}>
                   {action.label}
                 </span>
               </motion.button>
             );
           })}
         </motion.div>
-      </motion.div>
-
-      {/* Your Study Plan - AI Generated */}
-      <motion.div variants={fadeUp}>
-        <StudyPlanWidget courses={courses} />
       </motion.div>
 
       {/* Learning Path Progress */}
@@ -2229,6 +2207,8 @@ export function Dashboard() {
         </motion.div>
       )}
 
+      {/* Spaced Review + Recent Activity share a row on large screens */}
+      <div className="grid gap-4 lg:grid-cols-2 items-stretch">
       {/* Spaced Review Card */}
       <motion.div
         variants={fadeUp}
@@ -2236,8 +2216,8 @@ export function Dashboard() {
         animate="animate"
         transition={{ delay: 0.2 }}
       >
-        <div className="glass mesh-gradient gradient-border rounded-xl p-6 card-shadow relative overflow-hidden">
-          <div className="relative z-10 space-y-4">
+        <div className="glass mesh-gradient gradient-border rounded-xl p-6 card-shadow relative overflow-hidden h-full">
+          <div className="relative z-10 flex h-full flex-col gap-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <motion.div
@@ -2290,30 +2270,29 @@ export function Dashboard() {
               </div>
             )}
 
-            {/* Mini 7-day study plan */}
-            <div className="space-y-2 pt-1">
+            {/* Mini 7-day study plan — vertical bars like the Weekly Focus
+                Time chart on the focus page, anchored to the card bottom */}
+            <div className="space-y-2 pt-1 mt-auto">
               <p className="text-xs text-muted-foreground font-medium">7-Day Plan</p>
-              <div className="flex items-center gap-1.5">
+              <div className="grid grid-cols-7 gap-1.5 items-end h-24">
                 {studyPlan.map((day, i) => {
                   const maxCount = Math.max(...studyPlan.map((d) => d.count), 1);
-                  const opacity = day.count > 0 ? Math.max(0.3, day.count / maxCount) : 0;
+                  const heightPct = day.count > 0 ? Math.max(20, (day.count / maxCount) * 100) : 0;
                   const dayLabel = ['M', 'T', 'W', 'T', 'F', 'S', 'S'][i];
                   return (
-                    <div key={day.date} className="flex flex-col items-center gap-1">
-                      <div
-                        className={`h-8 w-8 rounded-md flex items-center justify-center text-xs font-semibold transition-all ${
-                          day.count === 0
-                            ? 'bg-muted/30 text-muted-foreground/50'
-                            : 'text-white'
-                        }`}
-                        style={
-                          day.count > 0
-                            ? { backgroundColor: `oklch(0.627 0.194 149.214 / ${opacity})` }
-                            : undefined
-                        }
-                      >
-                        {day.count > 0 ? day.count : ''}
-                      </div>
+                    <div key={day.date} className="flex flex-col items-center justify-end gap-1 h-full">
+                      {day.count > 0 ? (
+                        <motion.div
+                          initial={{ height: 0 }}
+                          animate={{ height: `${heightPct}%` }}
+                          transition={{ duration: 0.5, ease: 'easeOut', delay: i * 0.05 }}
+                          className="w-full rounded-t-md bg-gradient-to-t from-teal-500 to-emerald-400 flex items-start justify-center pt-0.5 min-h-[18px]"
+                        >
+                          <span className="text-[10px] font-semibold text-white leading-none pt-0.5">{day.count}</span>
+                        </motion.div>
+                      ) : (
+                        <div className="w-full h-1 rounded-full bg-muted/40" />
+                      )}
                       <span className="text-[10px] text-muted-foreground/60">{dayLabel}</span>
                     </div>
                   );
@@ -2324,37 +2303,37 @@ export function Dashboard() {
         </div>
       </motion.div>
 
-      {/* Your Topics — derived from the user's courses and mastery map */}
-      <motion.div variants={fadeUp} className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Your Topics</h3>
-        {topicChips.length > 0 ? (
-          /* Uniform grid: every topic tile has the same shape and size */
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-            {topicChips.map((topic) => (
-              <button
-                key={topic}
-                type="button"
-                onClick={() => handleStartSession(topic)}
-                title={topic}
-                className="h-10 rounded-lg border border-border bg-background/80 px-3 text-sm font-medium truncate hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
+      {/* Recent Activity — derived from real sessions, notes, quizzes, challenges, achievements, and uploads */}
+      <motion.div variants={fadeUp} className="flex h-full flex-col gap-4">
+        <h3 className="font-semibold text-lg">Recent Activity</h3>
+        <div className="glass rounded-xl divide-y divide-border/50 overflow-hidden flex-1">
+          {recentActivity.length > 0 ? (
+            recentActivity.map((activity, index) => (
+              <ActivityItem key={activity.id} activity={activity} index={index} total={recentActivity.length} />
+            ))
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+              className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center"
+            >
+              <motion.div
+                animate={{ y: [0, -5, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10"
               >
-                {topic}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <motion.button
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: 'easeOut' }}
-            onClick={() => navigate('upload')}
-            className="flex items-center gap-2 rounded-full border border-dashed border-border bg-background/60 px-4 py-2 text-sm text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-all"
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Upload slides and your topics will appear here
-          </motion.button>
-        )}
+                <Clock className="h-6 w-6 text-primary/70" />
+              </motion.div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Your activity will show up here as you study</p>
+                <p className="text-xs text-muted-foreground">Sessions, notes, quizzes, and achievements all leave a trail.</p>
+              </div>
+            </motion.div>
+          )}
+        </div>
       </motion.div>
+      </div>
 
       <GradientDivider />
 
@@ -2436,15 +2415,13 @@ export function Dashboard() {
 
       <GradientDivider />
 
-      {/* Quick Study Timer Widget */}
-      <motion.div variants={fadeUp}>
-        <DashboardPomodoroTimer />
+      {/* Your Study Plan - AI Generated */}
+      <motion.div id="dashboard-study-plan" variants={fadeUp} className="scroll-mt-24">
+        <StudyPlanWidget courses={courses} />
       </motion.div>
 
-      <GradientDivider />
-
       {/* Weekly Study Goals */}
-      <motion.div variants={fadeUp}>
+      <motion.div id="dashboard-weekly-goals" variants={fadeUp} className="scroll-mt-24">
         <div className="glass mesh-gradient gradient-border rounded-xl p-6 card-shadow relative overflow-hidden">
           <div className="relative z-10 space-y-5">
             <div className="flex items-center justify-between">
@@ -2649,160 +2626,6 @@ export function Dashboard() {
         </div>
       </motion.div>
 
-      {/* Learning Progress / Goals */}
-      <motion.div variants={fadeUp}>
-        <div className="glass rounded-xl p-6 space-y-5">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-lg">Study Goals</h3>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-xs">
-                {goals.length} goal{goals.length !== 1 ? 's' : ''}
-              </Badge>
-              {goals.length > 0 && (
-                <motion.span
-                  key={goalCompletionPct}
-                  initial={{ scale: 1.2, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="text-xs font-semibold text-primary"
-                >
-                  {goalCompletionPct}% complete
-                </motion.span>
-              )}
-            </div>
-          </div>
-
-          {/* Gradient progress bar */}
-          {goals.length > 0 && (
-            <div className="space-y-2">
-              <div className="h-3 w-full rounded-full bg-muted overflow-hidden">
-                <motion.div
-                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progressValue}%` }}
-                  transition={{ duration: 0.8, ease: 'easeOut' }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {goals.filter((g) => g.status === 'done').length} of {goals.length} goals completed
-              </p>
-            </div>
-          )}
-
-          {/* Add goal input */}
-          <div className="flex items-center gap-2">
-            <Input
-              placeholder="Add a new study goal..."
-              value={newGoalText}
-              onChange={(e) => setNewGoalText(e.target.value)}
-              onKeyDown={handleGoalKeyDown}
-              className="h-9 text-sm"
-            />
-            <Button size="sm" className="shrink-0 h-9 px-3" onClick={handleAddGoal} aria-label="Add goal">
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* Goals list */}
-          <div className="space-y-1.5 max-h-80 overflow-y-auto">
-            <AnimatePresence initial={false}>
-              {goals.length === 0 && (
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-sm text-muted-foreground text-center py-4"
-                >
-                  No goals yet. Add one above to get started.
-                </motion.p>
-              )}
-              {goals.map((goal, index) => (
-                <motion.div
-                  key={goal.id}
-                  layout
-                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, x: 40, scale: 0.9 }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                  className="group flex items-center gap-2.5 py-2 px-2 rounded-lg hover:bg-accent/50 transition-colors"
-                >
-                  <motion.button
-                    whileTap={{ scale: 0.85 }}
-                    onClick={() => toggleGoalStatus(goal.id)}
-                    className="shrink-0 focus:outline-none"
-                    aria-label={`Toggle goal: ${goal.text}`}
-                  >
-                    {goal.status === 'done' && (
-                      <motion.div
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        transition={{ type: 'spring', stiffness: 500, damping: 20 }}
-                      >
-                        <CheckCircle2 className="h-4.5 w-4.5 text-emerald-500" />
-                      </motion.div>
-                    )}
-                    {goal.status === 'in-progress' && (
-                      <Loader2 className="h-4.5 w-4.5 text-teal-500 animate-spin" />
-                    )}
-                    {goal.status === 'pending' && (
-                      <Circle className="h-4.5 w-4.5 text-muted-foreground/40" />
-                    )}
-                  </motion.button>
-                  <span
-                    className={`flex-1 text-sm cursor-pointer select-none ${
-                      goal.status === 'done'
-                        ? 'text-muted-foreground line-through'
-                        : goal.status === 'in-progress'
-                          ? 'text-foreground font-medium'
-                          : 'text-muted-foreground'
-                    }`}
-                    onClick={() => toggleGoalStatus(goal.id)}
-                  >
-                    {goal.text}
-                  </span>
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {goal.status === 'in-progress' && (
-                      <Badge variant="outline" className="text-[10px] text-teal-600 border-teal-200 dark:border-teal-800">
-                        Active
-                      </Badge>
-                    )}
-                    {goal.status === 'done' && (
-                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Done</span>
-                    )}
-                    {goal.status === 'pending' && (
-                      <span className="text-[10px] text-muted-foreground">Pending</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <button
-                      onClick={() => handleMoveGoal(index, 'up')}
-                      disabled={index === 0}
-                      className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors"
-                      aria-label="Move goal up"
-                    >
-                      <ChevronUp className="h-3 w-3 text-muted-foreground" />
-                    </button>
-                    <button
-                      onClick={() => handleMoveGoal(index, 'down')}
-                      disabled={index === goals.length - 1}
-                      className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors"
-                      aria-label="Move goal down"
-                    >
-                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteGoal(goal.id)}
-                      className="h-6 w-6 flex items-center justify-center rounded hover:bg-destructive/10 transition-colors"
-                      aria-label="Delete goal"
-                    >
-                      <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        </div>
-      </motion.div>
-
       {/* Weekly Review Summary */}
       <motion.div variants={fadeUp}>
         <WeeklyReviewSummary />
@@ -2855,28 +2678,28 @@ export function Dashboard() {
                 ) : (
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={weeklyActivityData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                     <XAxis
                       dataKey="day"
-                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                      tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
                       axisLine={false}
                       tickLine={false}
                     />
                     <YAxis
-                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                      tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
                       axisLine={false}
                       tickLine={false}
                       allowDecimals={false}
                     />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
+                        backgroundColor: 'var(--card)',
+                        border: '1px solid var(--border)',
                         borderRadius: '8px',
                         fontSize: '12px',
-                        color: 'hsl(var(--foreground))',
+                        color: 'var(--foreground)',
                       }}
-                      cursor={{ fill: 'hsl(var(--accent))', opacity: 0.4 }}
+                      cursor={{ fill: 'var(--accent)', opacity: 0.4 }}
                     />
                     <Bar
                       dataKey="sessions"
@@ -2928,27 +2751,27 @@ export function Dashboard() {
                 ) : (
                 <ResponsiveContainer width="100%" height={200}>
                   <LineChart data={masteryTrendData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                     <XAxis
                       dataKey="week"
-                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                      tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
                       axisLine={false}
                       tickLine={false}
                     />
                     <YAxis
                       domain={[0, 100]}
-                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                      tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
                       axisLine={false}
                       tickLine={false}
                       tickFormatter={(v: number) => `${v}%`}
                     />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
+                        backgroundColor: 'var(--card)',
+                        border: '1px solid var(--border)',
                         borderRadius: '8px',
                         fontSize: '12px',
-                        color: 'hsl(var(--foreground))',
+                        color: 'var(--foreground)',
                       }}
                       formatter={(value: number) => [`${value}%`, 'Mastery']}
                     />
@@ -3114,263 +2937,6 @@ export function Dashboard() {
 
       <GradientDivider />
 
-      {/* My Courses */}
-      <motion.div variants={fadeUp} className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-lg">My Courses</h3>
-          <div className="flex items-center gap-2">
-            {showViewAll && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate('courses')}
-                className="text-primary hover:text-primary"
-              >
-                View All
-                <ArrowRight className="h-4 w-4 ml-1" />
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" onClick={() => navigate('upload')}>
-              <Upload className="h-4 w-4 mr-1" />
-              Add New
-            </Button>
-          </div>
-        </div>
-
-        {/* Search & Filter Bar */}
-        {courses.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search courses by title..."
-                  value={courseSearchQuery}
-                  onChange={(e) => setCourseSearchQuery(e.target.value)}
-                  className="pl-9 h-9 text-sm"
-                />
-                {courseSearchQuery && (
-                  <button
-                    onClick={() => setCourseSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-              <div className="relative">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const modes: Array<'name' | 'date' | 'progress'> = ['date', 'name', 'progress'];
-                    const idx = modes.indexOf(courseSortMode);
-                    setCourseSortMode(modes[(idx + 1) % modes.length]);
-                  }}
-                  className="h-9 text-sm shrink-0"
-                >
-                  <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
-                  {courseSortMode === 'name' ? 'By Name' : courseSortMode === 'date' ? 'By Date' : 'By Progress'}
-                </Button>
-              </div>
-            </div>
-            {/* Status filter chips */}
-            <div className="flex items-center gap-2">
-              {(['all', 'in-progress', 'completed'] as const).map((status) => {
-                const isActive = courseStatusFilter === status;
-                const count = status === 'all'
-                  ? courses.length
-                  : status === 'completed'
-                    ? courses.filter((c) => completedCourses.includes(c.id)).length
-                    : courses.filter((c) => !completedCourses.includes(c.id)).length;
-                return (
-                  <motion.button
-                    key={status}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => setCourseStatusFilter(status)}
-                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
-                      isActive
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'bg-background/60 border-border text-muted-foreground hover:bg-accent'
-                    }`}
-                  >
-                    {status === 'all' ? 'All' : status === 'in-progress' ? 'In Progress' : 'Completed'}
-                    <span className="ml-1.5 opacity-70">{count}</span>
-                  </motion.button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Category Breakdown Bar */}
-        {courses.length > 0 && Object.keys(categoryStats).length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 25 }}
-            className="space-y-2"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground font-medium">Category Breakdown</span>
-              <span className="text-xs text-muted-foreground">{courses.length} courses</span>
-            </div>
-            <div className="relative h-3 w-full rounded-full overflow-hidden bg-muted/30 flex">
-              {Object.entries(categoryStats).map(([cat, data]) => {
-                const config = CATEGORY_CONFIG[cat];
-                const pct = (data.count / courses.length) * 100;
-                if (pct < 1) return null;
-                return (
-                  <motion.div
-                    key={cat}
-                    className="relative h-full first:rounded-l-full last:rounded-r-full"
-                    style={{ width: `${pct}%`, backgroundColor: config?.barColor || 'oklch(0.7 0.015 155)' }}
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.15 }}
-                    title={`${cat}: ${data.count} courses, ${data.questions} total questions`}
-                  />
-                );
-              })}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(categoryStats).map(([cat, data]) => {
-                const config = CATEGORY_CONFIG[cat];
-                const CatIcon = config?.icon || FolderOpen;
-                return (
-                  <span key={cat} className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <div className="h-2 w-2 rounded-full" style={{ backgroundColor: config?.barColor || 'oklch(0.7 0.015 155)' }} />
-                    <CatIcon className="h-2.5 w-2.5" />
-                    {cat} ({data.count})
-                  </span>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Category Filter Bar */}
-        {courses.length > 0 && usedCategories.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15, type: 'spring', stiffness: 300, damping: 25 }}
-            className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none"
-          >
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setSelectedCategoryFilter('All')}
-              className={`category-chip shrink-0 ${selectedCategoryFilter === 'All' ? 'active bg-gradient-to-r from-primary to-teal-500 text-primary-foreground' : 'bg-background/60 border-border text-muted-foreground hover:bg-accent'}`}
-            >
-              <Layers className="h-3.5 w-3.5" />
-              All
-              <span className="text-[10px] opacity-70">{courses.length}</span>
-            </motion.button>
-            {usedCategories.map((cat) => {
-              const config = CATEGORY_CONFIG[cat];
-              const CatIcon = config?.icon || FolderOpen;
-              const count = categoryStats[cat]?.count ?? 0;
-              const isActive = selectedCategoryFilter === cat;
-              return (
-                <motion.button
-                  key={cat}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setSelectedCategoryFilter(isActive ? 'All' : cat)}
-                  className={`category-chip shrink-0 ${config?.chipClass || 'category-chip-other'} ${isActive ? 'active' : ''}`}
-                >
-                  <CatIcon className="h-3.5 w-3.5" />
-                  {cat}
-                  <span className="text-[10px] opacity-70">{count}</span>
-                </motion.button>
-              );
-            })}
-          </motion.div>
-        )}
-
-        {courses.length === 0 ? (
-          <EmptyState
-            icon={BookOpen}
-            title="No courses yet"
-            description="Upload your first set of slides to create a course and start learning with your AI tutor."
-            actionLabel="Upload Slides"
-            onAction={() => navigate('upload')}
-          />
-        ) : (
-          <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <AnimatePresence mode="popLayout">
-              {displayedCourses.map((course, i) => (
-                <motion.div
-                  key={course.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ delay: i * 0.05, type: 'spring', stiffness: 300, damping: 25 }}
-                >
-                  <EnhancedCourseCard
-                    course={course}
-                    onClick={() => handleCourseClick(course)}
-                  />
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </motion.div>
-        )}
-        {filteredCourses.length === 0 && (selectedCategoryFilter !== 'All' || courseSearchQuery.trim() || courseStatusFilter !== 'all') && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center py-8"
-          >
-            <p className="text-sm text-muted-foreground">
-              No courses match your filters.
-              {courseSearchQuery.trim() && ` Searching "${courseSearchQuery}".`}
-            </p>
-            <Button variant="link" size="sm" className="mt-1" onClick={() => { setCourseSearchQuery(''); setCourseStatusFilter('all'); setSelectedCategoryFilter('All'); }}>
-              Clear all filters
-            </Button>
-          </motion.div>
-        )}
-      </motion.div>
-
-      <GradientDivider />
-
-      {/* Recent Activity — derived from real sessions, notes, quizzes, challenges, achievements, and uploads */}
-      <motion.div variants={fadeUp} className="space-y-4">
-        <h3 className="font-semibold text-lg">Recent Activity</h3>
-        <div className="glass rounded-xl divide-y divide-border/50 overflow-hidden">
-          {recentActivity.length > 0 ? (
-            recentActivity.map((activity, index) => (
-              <ActivityItem key={activity.id} activity={activity} index={index} total={recentActivity.length} />
-            ))
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: 'easeOut' }}
-              className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center"
-            >
-              <motion.div
-                animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-                className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10"
-              >
-                <Clock className="h-6 w-6 text-primary/70" />
-              </motion.div>
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Your activity will show up here as you study</p>
-                <p className="text-xs text-muted-foreground">Sessions, notes, quizzes, and achievements all leave a trail.</p>
-              </div>
-            </motion.div>
-          )}
-        </div>
-      </motion.div>
-
-      <GradientDivider />
-
       {/* Study Tips - Carousel */}
       <motion.div variants={fadeUp}>
         <div className="glass rounded-xl p-5 flex gap-4 items-start">
@@ -3448,169 +3014,6 @@ export function Dashboard() {
 }
 
 // Quick Pomodoro Timer Widget for Dashboard
-function DashboardPomodoroTimer() {
-  const POMODORO_SECONDS = 25 * 60;
-  const TOTAL_SESSIONS = 4;
-
-  const [secondsLeft, setSecondsLeft] = useState(POMODORO_SECONDS);
-  const [isRunning, setIsRunning] = useState(false);
-  const [completedSessions, setCompletedSessions] = useState(() => {
-    try {
-      const stored = localStorage.getItem('synapse-dashboard-pomodoro-sessions');
-      return stored ? (parseInt(stored, 10) || 0) : 0;
-    } catch {
-      return 0;
-    }
-  });
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (isRunning && secondsLeft > 0) {
-      intervalRef.current = setInterval(() => {
-        setSecondsLeft((s) => {
-          if (s <= 1) {
-            setIsRunning(false);
-            setCompletedSessions((prev) => {
-              const next = prev + 1;
-              try { localStorage.setItem('synapse-dashboard-pomodoro-sessions', String(next)); } catch { /* ignore */ }
-              return next;
-            });
-            toast.success('Focus session complete! Time for a break.');
-            return 0;
-          }
-          return s - 1;
-        });
-      }, 1000);
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [isRunning, secondsLeft]);
-
-  const progress = ((POMODORO_SECONDS - secondsLeft) / POMODORO_SECONDS) * 100;
-  const minutes = Math.floor(secondsLeft / 60);
-  const seconds = secondsLeft % 60;
-  const displayTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-
-  // SVG circular progress
-  const radius = 40;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (progress / 100) * circumference;
-
-  return (
-    <div className="glass rounded-xl p-4 border border-emerald-500/20 relative overflow-hidden">
-      {/* Session counter — round chip pinned to the card's top-right corner */}
-      <span
-        className="absolute top-2 right-2 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold tabular-nums text-emerald-700 dark:text-emerald-400"
-        title={`Session ${Math.min(completedSessions + 1, TOTAL_SESSIONS)} of ${TOTAL_SESSIONS}`}
-      >
-        {Math.min(completedSessions + 1, TOTAL_SESSIONS)}/{TOTAL_SESSIONS}
-      </span>
-      {/* pt-6 keeps the whole content row clear of the corner chip */}
-      <div className="relative z-10 flex items-center gap-4 pt-6">
-        {/* Circular timer */}
-        <div className="relative shrink-0">
-          <svg width="96" height="96" className="-rotate-90">
-            <circle
-              cx="48" cy="48" r={radius}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="5"
-              className="text-muted/30"
-            />
-            <motion.circle
-              cx="48" cy="48" r={radius}
-              fill="none"
-              stroke="url(#timerGradient)"
-              strokeWidth="5"
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              initial={{ strokeDashoffset: circumference }}
-              animate={{ strokeDashoffset }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
-            />
-            <defs>
-              <linearGradient id="timerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#059669" />
-                <stop offset="100%" stopColor="#14b8a6" />
-              </linearGradient>
-            </defs>
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-lg font-bold font-mono tabular-nums tracking-tight">{displayTime}</span>
-            <span className="text-[9px] text-muted-foreground">
-              {isRunning ? 'Focusing…' : secondsLeft === 0 ? 'Done!' : 'Ready'}
-            </span>
-          </div>
-        </div>
-
-        {/* Info — never wraps */}
-        <div className="flex-1 min-w-0 space-y-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <Timer className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <h3 className="font-semibold text-sm whitespace-nowrap truncate">Focus Timer</h3>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {Array.from({ length: TOTAL_SESSIONS }).map((_, i) => (
-              <div
-                key={i}
-                className={`h-2 rounded-full transition-all duration-500 ${
-                  i < completedSessions
-                    ? 'bg-emerald-500 w-6 shadow-sm shadow-emerald-500/30'
-                    : i === completedSessions && isRunning
-                      ? 'bg-emerald-500/50 w-4 animate-pulse'
-                      : 'bg-muted/40 w-2'
-                }`}
-              />
-            ))}
-          </div>
-          <p className="text-[10px] text-muted-foreground whitespace-nowrap truncate">
-            {completedSessions > 0 ? `${completedSessions} done today` : '25 min sessions'}
-          </p>
-        </div>
-
-        {/* Controls — always centered on the right */}
-        <div className="flex flex-col items-center justify-center gap-2 shrink-0">
-          <Button
-            size="sm"
-            onClick={() => {
-              if (secondsLeft === 0) {
-                setSecondsLeft(POMODORO_SECONDS);
-                setCompletedSessions(0);
-                try { localStorage.setItem('synapse-dashboard-pomodoro-sessions', '0'); } catch { /* ignore */ }
-              }
-              setIsRunning(!isRunning);
-            }}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs w-24"
-          >
-            {secondsLeft === 0 ? (
-              <><RotateCcw className="h-3 w-3 mr-1.5" />Restart</>
-            ) : isRunning ? (
-              <><Pause className="h-3 w-3 mr-1.5" />Pause</>
-            ) : (
-              <><Play className="h-3 w-3 mr-1.5" />Start</>
-            )}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setIsRunning(false);
-              setSecondsLeft(POMODORO_SECONDS);
-            }}
-            className="h-8 text-xs w-24"
-            disabled={secondsLeft === POMODORO_SECONDS && !isRunning}
-            aria-label="Reset pomodoro timer"
-          >
-            <RotateCcw className="h-3 w-3 mr-1.5" />
-            Reset
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof CourseCard>[0]['course']; onClick: () => void }) {
   const slideCount = course._count?.slides ?? course.slides?.length ?? 0;
   const removeCourse = useAppStore((s) => s.removeCourse);

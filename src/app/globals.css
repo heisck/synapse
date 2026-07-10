@@ -515,15 +515,22 @@ html.lenis, html.lenis body {
   scrollbar-color: rgba(16, 185, 129, 0.25) transparent;
 }
 
-/* 9. Focus ring animation with pulse */
+/* 9. Focus ring — soft translucent green, no pulse (full-saturation +
+   animated offset read as glaring, especially on text inputs) */
 :focus-visible {
-  outline: 2px solid oklch(0.627 0.194 149.214);
+  outline: 2px solid oklch(0.627 0.14 149.214 / 0.45);
   outline-offset: 2px;
   border-radius: 4px;
-  animation: focusPulse 1.5s ease-in-out 1;
 }
 .dark :focus-visible {
-  outline-color: oklch(0.687 0.159 177.89);
+  outline-color: oklch(0.687 0.12 177.89 / 0.5);
+}
+/* Form fields already draw their own focus ring (focus-visible:ring-[3px]);
+   stacking the global outline on top doubled up into a glaring green halo */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
 }
 
 /* 10. Enhanced diagonal shimmer */

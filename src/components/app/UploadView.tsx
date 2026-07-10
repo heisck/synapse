@@ -821,7 +821,8 @@ export function UploadView() {
         <div className="space-y-2">
           <Label className="text-sm font-medium">Course Category</Label>
           <TooltipProvider delayDuration={300}>
-            <div className="flex flex-wrap gap-2">
+            {/* Uniform grid: chips share one width per row and wrap evenly */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               {COURSE_CATEGORIES.map((cat, idx) => {
                 const config = CATEGORY_CONFIG[cat];
                 const CatIcon = config?.icon || FolderOpen;
@@ -839,7 +840,7 @@ export function UploadView() {
                           if (showCustomCategory) setShowCustomCategory(false);
                           setSelectedCategory(cat);
                         }}
-                        className={`category-chip ${config?.chipClass || 'category-chip-other'} ${isActive ? 'active' : ''}`}
+                        className={`category-chip w-full justify-center ${config?.chipClass || 'category-chip-other'} ${isActive ? 'active' : ''}`}
                       >
                         <CatIcon className="h-3.5 w-3.5" />
                         <span>{cat}</span>
@@ -873,7 +874,7 @@ export function UploadView() {
                   setShowCustomCategory(true);
                   setSelectedCategory('');
                 }}
-                className={`category-chip ${showCustomCategory
+                className={`category-chip w-full justify-center ${showCustomCategory
                   ? 'active bg-gradient-to-r from-primary/15 to-secondary/15 text-primary border-primary/20'
                   : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                 }`}
@@ -904,23 +905,29 @@ export function UploadView() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="course-title" className="text-sm font-medium">
-            Course Title <span className="text-destructive">*</span>
-          </Label>
+          {/* Floating label: sits as the placeholder, lifts when focused/filled */}
+          <div className="relative">
             <Input
               id="course-title"
-              placeholder="Enter course title..."
+              placeholder=" "
               value={courseTitle}
               onChange={(e) => setCourseTitle(e.target.value)}
               onBlur={() => setTitleTouched(true)}
-              className={
+              className={`peer h-12 pt-4 ${
                 titleError
                   ? 'border-destructive focus-visible:ring-destructive/50'
                   : courseTitle.trim()
                     ? 'border-primary/50 text-foreground font-medium focus-visible:ring-primary/50 focus-visible:border-primary'
                     : ''
-              }
+              }`}
             />
+            <Label
+              htmlFor="course-title"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none transition-all duration-150 peer-focus:top-3 peer-focus:translate-y-0 peer-focus:text-[10px] peer-focus:text-primary peer-[:not(:placeholder-shown)]:top-3 peer-[:not(:placeholder-shown)]:translate-y-0 peer-[:not(:placeholder-shown)]:text-[10px]"
+            >
+              Course Title <span className="text-destructive">*</span>
+            </Label>
+          </div>
             <AnimatePresence>
               {titleError && (
                 <motion.p
@@ -949,7 +956,7 @@ export function UploadView() {
           className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all overflow-hidden glass upload-glass-focus upload-drag-animated min-h-[280px] flex items-center justify-center ${
             isDragOver
               ? 'dragging border-primary bg-primary/5 scale-[1.01] glow-emerald-strong pulse-glow gradient-border'
-              : 'border-border/60 hover:border-primary/40 hover:bg-accent/20'
+              : 'border-border/60 hover:border-primary/40'
           }`}
         >
           <FloatingParticles />

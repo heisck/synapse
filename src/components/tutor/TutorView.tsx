@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } fro
 import { useAppStore } from '@/stores/appStore'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
@@ -244,6 +245,7 @@ export function TutorView() {
   const {
     messages,
     addMessage,
+    updateMessage,
     sessionPhase,
     activeSessionId,
     activeTopic,
@@ -710,6 +712,8 @@ export function TutorView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: content,
+          // Stream tokens as the model produces them (ChatGPT-style)
+          stream: true,
           // Read fresh from the store: revision/quiz controls may have just changed the phase
           phase: useAppStore.getState().sessionPhase,
           topic: activeTopic || activeCourse?.title || undefined,
@@ -744,16 +748,49 @@ export function TutorView() {
 
       if (!res.ok) throw new Error('Failed to get response')
 
-      const data = await res.json()
-      const responseText = data.response || data.message || data.content || "I'm sorry, I couldn't generate a response. Please try again."
+      const contentType = res.headers.get('Content-Type') || ''
+      if (res.body && contentType.includes('text/plain')) {
+        // Streaming path: grow the assistant message token by token
+        const assistantId = crypto.randomUUID()
+        addMessage({
+          id: assistantId,
+          sessionId,
+          role: 'assistant',
+          content: '',
+          createdAt: new Date().toISOString(),
+        })
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let acc = ''
+        let firstChunk = true
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          acc += decoder.decode(value, { stream: true })
+          if (firstChunk && acc.trim()) {
+            // Swap the typing indicator for the live-growing message
+            setLoading(false)
+            firstChunk = false
+          }
+          updateMessage(assistantId, acc)
+        }
+        acc += decoder.decode()
+        updateMessage(
+          assistantId,
+          acc.trim() ? acc : "I'm sorry, I couldn't generate a response. Please try again.",
+        )
+      } else {
+        const data = await res.json()
+        const responseText = data.response || data.message || data.content || "I'm sorry, I couldn't generate a response. Please try again."
 
-      addMessage({
-        id: crypto.randomUUID(),
-        sessionId,
-        role: 'assistant',
-        content: responseText,
-        createdAt: new Date().toISOString(),
-      })
+        addMessage({
+          id: crypto.randomUUID(),
+          sessionId,
+          role: 'assistant',
+          content: responseText,
+          createdAt: new Date().toISOString(),
+        })
+      }
 
       const phaseNow = useAppStore.getState().sessionPhase
       if (phaseNow === 'discovery' || phaseNow === 'starter') {
@@ -771,7 +808,7 @@ export function TutorView() {
     } finally {
       setLoading(false)
     }
-  }, [input, activeSessionId, messages, learnerProfile, masteryMap, addMessage, setActiveSession, setLoading, setSessionPhase, activePersona, moodSettings, activeTopic, activeCourse, userName, tips, feedbackItems, settings.responseSpeed, settings.language, hardSubjects, alwaysConfuses, bestTeachingStyle, activeSlides, currentSlideIndex, activeSlideContent])
+  }, [input, activeSessionId, messages, learnerProfile, masteryMap, addMessage, updateMessage, setActiveSession, setLoading, setSessionPhase, activePersona, moodSettings, activeTopic, activeCourse, userName, tips, feedbackItems, settings.responseSpeed, settings.language, hardSubjects, alwaysConfuses, bestTeachingStyle, activeSlides, currentSlideIndex, activeSlideContent])
 
   // Revision mode: SessionControls sets the phase to 'review', then this sends
   // a visible revision request through the normal chat path
@@ -903,26 +940,31 @@ export function TutorView() {
               const Icon = mode.icon
               const isActive = tutorMode === mode.id
               return (
-                <button
-                  key={mode.id}
-                  onClick={() => setTutorMode(mode.id)}
-                  className={`relative flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                    isActive
-                      ? 'text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  title={mode.desc}
-                >
-                  {isActive && (
-                    <motion.div
-                      layoutId="tutor-mode-indicator"
-                      className="absolute inset-0 rounded-md bg-primary shadow-sm"
-                      transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                    />
-                  )}
-                  <Icon className="relative z-10 w-3.5 h-3.5" />
-                  <span className="relative z-10">{mode.label}</span>
-                </button>
+                <Tooltip key={mode.id} delayDuration={400}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => setTutorMode(mode.id)}
+                      className={`relative flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                        isActive
+                          ? 'text-primary-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {isActive && (
+                        <motion.div
+                          layoutId="tutor-mode-indicator"
+                          className="absolute inset-0 rounded-md bg-primary shadow-sm"
+                          transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                        />
+                      )}
+                      <Icon className="relative z-10 w-3.5 h-3.5" />
+                      <span className="relative z-10">{mode.label}</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" sideOffset={6} className="text-xs">
+                    {mode.desc}
+                  </TooltipContent>
+                </Tooltip>
               )
             })}
           </div>
@@ -936,6 +978,8 @@ export function TutorView() {
               aria-label="Toggle Pomodoro timer"
             >
               <svg width="20" height="20" className="-rotate-90">
+                {/* Track tinted with foreground so the ring reads as a ring even
+                    at 0% progress — muted/30 was invisible and left a blank gap */}
                 <circle
                   cx="10"
                   cy="10"
@@ -943,7 +987,7 @@ export function TutorView() {
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
-                  className="text-muted/30"
+                  className="text-muted-foreground/40"
                 />
                 <circle
                   cx="10"
@@ -1015,7 +1059,7 @@ export function TutorView() {
                           fill="none"
                           stroke="currentColor"
                           strokeWidth="4"
-                          className="text-muted/20"
+                          className="text-muted-foreground/25"
                         />
                         <motion.circle
                           cx="48"
@@ -1640,9 +1684,17 @@ export function TutorView() {
           </div>
         </div>
 
-        {/* Right Panel — compact: Practice first, everything else collapsible */}
+        {/* Right Panel — compact: Practice first, everything else collapsible.
+            On small screens it overlays the chat as a drawer instead of being
+            hidden entirely (the toggle used to silently do nothing there). */}
         {rightPanelOpen && (
-          <div className="w-72 border-l glass overflow-y-auto hidden md:block">
+          <>
+          <div
+            className="fixed inset-0 z-40 bg-black/40 md:hidden"
+            onClick={() => setRightPanelOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="fixed inset-y-0 right-0 z-50 w-80 max-w-[85vw] bg-background/95 backdrop-blur-xl shadow-xl border-l glass overflow-y-auto md:static md:z-auto md:w-72 md:max-w-none md:bg-transparent md:shadow-none md:block">
             <div className="p-3">
               {/* Practice: the latest quiz/flashcards answer here, chat stays central */}
               {latestQuiz && tutorMode !== 'cards' && (
@@ -1775,6 +1827,7 @@ export function TutorView() {
               </div>
             </div>
           </div>
+          </>
         )}
       </div>
 

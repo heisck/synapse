@@ -660,7 +660,6 @@ const viewTransitionConfig = { type: 'tween', duration: 0.3, ease: 'easeInOut' }
 export function AppShell() {
   const { currentView, navigate } = useAppStore();
   const compactMode = useAppStore((s) => s.settings.compactMode);
-  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const isFullViewport = fullViewportViews.includes(currentView);
   const [transitioning, setTransitioning] = useState(false);
   const prevViewRef = useRef(currentView);
@@ -792,9 +791,10 @@ export function AppShell() {
                 }}
               />
               <TransitionIndicator show={transitioning} />
-              {/* Content cap grows when the sidebar is collapsed so the
-                  freed-up width actually gets used instead of leaving a gap */}
-              <div className={`mx-auto ${sidebarCollapsed ? 'max-w-[1600px]' : 'max-w-6xl'} p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] lg:p-8 ${currentView === 'tutor' ? '!max-w-none !p-0' : ''}`}>
+              {/* Content cap is constant regardless of sidebar state so every
+                  page keeps the same width and stays centered — collapsing the
+                  sidebar just gives the page more breathing room on both sides */}
+              <div className={`mx-auto max-w-6xl p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] lg:p-8 ${currentView === 'tutor' ? '!max-w-none !p-0' : ''}`}>
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={currentView}

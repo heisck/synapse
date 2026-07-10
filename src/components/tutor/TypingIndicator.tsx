@@ -3,8 +3,10 @@
 import { motion } from 'framer-motion'
 
 export function TypingIndicator() {
+  // Matches ChatBubble's assistant row layout (left-aligned, same gap) so the
+  // bubble doesn't appear centered and then shift when the reply lands
   return (
-    <div className="flex items-start gap-2.5 px-4 py-3 max-w-3xl mx-auto">
+    <div className="flex items-end gap-2 mb-3">
       {/* Assistant avatar hint */}
       <div className="flex-shrink-0 mt-1 w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-sm shadow-emerald-500/20">
         <span className="text-[10px] font-bold text-white">AI</span>

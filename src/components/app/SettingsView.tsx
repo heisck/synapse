@@ -20,6 +20,7 @@ import {
   Copy,
   ClipboardPaste,
   Check,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -539,6 +540,17 @@ export function SettingsView() {
                     <Button variant="outline" size="sm" onClick={handleDownloadTransferCode} className="hover:glow-emerald transition-shadow duration-300">
                       <Download className="h-4 w-4 mr-2" />
                       Download .txt
+                    </Button>
+                  </motion.div>
+                  <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setTransferCode('')}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Close
                     </Button>
                   </motion.div>
                 </>

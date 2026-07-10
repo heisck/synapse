@@ -322,6 +322,32 @@ export async function POST(request: NextRequest) {
       ...dedupeMessages(conversation),
     ];
 
+    // --- Streaming mode: emit tokens as the model produces them ---
+    if (body.stream === true) {
+      const streamResult = await LLM.chatStream({ messages: deduped });
+      if (!streamResult) {
+        return NextResponse.json(
+          { error: 'No response from AI. Please try again.' },
+          { status: 502 },
+        );
+      }
+      const encoder = new TextEncoder();
+      const byteStream = streamResult.stream.pipeThrough(
+        new TransformStream<string, Uint8Array>({
+          transform(chunk, controller) {
+            controller.enqueue(encoder.encode(chunk));
+          },
+        }),
+      );
+      return new Response(byteStream, {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          'X-Model': streamResult.model,
+        },
+      });
+    }
+
     const result = await LLM.chatWithReview({ messages: deduped, contextSummary: topic ? `Study topic: ${topic}` : undefined });
     if (!result?.choices?.[0]?.message?.content) {
       return NextResponse.json(
