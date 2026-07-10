@@ -347,7 +347,14 @@ export async function POST(request: NextRequest) {
 
     // --- Slide context: the tutor always knows what the learner is viewing ---
     if (slideContext && typeof slideContext === 'object') {
-      const sc = slideContext as { index?: number; total?: number; title?: string; content?: string; courseTitle?: string };
+      const sc = slideContext as {
+        index?: number;
+        total?: number;
+        title?: string;
+        content?: string;
+        courseTitle?: string;
+        referenced?: { index?: number; title?: string; content?: string };
+      };
       const parts: string[] = [];
       if (sc.courseTitle) parts.push(`Course: "${sanitize(String(sc.courseTitle)).slice(0, 120)}".`);
       if (sc.title || sc.index) {
@@ -356,6 +363,12 @@ export async function POST(request: NextRequest) {
       if (sc.content) parts.push(`Slide content:\n${sanitize(String(sc.content)).slice(0, 1800)}`);
       if (parts.length > 0) {
         systemPrompt = `${systemPrompt}\n\n[CURRENT SLIDE — "this", "this concept", "this slide" refer to this material]:\n${parts.join('\n')}`;
+      }
+      // The learner referenced another slide by number ("back on slide 4...")
+      // — code detected it client-side and sent that slide along so the model
+      // has the material even if it fell out of the conversation window.
+      if (sc.referenced?.content) {
+        systemPrompt = `${systemPrompt}\n\n[REFERENCED SLIDE — the learner's message mentions slide ${sc.referenced.index ?? '?'}${sc.referenced.title ? ` ("${sanitize(String(sc.referenced.title)).slice(0, 150)}")` : ''}; connect it to the current slide]:\n${sanitize(String(sc.referenced.content)).slice(0, 1200)}`;
       }
     }
 

@@ -55,6 +55,7 @@ import {
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Loader2 } from 'lucide-react'
+import { SlideAdvanceSuggestion, BreakSuggestionCard, BreakOverlay, useBreakTimer, detectSlideReference } from './TutorCoach'
 
 // ---------- SpeechRecognition Types ----------
 type SpeechRecognitionResultType = {
@@ -297,6 +298,39 @@ export function TutorView() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // ---------- Code-driven coach: mobile slides overlay, advance suggestion, break timer ----------
+  // On phones there is no room for a split view — the slide panel becomes a
+  // fullscreen overlay with an X to close (subheader Next/Back still work).
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(mq.matches)
+    queueMicrotask(update)
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+  const [mobileSlidesDismissed, setMobileSlidesDismissed] = useState(false)
+
+  const breakTimer = useBreakTimer()
+  const adaptiveResultsForCoach = useAppStore((s) => s.adaptiveResults)
+
+  // Advance suggestion: plain code checks — the orchestrator's future seam.
+  // Suggest when the learner has interacted on this slide for a while, or is
+  // on a 9/10 hot streak. Declining silences it for this slide.
+  const [advanceDismissed, setAdvanceDismissed] = useState<Set<number>>(new Set())
+  const slideEnteredAtRef = useRef(Date.now())
+  const msgsAtSlideEnterRef = useRef(0)
+  const currentSlideIndexStore = useAppStore((s) => s.currentSlideIndex)
+  useEffect(() => {
+    slideEnteredAtRef.current = Date.now()
+    msgsAtSlideEnterRef.current = useAppStore.getState().messages.length
+  }, [currentSlideIndexStore])
+  const [coachTick, setCoachTick] = useState(0)
+  useEffect(() => {
+    const interval = setInterval(() => setCoachTick((t) => t + 1), 15_000)
+    return () => clearInterval(interval)
+  }, [])
+
   // Pomodoro state
   const [pomodoroExpanded, setPomodoroExpanded] = useState(false)
   const [pomodoroRunning, setPomodoroRunning] = useState(false)
@@ -458,6 +492,25 @@ export function TutorView() {
   }, [])
 
   const showSlidePanel = (tutorMode === 'slide' || tutorMode === 'hybrid') && activeSlides.length > 0
+
+  // Re-open the mobile overlay whenever the learner picks a slide mode again
+  useEffect(() => {
+    if (tutorMode === 'slide' || tutorMode === 'hybrid') {
+      queueMicrotask(() => setMobileSlidesDismissed(false))
+    }
+  }, [tutorMode])
+
+  // void coachTick — the 15s tick makes this recompute so time-based checks fire
+  void coachTick
+  const showAdvanceSuggestion = (() => {
+    if (activeSlides.length === 0 || currentSlideIndex >= activeSlides.length - 1) return false
+    if (advanceDismissed.has(currentSlideIndex) || breakTimer.onBreak) return false
+    const timeOnSlide = Date.now() - slideEnteredAtRef.current
+    const interacted = messages.length > msgsAtSlideEnterRef.current
+    const recent = adaptiveResultsForCoach.slice(-10)
+    const hotStreak = recent.length >= 10 && recent.filter((r) => r.correct).length >= 9
+    return (interacted && timeOnSlide > 90_000) || (hotStreak && timeOnSlide > 30_000)
+  })()
 
   // Quick topic suggestions derived from the user's real courses
   // Dedupe: users can have multiple courses with the same title
@@ -752,15 +805,28 @@ export function TutorView() {
           hardSubjects,
           alwaysConfuses,
           bestTeachingStyle,
-          // The tutor always knows what the learner is looking at
+          // The tutor always knows what the learner is looking at. If the
+          // message mentions another slide by number ("back on slide 4"),
+          // code detects it and sends that slide too — the model gets the
+          // material even if it fell out of the conversation window.
           slideContext: activeSlides.length > 0
-            ? {
-                courseTitle: activeCourse?.title,
-                index: currentSlideIndex + 1,
-                total: activeSlides.length,
-                title: activeSlides[currentSlideIndex]?.title,
-                content: (activeSlides[currentSlideIndex]?.content || '').slice(0, 1800),
-              }
+            ? (() => {
+                const refIdx = detectSlideReference(content, activeSlides.length, currentSlideIndex);
+                return {
+                  courseTitle: activeCourse?.title,
+                  index: currentSlideIndex + 1,
+                  total: activeSlides.length,
+                  title: activeSlides[currentSlideIndex]?.title,
+                  content: (activeSlides[currentSlideIndex]?.content || '').slice(0, 1800),
+                  referenced: refIdx != null
+                    ? {
+                        index: refIdx + 1,
+                        title: activeSlides[refIdx]?.title,
+                        content: (activeSlides[refIdx]?.content || '').slice(0, 1200),
+                      }
+                    : undefined,
+                };
+              })()
             : activeSlideContent
               ? { courseTitle: activeCourse?.title, content: activeSlideContent.slice(0, 1800) }
               : undefined,
@@ -1177,9 +1243,74 @@ export function TutorView() {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Slide Panel - visible in slide or hybrid mode when slides exist */}
+        {/* Break overlay: fullscreen countdown that survives app restarts */}
+        {breakTimer.onBreak && (
+          <BreakOverlay secondsLeft={breakTimer.breakSecondsLeft} onEndEarly={breakTimer.endBreakEarly} />
+        )}
+
+        {/* Mobile: slides as a fullscreen overlay — no split view on phones */}
+        {showSlidePanel && isMobile && !mobileSlidesDismissed && (
+          <div className="fixed inset-0 z-40 bg-background flex flex-col">
+            {/* Controls on top */}
+            <div className="flex items-center justify-between gap-2 p-3 border-b">
+              <div className="flex items-center gap-2 min-w-0">
+                <BookOpen className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-sm font-semibold truncate">Course Slides</span>
+                <Badge variant="secondary" className="text-[10px] shrink-0 tabular-nums">
+                  {currentSlideIndex + 1} / {activeSlides.length}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  disabled={currentSlideIndex === 0}
+                  onClick={() => setCurrentSlideIndex(currentSlideIndex - 1)}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Back
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  disabled={currentSlideIndex === activeSlides.length - 1}
+                  onClick={() => setCurrentSlideIndex(currentSlideIndex + 1)}
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setMobileSlidesDismissed(true)}
+                  aria-label="Close slides"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            {/* Slide text below */}
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="p-4 space-y-3">
+                {activeSlides[currentSlideIndex] && (
+                  <>
+                    <h3 className="text-base font-semibold">{activeSlides[currentSlideIndex].title}</h3>
+                    <div className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                      {activeSlides[currentSlideIndex].content}
+                    </div>
+                  </>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+        )}
+
+        {/* Slide Panel - visible in slide or hybrid mode when slides exist (desktop split) */}
         <AnimatePresence initial={false}>
-        {showSlidePanel && (
+        {showSlidePanel && !isMobile && (
           <motion.div
             key="slide-panel"
             initial={{ width: 0, opacity: 0 }}
@@ -1457,6 +1588,22 @@ export function TutorView() {
 
             {isLoading && <TypingIndicator />}
           </ScrollArea>
+
+          {/* Coach cards: code-driven advance suggestion + break proposal */}
+          <AnimatePresence>
+            {showAdvanceSuggestion && (
+              <SlideAdvanceSuggestion
+                key="advance"
+                slideIndex={currentSlideIndex}
+                total={activeSlides.length}
+                onAccept={() => setCurrentSlideIndex(currentSlideIndex + 1)}
+                onDecline={() => setAdvanceDismissed((prev) => new Set(prev).add(currentSlideIndex))}
+              />
+            )}
+            {breakTimer.suggested && !breakTimer.onBreak && (
+              <BreakSuggestionCard key="break" onAccept={breakTimer.acceptBreak} onDecline={breakTimer.declineBreak} />
+            )}
+          </AnimatePresence>
 
           {/* Input Area */}
           <div className="border-t tutor-floating-input">
