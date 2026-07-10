@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LLM, authFromRequest, llmErrorResponse, type LLMAuth } from '@/lib/ai';
-import { validateQuestions, type ValidatedQuestion } from '@/lib/validate';
-import { buildQuizGenPrompt } from '@/lib/prompts';
+import { validateQuestions, GENERATABLE_TYPES, type ValidatedQuestion } from '@/lib/validate';
 import { db } from '@/lib/db';
 import type { Question } from '@prisma/client';
 
-function toClientQuestion(q: { options: string | null } & Record<string, unknown>) {
-  return {
-    ...q,
-    options: q.options ? JSON.parse(q.options) : undefined,
-  };
+function toClientQuestion(q: { type: string; options: string | null } & Record<string, unknown>) {
+  const parsed = q.options ? JSON.parse(q.options) : undefined;
+  // Matching questions keep their pairs in the options column
+  if (q.type === 'matching') {
+    return { ...q, options: undefined, matchingPairs: parsed };
+  }
+  return { ...q, options: parsed };
 }
 
 // GET: Fetch previously-generated questions for a course
@@ -65,32 +66,46 @@ function sectionContent(content: string, maxChars: number): string[] {
   return sections;
 }
 
-async function generateQuestions(content: string, auth: LLMAuth): Promise<ValidatedQuestion[]> {
-  const promptVariants = [
-    buildQuizGenPrompt('General', 'Content Analysis', 'medium', 'multiple_choice'),
-    `Based on this educational content, generate quiz questions in valid JSON array format.
+async function generateQuestions(
+  content: string,
+  auth: LLMAuth,
+  types: string[] = [...GENERATABLE_TYPES],
+): Promise<ValidatedQuestion[]> {
+  const wants = (t: string) => types.includes(t);
+  const typeSpecs = [
+    wants('multiple_choice') &&
+      `- "multiple_choice": { "question", "type": "multiple_choice", "options": [exactly 4 distinct strings], "answer": one of the options, "explanation", "concept", "difficulty" }`,
+    wants('true_false') &&
+      `- "true_false": { "question": a statement to judge, "type": "true_false", "answer": "True" or "False", "explanation", "concept", "difficulty" }`,
+    wants('fill_blank') &&
+      `- "fill_blank": { "question": a sentence with the key term replaced by "___", "type": "fill_blank", "answer": the missing term (short), "explanation", "concept", "difficulty" }`,
+    wants('matching') &&
+      `- "matching": { "question": e.g. "Match each term to its definition", "type": "matching", "matchingPairs": [3-5 objects {"left": term, "right": its match}], "answer": "", "explanation", "concept", "difficulty" }`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const mixNote =
+    types.length > 1
+      ? `Mix the types: roughly half multiple_choice and the rest spread across the other allowed types.`
+      : `Every question must be type "${types[0]}".`;
+
+  const basePrompt = (intro: string) => `${intro}
 
 Content:
 """
 ${content.slice(0, 3000)}
 """
 
-Generate 6-10 questions. Each question must be a JSON object with:
-- "question": the question text
-- "type": "multiple_choice"
-- "options": array of 4 options
-- "answer": the correct option
-- "explanation": why this is correct
-- "concept": the concept being tested
-- "difficulty": "easy" | "medium" | "hard"
+Generate 6-10 questions. ${mixNote}
+Allowed formats:
+${typeSpecs}
 
-Respond ONLY with a valid JSON array, no other text.`,
-    `Create a quiz from this material. Output ONLY a JSON array of question objects.
+Respond ONLY with a valid JSON array of question objects, no other text.`;
 
-Material:
-${content.slice(0, 3000)}
-
-Each object: { "question", "type": "multiple_choice", "options": ["A","B","C","D"], "answer", "explanation", "concept", "difficulty" }`,
+  const promptVariants = [
+    basePrompt('You are a quiz author. Based on this educational content, write quiz questions in valid JSON array format.'),
+    basePrompt('Create a quiz strictly from this material. Every question must be answerable from the content alone.'),
+    basePrompt('Write exam-quality questions covering the distinct facts and concepts in this material.'),
   ];
 
   // Validation layer (docs/ROADMAP.md Phase 0.1): the model's array is never
@@ -190,10 +205,15 @@ export async function POST(request: NextRequest) {
     const maxSections = Math.max(1, Math.min(Number(body.maxSections) || 4, 4));
     const sections = allSections.slice(sectionOffset, sectionOffset + maxSections);
     const auth = authFromRequest(request);
+    // Optional learner-configured type mix (e.g. ["multiple_choice","matching"])
+    const requestedTypes = Array.isArray(body.types)
+      ? (body.types as string[]).filter((t) => (GENERATABLE_TYPES as readonly string[]).includes(t))
+      : [];
+    const types = requestedTypes.length > 0 ? requestedTypes : [...GENERATABLE_TYPES];
     const questions: ValidatedQuestion[] = [];
     const seenQ = new Set<string>();
     for (const section of sections) {
-      const generated = await generateQuestions(section, auth);
+      const generated = await generateQuestions(section, auth, types);
       for (const q of generated) {
         const key = q.question.toLowerCase();
         if (!seenQ.has(key)) {
@@ -211,6 +231,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Local-first mode (ROADMAP Phase 2): questions for a learner's local
+    // course never touch the shared DB — they get ids here and the browser
+    // caches them. Triggered by persist:false or a local- course id.
+    if (body.persist === false || (typeof courseId === 'string' && courseId.startsWith('local-'))) {
+      return NextResponse.json({
+        success: true,
+        questions: questions.map((q) => ({
+          id: `local-q-${crypto.randomUUID()}`,
+          courseId: courseId || null,
+          slideId: slideId || null,
+          type: q.type,
+          question: q.question,
+          options: q.options,
+          matchingPairs: q.matchingPairs,
+          answer: q.answer,
+          explanation: q.explanation,
+          difficulty: q.difficulty,
+          concept: q.concept ?? null,
+          createdAt: new Date().toISOString(),
+        })),
+        sectionsTotal: allSections.length,
+        sectionsDone,
+        hasMore: sectionsDone < allSections.length,
+      });
+    }
+
     // Save questions to database if courseId is provided. Everything here has
     // already passed the validation layer — no empty rows can be written.
     const savedQuestions: Question[] = [];
@@ -221,7 +267,13 @@ export async function POST(request: NextRequest) {
           slideId: slideId || null,
           type: q.type,
           question: q.question,
-          options: q.options ? JSON.stringify(q.options) : null,
+          // Matching pairs ride in the options column; toClientQuestion
+          // rehydrates them as matchingPairs
+          options: q.matchingPairs
+            ? JSON.stringify(q.matchingPairs)
+            : q.options
+              ? JSON.stringify(q.options)
+              : null,
           answer: q.answer,
           explanation: q.explanation,
           difficulty: q.difficulty,

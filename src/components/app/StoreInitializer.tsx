@@ -6,6 +6,7 @@ import { Trophy } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { useSessionPersistence } from '@/hooks/useSessionPersistence';
 import { usePresence } from '@/hooks/usePresence';
+import { listLocalCourses } from '@/lib/localLibrary';
 import type { Course } from '@/types';
 
 export function StoreInitializer() {
@@ -33,7 +34,7 @@ export function StoreInitializer() {
       if (isNowUnlocked && !wasUnlocked && Object.keys(prevMap).length > 0) {
         toast(
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-500">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-emerald-500 to-teal-500">
               <Trophy className="h-5 w-5 text-white" />
             </div>
             <div className="min-w-0">
@@ -64,15 +65,22 @@ export function StoreInitializer() {
     if (courses.length > 0) return;
 
     const fetchCourses = async () => {
+      // Local-first (ROADMAP Phase 2): this browser's own library comes
+      // first; the shared DB only contributes legacy/shared courses.
+      const local = await listLocalCourses();
+      let remote: Course[] = [];
       try {
         const res = await fetch('/api/courses');
         if (res.ok) {
           const data: { success: boolean; courses: Course[] } = await res.json();
-          setCourses(data.courses || []);
+          remote = data.courses || [];
         }
       } catch {
-        // silently fail — dashboard handles empty state
+        // offline / server down — local courses still work
       }
+      const localIds = new Set(local.map((c) => c.id));
+      const merged = [...local, ...remote.filter((c) => !localIds.has(c.id))];
+      if (merged.length > 0) setCourses(merged);
     };
 
     fetchCourses();

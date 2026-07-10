@@ -80,7 +80,7 @@ export function ConversationInsights({ messages, masteryMap }: ConversationInsig
     >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <div className="h-6 w-6 rounded-md bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center">
+          <div className="h-6 w-6 rounded-md bg-linear-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center">
             <Brain className="h-3 w-3 text-primary" />
           </div>
           <span className="text-xs font-semibold text-foreground">Session Insights</span>

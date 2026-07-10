@@ -250,6 +250,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Local-first mode (ROADMAP Phase 2): parse only — the browser stores the
+    // course in the learner's IndexedDB and nothing touches the shared DB.
+    if (formData.get('persist') === '0') {
+      const now = new Date().toISOString();
+      const localCourseId = `local-${crypto.randomUUID()}`;
+      const localCourse = {
+        id: localCourseId,
+        title: filename.replace(/\.[^.]+$/, ''),
+        description: `Uploaded from ${filename}`,
+        subject: '',
+        thumbnail: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const localSlides = slides.map((s, i) => ({
+        id: `local-slide-${crypto.randomUUID()}`,
+        courseId: localCourseId,
+        title: s.title.slice(0, 300),
+        content: s.content,
+        order: i + 1,
+        createdAt: now,
+      }));
+      return NextResponse.json({
+        success: true,
+        local: true,
+        courseId: localCourseId,
+        course: localCourse,
+        slideCount: localSlides.length,
+        slides: localSlides,
+      });
+    }
+
     // Create course in database
     const course = await db.course.create({
       data: {

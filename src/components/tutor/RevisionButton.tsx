@@ -66,7 +66,7 @@ export function RevisionButton() {
           </Button>
         </motion.div>
       </TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-[200px] text-center">
+      <TooltipContent side="bottom" className="max-w-50 text-center">
         <p>Toggle revision mode to review and reinforce previously covered concepts.</p>
       </TooltipContent>
     </Tooltip>

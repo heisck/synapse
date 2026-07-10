@@ -52,6 +52,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useAppStore } from '@/stores/appStore';
 import { toast } from 'sonner';
+import { saveLocalCourse } from '@/lib/localLibrary';
 import type { Question } from '@/types';
 
 type FileStatus = 'pending' | 'uploading' | 'processing' | 'done' | 'error';
@@ -282,7 +283,7 @@ function BatchProgressPanel({ files, onCancel }: { files: UploadFile[]; onCancel
       <div className="space-y-1.5 max-h-32 overflow-y-auto">
         {files.map((f) => (
           <div key={f.id} className="flex items-center gap-2 text-xs">
-            <span className="truncate flex-1 max-w-[180px]" title={f.file.name}>
+            <span className="truncate flex-1 max-w-45" title={f.file.name}>
               {f.file.name}
             </span>
             {f.status === 'uploading' || f.status === 'processing' ? (
@@ -562,6 +563,9 @@ export function UploadView() {
         formData.append('file', file.file);
         formData.append('category', effectiveCategory);
         formData.append('courseTitle', courseTitle.trim());
+        // Local-first (ROADMAP Phase 2): the server only parses; the course
+        // is stored in THIS browser's IndexedDB, never in the shared DB.
+        formData.append('persist', '0');
 
         // Simulate progress during real upload
         const progressInterval = setInterval(() => {
@@ -663,18 +667,21 @@ export function UploadView() {
       };
       addCourse(newCourse);
       setActiveCourse(newCourse);
-      if (allExtractedSlides.length > 0) {
-        setActiveSlides(
-          allExtractedSlides.map((s, idx) => ({
-            id: s.id,
-            courseId,
-            title: s.title,
-            content: s.content,
-            order: s.order || idx + 1,
-            createdAt: now,
-          })),
-        );
+      const slideRecords = allExtractedSlides.map((s, idx) => ({
+        id: s.id,
+        courseId,
+        title: s.title,
+        content: s.content,
+        order: s.order || idx + 1,
+        createdAt: now,
+      }));
+      if (slideRecords.length > 0) {
+        setActiveSlides(slideRecords);
       }
+      // Persist to the browser's own library so the course survives reloads
+      saveLocalCourse(newCourse, slideRecords).catch(() => {
+        toast.error('Could not save the course to this browser — it will disappear on reload.');
+      });
     }
 
     setUploadHistory((prev) => [...newHistory, ...prev]);
@@ -718,6 +725,8 @@ export function UploadView() {
         body.content = selected.map((s) => `${s.title}\n${s.content}`).join('\n\n');
       } else {
         body.courseId = activeCourse.id;
+        // Local courses aren't in the shared DB — the content rides along
+        body.content = extractedSlides.map((s) => `## ${s.title}\n${s.content}`).join('\n\n');
       }
 
       const res = await aiFetch('/api/questions', {
@@ -806,7 +815,7 @@ export function UploadView() {
       {/* Gradient header */}
       <motion.div
         variants={fadeUp}
-        className="rounded-xl p-6 mesh-gradient gradient-border relative overflow-hidden"
+        className="rounded-xl p-6 mesh-gradient gradient-border overflow-hidden"
       >
         <FloatingParticles />
         <div className="relative z-10">
@@ -877,7 +886,7 @@ export function UploadView() {
                   setSelectedCategory('');
                 }}
                 className={`category-chip w-full justify-center ${showCustomCategory
-                  ? 'active bg-gradient-to-r from-primary/15 to-secondary/15 text-primary border-primary/20'
+                  ? 'active bg-linear-to-r from-primary/15 to-secondary/15 text-primary border-primary/20'
                   : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                 }`}
               >
@@ -925,7 +934,7 @@ export function UploadView() {
             />
             <Label
               htmlFor="course-title"
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none transition-all duration-150 peer-focus:top-3 peer-focus:translate-y-0 peer-focus:text-[10px] peer-focus:text-primary peer-[:not(:placeholder-shown)]:top-3 peer-[:not(:placeholder-shown)]:translate-y-0 peer-[:not(:placeholder-shown)]:text-[10px]"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none transition-all duration-150 peer-focus:top-3 peer-focus:translate-y-0 peer-focus:text-[10px] peer-focus:text-primary peer-not-placeholder-shown:top-3 peer-not-placeholder-shown:translate-y-0 peer-not-placeholder-shown:text-[10px]"
             >
               Course Title <span className="text-destructive">*</span>
             </Label>
@@ -955,9 +964,9 @@ export function UploadView() {
           onDragLeave={() => setIsDragOver(false)}
           onDrop={handleDrop}
           onClick={() => inputRef.current?.click()}
-          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all overflow-hidden glass upload-glass-focus upload-drag-animated min-h-[280px] flex items-center justify-center ${
+          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-12 text-center transition-all overflow-hidden glass upload-glass-focus upload-drag-animated min-h-70 flex items-center justify-center ${
             isDragOver
-              ? 'dragging border-primary bg-primary/5 scale-[1.01] glow-emerald-strong pulse-glow gradient-border'
+              ? 'dragging border-primary bg-primary/5 scale-[1.01] pulse-glow gradient-border'
               : 'border-border/60 hover:border-primary/40'
           }`}
         >
@@ -1031,7 +1040,7 @@ export function UploadView() {
                     {(f.status === 'uploading' || f.status === 'processing') && (
                       <div className="mt-2 relative h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
                         <motion.div
-                          className="absolute inset-y-0 left-0 rounded-full relative overflow-hidden"
+                          className="absolute inset-y-0 left-0 rounded-full overflow-hidden"
                           style={{ background: 'linear-gradient(90deg, oklch(0.627 0.194 149.214), oklch(0.687 0.159 177.89))' }}
                           animate={{ width: `${f.status === 'processing' ? 100 : f.progress}%` }}
                           transition={{ duration: 0.3 }}
@@ -1136,7 +1145,7 @@ export function UploadView() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-            className="glass rounded-xl overflow-hidden gradient-border glow-emerald card-shadow"
+            className="glass rounded-xl overflow-hidden gradient-border glow-emerald"
             layout
           >
             <Collapsible open={slidesOpen} onOpenChange={setSlidesOpen}>
@@ -1201,7 +1210,7 @@ export function UploadView() {
                               onCheckedChange={() => toggleSlideSelection(slide.id)}
                               className={isSelected ? 'border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600' : ''}
                             />
-                            <div className="flex items-center justify-center h-6 w-6 rounded-md bg-muted text-muted-foreground text-xs font-mono flex-shrink-0">
+                            <div className="flex items-center justify-center h-6 w-6 rounded-md bg-muted text-muted-foreground text-xs font-mono shrink-0">
                               {slide.order}
                             </div>
                             <div className="flex-1 min-w-0">
@@ -1210,7 +1219,7 @@ export function UploadView() {
                                 {slide.wordCount} words
                               </p>
                             </div>
-                            <Hash className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+                            <Hash className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
                           </motion.div>
                         );
                       })}
@@ -1231,7 +1240,7 @@ export function UploadView() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             className="glass rounded-xl p-6 text-center space-y-4 card-shadow gradient-border"
           >
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/15 to-teal-500/15 mx-auto pulse-glow">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-linear-to-br from-emerald-500/15 to-teal-500/15 mx-auto pulse-glow">
               <CheckCircle2 className="h-8 w-8 text-emerald-500" />
             </div>
             <div>

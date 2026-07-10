@@ -14,11 +14,13 @@ import { useEffect, useRef, useState } from 'react';
 import { aiFetch } from '@/lib/aiKey';
 import {
   appendToQuestionCache,
+  getPreferredTypes,
   isBackgroundGenerationEnabled,
   loadQuestionCache,
   setBackgroundGenerationEnabled,
 } from '@/lib/questionCache';
 import { useAppStore } from '@/stores/appStore';
+import { getLocalCourseContent, isLocalCourse } from '@/lib/localLibrary';
 import type { Question } from '@/types';
 
 export interface BackgroundGenState {
@@ -88,7 +90,14 @@ export function useBackgroundGeneration(courseId: string | null, options?: { for
           const res = await aiFetch('/api/questions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ courseId, sectionOffset: offset, maxSections: 1 }),
+            body: JSON.stringify({
+              courseId,
+              sectionOffset: offset,
+              maxSections: 1,
+              types: getPreferredTypes(),
+              // Local-first courses aren't in the shared DB — send content
+              content: isLocalCourse(courseId) ? await getLocalCourseContent(courseId) : undefined,
+            }),
           });
           if (!res.ok) {
             const err = await res.json().catch(() => ({ error: 'Generation failed' }));

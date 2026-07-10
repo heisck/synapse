@@ -120,12 +120,12 @@ export function useAnimatedCounter(target: number, duration: number = 1200) {
 
 // ---------- Type badge gradient map ----------
 export const TYPE_BADGE_GRADIENT: Record<string, string> = {
-  multiple_choice: 'bg-gradient-to-r from-emerald-500/15 to-teal-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
-  true_false: 'bg-gradient-to-r from-amber-500/15 to-orange-500/15 text-amber-700 dark:text-amber-300 border-amber-500/20',
-  short_answer: 'bg-gradient-to-r from-cyan-500/15 to-sky-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/20',
-  fill_blank: 'bg-gradient-to-r from-violet-500/15 to-purple-500/15 text-violet-700 dark:text-violet-300 border-violet-500/20',
-  matching: 'bg-gradient-to-r from-rose-500/15 to-pink-500/15 text-rose-700 dark:text-rose-300 border-rose-500/20',
-  error_correction: 'bg-gradient-to-r from-red-500/15 to-destructive/15 text-red-700 dark:text-red-300 border-red-500/20',
+  multiple_choice: 'bg-linear-to-r from-emerald-500/15 to-teal-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+  true_false: 'bg-linear-to-r from-amber-500/15 to-orange-500/15 text-amber-700 dark:text-amber-300 border-amber-500/20',
+  short_answer: 'bg-linear-to-r from-cyan-500/15 to-sky-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/20',
+  fill_blank: 'bg-linear-to-r from-violet-500/15 to-purple-500/15 text-violet-700 dark:text-violet-300 border-violet-500/20',
+  matching: 'bg-linear-to-r from-rose-500/15 to-pink-500/15 text-rose-700 dark:text-rose-300 border-rose-500/20',
+  error_correction: 'bg-linear-to-r from-red-500/15 to-destructive/15 text-red-700 dark:text-red-300 border-red-500/20',
 };
 
 // ---------- Error correction component ----------
@@ -396,7 +396,7 @@ export function MatchingInput({
                     <motion.span
                       initial={{ opacity: 0, x: 10 }}
                       animate={{ opacity: 1, x: 0 }}
-                      className="text-xs opacity-70 truncate max-w-[120px] text-emerald-600 dark:text-emerald-400"
+                      className="text-xs opacity-70 truncate max-w-30 text-emerald-600 dark:text-emerald-400"
                     >
                       {matches[p.left]}
                     </motion.span>
@@ -660,7 +660,7 @@ export function WeaknessReportDialog({
                                   initial={{ width: 0 }}
                                   animate={{ width: `${(wa.masteryEstimate / 5) * 100}%` }}
                                   transition={{ duration: 0.8, delay: 0.3 + i * 0.08 }}
-                                  className={`h-full rounded-full bg-gradient-to-r ${masteryBarColor(wa.masteryEstimate)}`}
+                                  className={`h-full rounded-full bg-linear-to-r ${masteryBarColor(wa.masteryEstimate)}`}
                                 />
                               </div>
                               <span className="text-[10px] text-muted-foreground shrink-0 w-5 text-right">
@@ -726,7 +726,7 @@ export function WeaknessReportDialog({
                         transition={{ delay: 0.4 + i * 0.1, type: 'spring', stiffness: 350, damping: 25 }}
                         className="flex items-center gap-3"
                       >
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold">
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-linear-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold">
                           {i + 1}
                         </div>
                         <span className="text-sm">{topic}</span>

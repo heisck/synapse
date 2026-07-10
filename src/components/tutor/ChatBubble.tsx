@@ -149,7 +149,7 @@ function BlinkingCursor({ visible }: { visible: boolean }) {
   if (!visible) return null
   return (
     <motion.span
-      className="inline-block w-[2px] h-[1em] bg-primary ml-0.5 align-text-bottom rounded-full"
+      className="inline-block w-0.5 h-[1em] bg-primary ml-0.5 align-text-bottom rounded-full"
       animate={{ opacity: [1, 0, 1] }}
       transition={{ repeat: Infinity, duration: 1, ease: 'easeInOut' }}
     />
@@ -641,7 +641,7 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: 'spring', stiffness: 500, damping: 30, delay: 0.05 }}
-            className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center mb-4"
+            className="shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center mb-4"
           >
             <Brain className="w-4 h-4 text-primary" />
           </motion.div>
@@ -665,7 +665,7 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
             {/* Pulsing emerald gradient left border for user messages */}
             {isUser && (
               <motion.div
-                className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-gradient-to-b from-emerald-400 via-teal-300 to-emerald-400"
+                className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-linear-to-b from-emerald-400 via-teal-300 to-emerald-400"
                 animate={{ opacity: [0.5, 1, 0.5] }}
                 transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
               />
@@ -673,7 +673,7 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
             {/* Starred emerald left border glow for assistant messages */}
             {isAssistant && isStarred && (
               <motion.div
-                className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-gradient-to-b from-emerald-400 via-teal-300 to-emerald-400"
+                className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-linear-to-b from-emerald-400 via-teal-300 to-emerald-400"
                 animate={{ opacity: [0.6, 1, 0.6], boxShadow: ['0 0 4px oklch(0.7 0.15 160)', '0 0 10px oklch(0.7 0.15 160)', '0 0 4px oklch(0.7 0.15 160)'] }}
                 transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
               />

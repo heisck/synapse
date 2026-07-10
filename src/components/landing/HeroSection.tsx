@@ -271,7 +271,7 @@ export default function HeroSection() {
             <span className="absolute inset-0 rounded-full glass-subtle" />
             <span className="absolute inset-0 rounded-full overflow-hidden">
               <motion.span
-                className="absolute inset-0 bg-gradient-to-r from-transparent via-emerald-400/20 to-transparent"
+                className="absolute inset-0 bg-linear-to-r from-transparent via-emerald-400/20 to-transparent"
                 animate={{ x: ['-200%', '200%'] }}
                 transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
                 style={{ width: '100%' }}
@@ -290,7 +290,7 @@ export default function HeroSection() {
           >
             <span className="absolute inset-0 rounded-full overflow-hidden">
               <motion.span
-                className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-400/30 to-transparent"
+                className="absolute inset-0 bg-linear-to-r from-transparent via-amber-400/30 to-transparent"
                 animate={{ x: ['-200%', '200%'] }}
                 transition={{ duration: 2.5, repeat: Infinity, ease: 'linear' }}
                 style={{ width: '200%' }}
@@ -311,7 +311,7 @@ export default function HeroSection() {
           <span className="relative inline-block">
             <span className="gradient-text">Master Everything.</span>
             <motion.span
-              className="absolute -bottom-1 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent origin-left"
+              className="absolute -bottom-1 left-0 right-0 h-0.5 bg-linear-to-r from-transparent via-emerald-500 to-transparent origin-left"
               initial={{ scaleX: 0 }}
               animate={{ scaleX: 1 }}
               transition={{ duration: 1.2, delay: 1.2, ease: 'easeOut' }}
@@ -328,7 +328,7 @@ export default function HeroSection() {
           <AnimatePresence>
             {!typingComplete && (
               <motion.span
-                className="inline-block w-[2px] h-[1.1em] bg-emerald-500 ml-0.5 align-middle"
+                className="inline-block w-0.5 h-[1.1em] bg-emerald-500 ml-0.5 align-middle"
                 animate={{ opacity: showCursor ? 1 : 0 }}
                 transition={{ duration: 0.05 }}
               />
@@ -345,7 +345,7 @@ export default function HeroSection() {
             transition={{ type: 'spring', stiffness: 400, damping: 17 }}
           >
             <motion.div
-              className="absolute -inset-[2px] rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 opacity-0 group-hover:opacity-100 blur-sm transition-opacity duration-500"
+              className="absolute -inset-[2px] rounded-xl bg-linear-to-r from-emerald-500 via-teal-400 to-emerald-500 opacity-0 group-hover:opacity-100 blur-sm transition-opacity duration-500"
               animate={
                 typingComplete
                   ? {
@@ -427,7 +427,7 @@ export default function HeroSection() {
       </div>
 
       {/* Bottom fade */}
-      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-background to-transparent z-10" />
+      <div className="absolute bottom-0 left-0 right-0 h-32 bg-linear-to-t from-background to-transparent z-10" />
     </section>
   );
 }

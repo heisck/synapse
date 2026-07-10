@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/stores/appStore';
+import { getLocalSlides, isLocalCourse } from '@/lib/localLibrary';
 import type { Course } from '@/types';
 
 /**
@@ -27,6 +28,16 @@ export function useOpenCourse() {
     }
 
     setOpeningCourseId(course.id);
+
+    // Local-first courses live in this browser's IndexedDB — no network
+    if (isLocalCourse(course.id)) {
+      const slides = await getLocalSlides(course.id);
+      setActiveSlides(slides);
+      navigate('course-detail');
+      setOpeningCourseId(null);
+      return;
+    }
+
     const loadingToast = toast.loading('Opening course…');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15_000);

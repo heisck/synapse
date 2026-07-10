@@ -274,7 +274,7 @@ export function NotesView() {
       className="space-y-6 pt-2 lg:pt-4"
     >
       {/* Gradient header */}
-      <motion.div variants={fadeUp} className="rounded-xl p-6 mesh-gradient gradient-border relative overflow-hidden">
+      <motion.div variants={fadeUp} className="rounded-xl p-6 mesh-gradient gradient-border overflow-hidden">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -337,7 +337,7 @@ export function NotesView() {
                   placeholder="Write your note here..."
                   value={newContent}
                   onChange={(e) => setNewContent(e.target.value)}
-                  className="min-h-[120px] resize-y"
+                  className="min-h-30 resize-y"
                 />
                 {/* Animated word count */}
                 <div className="flex items-center justify-between">
@@ -354,7 +354,7 @@ export function NotesView() {
                           onClick={() => toggleTagOnNote(tag, false)}
                           className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
                             newTags.includes(tag)
-                              ? `bg-gradient-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg}`
+                              ? `bg-linear-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg}`
                               : 'bg-background/60 border-border hover:bg-accent'
                           }`}
                         >
@@ -455,7 +455,7 @@ export function NotesView() {
               onClick={() => toggleTagFilter(tag)}
               className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
                 selectedTags.includes(tag)
-                  ? `bg-gradient-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg} glow-emerald`
+                  ? `bg-linear-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg} glow-emerald`
                   : 'bg-background/60 border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
               }`}
             >
@@ -623,7 +623,7 @@ export function NotesView() {
                             <Textarea
                               value={editContent}
                               onChange={(e) => handleEditChange('content', e.target.value)}
-                              className="min-h-[120px] resize-y"
+                              className="min-h-30 resize-y"
                               placeholder="Note content... (supports markdown)"
                             />
                           </motion.div>
@@ -634,7 +634,7 @@ export function NotesView() {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.2 }}
-                            className="min-h-[120px] rounded-lg border border-border/60 bg-muted/30 backdrop-blur-sm p-4 overflow-y-auto max-h-[300px]"
+                            className="min-h-30 rounded-lg border border-border/60 bg-muted/30 backdrop-blur-sm p-4 overflow-y-auto max-h-[300px]"
                           >
                             {editContent.trim() ? (
                               <div
@@ -660,7 +660,7 @@ export function NotesView() {
                               onClick={() => toggleTagOnNote(tag, true)}
                               className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
                                 editTags.includes(tag)
-                                  ? `bg-gradient-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg}`
+                                  ? `bg-linear-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg}`
                                   : 'bg-background/60 border-border hover:bg-accent'
                               }`}
                             >
@@ -695,7 +695,7 @@ export function NotesView() {
                                 <motion.span
                                   key={tag}
                                   whileHover={{ scale: 1.1 }}
-                                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border bg-gradient-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg}`}
+                                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border bg-linear-to-r ${TAG_COLORS[tag]?.bg || TAG_COLORS['general'].bg}`}
                                 >
                                   {tag}
                                 </motion.span>

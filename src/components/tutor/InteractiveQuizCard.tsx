@@ -125,7 +125,7 @@ export function InteractiveQuizCard({ payload, messageId }: { payload: QuizPaylo
           initial={{ scale: 0, rotate: -20 }}
           animate={{ scale: 1, rotate: 0 }}
           transition={{ type: 'spring', stiffness: 300, damping: 18, delay: 0.1 }}
-          className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-500"
+          className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-emerald-500 to-teal-500"
         >
           <Trophy className="h-6 w-6 text-white" />
         </motion.div>
@@ -146,7 +146,7 @@ export function InteractiveQuizCard({ payload, messageId }: { payload: QuizPaylo
   }
 
   return (
-    <div className="glass rounded-xl border border-primary/20 p-4 my-1 space-y-3 min-w-[260px]">
+    <div className="glass rounded-xl border border-primary/20 p-4 my-1 space-y-3 min-w-65">
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
@@ -161,7 +161,7 @@ export function InteractiveQuizCard({ payload, messageId }: { payload: QuizPaylo
       {/* Progress bar */}
       <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
         <motion.div
-          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+          className="h-full rounded-full bg-linear-to-r from-emerald-500 to-teal-500"
           initial={false}
           animate={{ width: `${((index + (answered ? 1 : 0)) / total) * 100}%` }}
           transition={{ type: 'spring', stiffness: 200, damping: 25 }}
@@ -231,7 +231,7 @@ export function InteractiveQuizCard({ payload, messageId }: { payload: QuizPaylo
           <div className="flex h-8 justify-end">
             {answered && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <Button size="sm" onClick={handleNext} className="gap-1 h-8 bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90">
+                <Button size="sm" onClick={handleNext} className="gap-1 h-8 bg-linear-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90">
                   {index + 1 >= total ? 'See results' : 'Next'}
                   <ChevronRight className="h-3.5 w-3.5" />
                 </Button>

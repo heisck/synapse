@@ -588,7 +588,7 @@ export function FocusTimerView() {
             {mode === m && (
               <motion.div
                 layoutId="focus-mode-pill"
-                className="absolute inset-0 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500"
+                className="absolute inset-0 rounded-lg bg-linear-to-r from-emerald-500 to-teal-500"
                 transition={{ type: 'spring', stiffness: 350, damping: 30 }}
               />
             )}
@@ -717,7 +717,7 @@ export function FocusTimerView() {
 
         <Button
           onClick={handleStartPause}
-          className={`rounded-full h-14 w-14 glow-emerald bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg hover:from-emerald-400 hover:to-teal-500 ${
+          className={`rounded-full h-14 w-14 glow-emerald bg-linear-to-br from-emerald-500 to-teal-600 text-white shadow-lg hover:from-emerald-400 hover:to-teal-500 ${
             isRunning ? 'glass-inner-glow' : ''
           }`}
           aria-label={isRunning ? 'Pause timer' : 'Start timer'}
@@ -1062,7 +1062,7 @@ export function FocusTimerView() {
                       setShowAnalytics(false);
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
-                    className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-lg px-4 shrink-0"
+                    className="bg-linear-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-lg px-4 shrink-0"
                   >
                     Start
                   </Button>
@@ -1151,7 +1151,7 @@ export function FocusTimerView() {
           >
             <Button
               onClick={() => navigate('tutor')}
-              className="gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-full px-6"
+              className="gap-2 bg-linear-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-full px-6"
             >
               Go to Tutor
               <ArrowRight className="h-4 w-4" />

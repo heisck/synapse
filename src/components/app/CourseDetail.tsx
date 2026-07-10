@@ -1,5 +1,6 @@
 'use client';
 
+import { deleteLocalCourse, isLocalCourse } from '@/lib/localLibrary';
 import { aiFetch } from '@/lib/aiKey';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
@@ -141,7 +142,9 @@ export function CourseDetail() {
       const res = await aiFetch('/api/questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slideId: slide.id, courseId: activeCourse?.id }),
+        // Slide content rides along so local-first courses (not in the shared
+        // DB) generate fine; server prefers content when present
+        body: JSON.stringify({ slideId: slide.id, courseId: activeCourse?.id, content: `## ${slide.title}\n${slide.content}` }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Failed to generate questions.' }));
@@ -161,7 +164,9 @@ export function CourseDetail() {
     if (!activeCourse) return;
     setIsDeletingCourse(true);
     try {
-      const res = await fetch(`/api/courses/${activeCourse.id}`, { method: 'DELETE' });
+      const res = isLocalCourse(activeCourse.id)
+        ? (await deleteLocalCourse(activeCourse.id), { ok: true } as Response)
+        : await fetch(`/api/courses/${activeCourse.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete course');
       removeCourse(activeCourse.id);
       toast.success(`"${activeCourse.title}" deleted.`);
@@ -328,11 +333,15 @@ export function CourseDetail() {
         }
       }
 
-      // No questions generated for this course yet — generate them now
+      // No questions generated for this course yet — generate them now.
+      // Content rides along for local-first courses not in the shared DB.
       const genRes = await aiFetch('/api/questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ courseId: activeCourse.id }),
+        body: JSON.stringify({
+          courseId: activeCourse.id,
+          content: activeSlides.length > 0 ? activeSlides.map((s) => `## ${s.title}\n${s.content}`).join('\n\n') : undefined,
+        }),
       });
       if (!genRes.ok) {
         const err = await genRes.json().catch(() => ({ error: 'Failed to generate quiz questions.' }));
@@ -384,7 +393,7 @@ export function CourseDetail() {
             <nav className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3" aria-label="Breadcrumb">
               <button onClick={() => navigate('dashboard')} className="hover:text-foreground transition-colors font-medium slide-up-fade stagger-1">Dashboard</button>
               <ChevronRight className="h-3 w-3 shrink-0 slide-up-fade stagger-2" />
-              <span className="text-foreground truncate max-w-[200px] sm:max-w-none slide-up-fade stagger-3">{activeCourse?.title ?? 'Course Detail'}</span>
+              <span className="text-foreground truncate max-w-50 sm:max-w-none slide-up-fade stagger-3">{activeCourse?.title ?? 'Course Detail'}</span>
             </nav>
             <div className="flex items-center gap-3">
               <Button
@@ -633,7 +642,7 @@ export function CourseDetail() {
                   <span className="text-[10px] font-mono text-muted-foreground">{String(i + 1).padStart(2, '0')}</span>
                   <Maximize2 className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground/70 transition-colors" />
                 </div>
-                <p className="text-xs font-medium leading-snug line-clamp-2 min-h-[2rem]">{slide.title}</p>
+                <p className="text-xs font-medium leading-snug line-clamp-2 min-h-8">{slide.title}</p>
                 <p className="mt-1.5 text-[10px] text-muted-foreground leading-relaxed line-clamp-3">
                   {slide.content.replace(/[#*`>•-]/g, ' ').replace(/\s+/g, ' ').trim()}
                 </p>
@@ -760,9 +769,9 @@ export function CourseDetail() {
                       whileTap={{ scale: 0.98 }}
                       onClick={() => handleSlideSelect(i)}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSlideSelect(i); }}
-                      className={`group/slide flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm whitespace-nowrap lg:whitespace-normal transition-all min-w-[160px] lg:min-w-0 cursor-pointer ${
+                      className={`group/slide flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm whitespace-nowrap lg:whitespace-normal transition-all min-w-40 lg:min-w-0 cursor-pointer ${
                         i === currentSlideIndex
-                          ? 'bg-gradient-to-r from-primary/10 to-secondary/5 text-primary font-medium shadow-sm border border-primary/10'
+                          ? 'bg-linear-to-r from-primary/10 to-secondary/5 text-primary font-medium shadow-sm border border-primary/10'
                           : viewed
                             ? 'text-foreground glass'
                             : 'text-muted-foreground hover:bg-accent'

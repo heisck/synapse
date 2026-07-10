@@ -95,9 +95,9 @@ function GradientDivider() {
       initial={{ scaleX: 0, opacity: 0 }}
       animate={{ scaleX: 1, opacity: 1 }}
       transition={{ duration: 0.8, ease: 'easeOut' }}
-      className="h-[2px] w-full origin-left overflow-hidden rounded-full"
+      className="h-0.5 w-full origin-left overflow-hidden rounded-full"
     >
-      <div className="h-full w-full bg-gradient-to-r from-transparent via-primary/40 to-transparent animate-gradient-sweep" />
+      <div className="h-full w-full bg-linear-to-r from-transparent via-primary/40 to-transparent animate-gradient-sweep" />
     </motion.div>
   );
 }
@@ -109,7 +109,7 @@ function BuddyAvatar({ name, gradient, size = 'md' }: { name: string; gradient: 
 
   return (
     <Avatar className={`${sizeClass} shrink-0`}>
-      <AvatarFallback className={`bg-gradient-to-br ${gradient} text-white font-bold shadow-sm`}>
+      <AvatarFallback className={`bg-linear-to-br ${gradient} text-white font-bold shadow-sm`}>
         {initials}
       </AvatarFallback>
     </Avatar>
@@ -251,7 +251,7 @@ function ShareStatsModal({ open, onClose }: { open: boolean; onClose: () => void
             </div>
 
             {/* Visual stats card preview */}
-            <div className="relative rounded-xl mb-4 overflow-hidden border border-emerald-500/30 bg-gradient-to-br from-emerald-950 via-emerald-900/80 to-teal-950 p-5">
+            <div className="relative rounded-xl mb-4 overflow-hidden border border-emerald-500/30 bg-linear-to-br from-emerald-950 via-emerald-900/80 to-teal-950 p-5">
               <div className="absolute -top-10 -right-10 h-40 w-40 rounded-full bg-emerald-500/20 blur-2xl" aria-hidden="true" />
               <div className="relative z-10 space-y-4">
                 <div>
@@ -329,7 +329,7 @@ function LeaderboardRow({
             transition={{ type: 'spring', stiffness: 400, damping: 20, delay: rank * 0.05 }}
             className={`
               flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full
-              bg-gradient-to-br ${style.gradient} text-white font-bold text-sm shadow-md
+              bg-linear-to-br ${style.gradient} text-white font-bold text-sm shadow-md
             `}
           >
             {rank === 1 ? <Crown className="h-4 w-4 sm:h-5 sm:w-5" /> : <Medal className="h-4 w-4 sm:h-5 sm:w-5" />}
@@ -383,7 +383,7 @@ function LeaderboardRow({
           {buddy.isOnline && buddy.currentTopic && (
             <>
               <span className="text-border hidden md:inline">·</span>
-              <span className="hidden md:inline text-emerald-600 dark:text-emerald-400 truncate max-w-[140px]">studying {buddy.currentTopic}</span>
+              <span className="hidden md:inline text-emerald-600 dark:text-emerald-400 truncate max-w-35">studying {buddy.currentTopic}</span>
             </>
           )}
           {!buddy.isOnline && !isCurrentUser && formatLastSeen(buddy.lastSeen) && (
@@ -397,7 +397,7 @@ function LeaderboardRow({
 
       {/* XP */}
       <div className="text-right shrink-0">
-        <div className={`font-bold text-sm ${style ? `bg-gradient-to-r ${style.gradient} bg-clip-text text-transparent` : 'text-foreground'}`}>
+        <div className={`font-bold text-sm ${style ? `bg-linear-to-r ${style.gradient} bg-clip-text text-transparent` : 'text-foreground'}`}>
           {displayXP}
         </div>
         <div className="text-[10px] text-muted-foreground">XP</div>
@@ -432,13 +432,13 @@ function TopPodium({ entries }: { entries: Array<{ rank: number; buddy: StudyBud
           </div>
           <span className="text-xs font-semibold truncate max-w-[80px]">{second.buddy.name}</span>
           <div className="flex items-center gap-1 mt-1">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-slate-300 to-slate-500 text-white">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-linear-to-br from-slate-300 to-slate-500 text-white">
               <Medal className="h-4 w-4" />
             </div>
             <span className="text-xs font-bold text-muted-foreground">{second.weeklyXP.toLocaleString()}</span>
           </div>
           <motion.div
-            className="mt-2 w-20 sm:w-24 rounded-t-xl bg-gradient-to-t from-slate-400/20 to-slate-300/10 border border-b-0 border-slate-400/30"
+            className="mt-2 w-20 sm:w-24 rounded-t-xl bg-linear-to-t from-slate-400/20 to-slate-300/10 border border-b-0 border-slate-400/30"
             initial={{ height: 0 }}
             animate={{ height: 80 }}
             transition={{ delay: 0.4, type: 'spring', stiffness: 200, damping: 20 }}
@@ -487,13 +487,13 @@ function TopPodium({ entries }: { entries: Array<{ rank: number; buddy: StudyBud
           </motion.div>
           <span className="text-sm font-bold truncate max-w-[90px]">{first.buddy.name}</span>
           <div className="flex items-center gap-1 mt-1">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 text-white shadow-lg shadow-amber-500/30">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-linear-to-br from-amber-400 to-yellow-500 text-white shadow-lg shadow-amber-500/30">
               <Crown className="h-4 w-4" />
             </div>
             <span className="text-xs font-bold text-amber-600 dark:text-amber-400">{first.weeklyXP.toLocaleString()}</span>
           </div>
           <motion.div
-            className="mt-2 w-24 sm:w-28 rounded-t-xl bg-gradient-to-t from-amber-400/20 to-amber-300/10 border border-b-0 border-amber-400/30"
+            className="mt-2 w-24 sm:w-28 rounded-t-xl bg-linear-to-t from-amber-400/20 to-amber-300/10 border border-b-0 border-amber-400/30"
             initial={{ height: 0 }}
             animate={{ height: 120 }}
             transition={{ delay: 0.4, type: 'spring', stiffness: 200, damping: 20 }}
@@ -525,13 +525,13 @@ function TopPodium({ entries }: { entries: Array<{ rank: number; buddy: StudyBud
           </div>
           <span className="text-xs font-semibold truncate max-w-[80px]">{third.buddy.name}</span>
           <div className="flex items-center gap-1 mt-1">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-orange-600 to-amber-700 text-white">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-linear-to-br from-orange-600 to-amber-700 text-white">
               <Medal className="h-4 w-4" />
             </div>
             <span className="text-xs font-bold text-muted-foreground">{third.weeklyXP.toLocaleString()}</span>
           </div>
           <motion.div
-            className="mt-2 w-20 sm:w-24 rounded-t-xl bg-gradient-to-t from-orange-600/20 to-orange-500/10 border border-b-0 border-orange-600/30"
+            className="mt-2 w-20 sm:w-24 rounded-t-xl bg-linear-to-t from-orange-600/20 to-orange-500/10 border border-b-0 border-orange-600/30"
             initial={{ height: 0 }}
             animate={{ height: 60 }}
             transition={{ delay: 0.4, type: 'spring', stiffness: 200, damping: 20 }}

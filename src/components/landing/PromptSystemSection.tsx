@@ -112,7 +112,7 @@ function LayerCard({
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
       >
         {/* Hover glow background */}
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-500/0 to-teal-500/0 group-hover:from-emerald-500/[0.04] group-hover:to-teal-500/[0.03] dark:group-hover:from-emerald-400/[0.08] dark:group-hover:to-cyan-400/[0.06] transition-all duration-500" />
+        <div className="absolute inset-0 rounded-2xl bg-linear-to-br from-emerald-500/0 to-teal-500/0 group-hover:from-emerald-500/[0.04] group-hover:to-teal-500/[0.03] dark:group-hover:from-emerald-400/[0.08] dark:group-hover:to-cyan-400/[0.06] transition-all duration-500" />
 
         <div className="relative z-10">
           <div className={`w-12 h-12 rounded-xl ${layer.color} flex items-center justify-center mb-4`}>

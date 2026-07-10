@@ -1,5 +1,6 @@
 'use client';
 
+import { deleteLocalCourse, isLocalCourse } from '@/lib/localLibrary';
 import { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FileText, Layers, Clock, Bookmark, BookmarkCheck, Trash2, AlertTriangle } from 'lucide-react';
@@ -52,7 +53,9 @@ export function CourseCard({ course, onClick }: CourseCardProps) {
   const handleDelete = useCallback(async () => {
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/courses/${course.id}`, { method: 'DELETE' });
+      const res = isLocalCourse(course.id)
+        ? (await deleteLocalCourse(course.id), { ok: true } as Response)
+        : await fetch(`/api/courses/${course.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete course');
       removeCourse(course.id);
       toast.success(`"${course.title}" deleted.`);
@@ -85,7 +88,7 @@ export function CourseCard({ course, onClick }: CourseCardProps) {
         className="glass-hover card-shadow rounded-xl overflow-hidden border border-border/50 relative transition-all duration-300"
       >
         {/* Thumbnail */}
-        <div className="relative h-32 bg-gradient-to-br from-emerald-500/20 via-teal-500/15 to-emerald-600/10 flex items-center justify-center overflow-hidden">
+        <div className="relative h-32 bg-linear-to-br from-emerald-500/20 via-teal-500/15 to-emerald-600/10 flex items-center justify-center overflow-hidden">
           <FileText className="h-10 w-10 text-primary/40 group-hover:text-primary/60 transition-colors relative z-10" />
           <Badge className="absolute top-3 left-3 text-[10px] z-10" variant="secondary">
             {course.subject}

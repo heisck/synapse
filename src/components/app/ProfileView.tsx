@@ -333,7 +333,7 @@ function AchievementCard({ achievement, index }: { achievement: Achievement; ind
           <div className="space-y-1">
             <div className="h-1.5 w-full rounded-full bg-muted/60 dark:bg-muted/40 overflow-hidden">
               <motion.div
-                className="h-full rounded-full bg-gradient-to-r from-muted-foreground/30 to-muted-foreground/50"
+                className="h-full rounded-full bg-linear-to-r from-muted-foreground/30 to-muted-foreground/50"
                 initial={{ width: 0 }}
                 animate={{ width: `${Math.max(2, achievement.progress)}%` }}
                 transition={{ duration: 0.6, delay: index * 0.04, ease: 'easeOut' }}
@@ -873,7 +873,7 @@ export function ProfileView() {
           <div className="space-y-1.5">
             <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
               <motion.div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500 relative overflow-hidden"
+                className="h-full rounded-full bg-linear-to-r from-emerald-500 via-teal-500 to-emerald-500 relative overflow-hidden"
                 initial={{ width: 0 }}
                 animate={{ width: `${achievements.length > 0 ? (unlockedCount / achievements.length) * 100 : 0}%` }}
                 transition={{ duration: 0.8, ease: 'easeOut', delay: 0.2 }}
@@ -1337,7 +1337,7 @@ export function ProfileView() {
                                   <span className="text-[10px] text-muted-foreground w-8 truncate">{day.slice(0, 3)}</span>
                                   <div className="flex-1 h-1.5 rounded-full bg-muted/60 dark:bg-muted/30 overflow-hidden">
                                     <motion.div
-                                      className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                                      className="h-full rounded-full bg-linear-to-r from-emerald-500 to-teal-400"
                                       initial={{ width: 0 }}
                                       animate={{ width: `${(mins / maxMinutes) * 100}%` }}
                                       transition={{ duration: 0.8, ease: 'easeOut', delay: 0.2 }}

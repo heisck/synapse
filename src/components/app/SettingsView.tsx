@@ -721,7 +721,7 @@ export function SettingsView() {
                 size="sm"
                 disabled={!importCode.trim()}
                 onClick={handleImportProfile}
-                className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white hover:opacity-90"
+                className="bg-linear-to-r from-indigo-600 to-blue-600 text-white hover:opacity-90"
               >
                 Import Profile
               </Button>

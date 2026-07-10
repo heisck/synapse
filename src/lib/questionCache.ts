@@ -75,6 +75,31 @@ export function appendToQuestionCache(
   return cache;
 }
 
+/** Learner-configured question-type mix, used for generation and pool filter. */
+const TYPES_KEY = 'synapse-question-types';
+export const ALL_QUESTION_TYPES = ['multiple_choice', 'true_false', 'fill_blank', 'matching'] as const;
+
+export function getPreferredTypes(): string[] {
+  if (typeof window === 'undefined') return [...ALL_QUESTION_TYPES];
+  try {
+    const raw = localStorage.getItem(TYPES_KEY);
+    const parsed = raw ? (JSON.parse(raw) as string[]) : null;
+    const valid = parsed?.filter((t) => (ALL_QUESTION_TYPES as readonly string[]).includes(t)) ?? [];
+    return valid.length > 0 ? valid : [...ALL_QUESTION_TYPES];
+  } catch {
+    return [...ALL_QUESTION_TYPES];
+  }
+}
+
+export function setPreferredTypes(types: string[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(TYPES_KEY, JSON.stringify(types));
+  } catch {
+    // ignore
+  }
+}
+
 /** The user-facing toggle: generate questions in the background or not. */
 export function isBackgroundGenerationEnabled(): boolean {
   if (typeof window === 'undefined') return false;

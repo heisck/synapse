@@ -174,13 +174,13 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
                 animate={{ opacity: isCurrent ? 1 : 0.4 }}
                 className="mt-1.5 text-[10px] font-medium text-muted-foreground"
               >
-                {['Welcome', 'Style', 'Pace', 'Done'][i]}
+                {['Welcome', 'Style', 'Pace', 'AI Key', 'Done'][i]}
               </motion.span>
             </div>
             {stepNum < TOTAL_STEPS && (
               <div className="mx-2 mt-[-18px] h-0.5 w-8 sm:w-12 overflow-hidden rounded-full bg-muted-foreground/15">
                 <motion.div
-                  className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full"
+                  className="h-full bg-linear-to-r from-emerald-500 to-teal-500 rounded-full"
                   initial={{ width: '0%' }}
                   animate={{ width: stepNum < currentStep ? '100%' : '0%' }}
                   transition={{ duration: 0.5, ease: 'easeInOut' }}
@@ -642,7 +642,7 @@ function DoneStep({
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.2 }}
-          className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20"
+          className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-linear-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20"
         >
           <motion.div
             initial={{ scale: 0, opacity: 0 }}

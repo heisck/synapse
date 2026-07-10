@@ -103,7 +103,7 @@ function FeatureCard({
         }}
         className="feature-panel-button group/feature relative flex h-full min-h-[21rem] w-full cursor-pointer flex-col items-center justify-center overflow-hidden px-5 py-8 text-center outline-none transition-colors duration-500 focus-visible:ring-2 focus-visible:ring-emerald-400/70"
       >
-        <span className="absolute inset-0 bg-gradient-to-br from-emerald-500/[0.02] via-transparent to-cyan-500/[0.03] opacity-0 transition-opacity duration-500 group-hover:opacity-100 group-focus-within:opacity-100" />
+        <span className="absolute inset-0 bg-linear-to-br from-emerald-500/[0.02] via-transparent to-cyan-500/[0.03] opacity-0 transition-opacity duration-500 group-hover:opacity-100 group-focus-within:opacity-100" />
 
         <motion.span
           className="relative z-10 mb-5 flex items-center justify-center text-emerald-600 transition-transform duration-500 dark:text-emerald-300"

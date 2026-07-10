@@ -132,7 +132,7 @@ export default function CTASection() {
       </div>
       {/* Animated gradient background */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br dark:from-emerald-950/50 dark:via-background dark:to-teal-950/50" />
+        <div className="absolute inset-0 bg-linear-to-br dark:from-emerald-950/50 dark:via-background dark:to-teal-950/50" />
         <motion.div
           className="absolute inset-0"
           style={{
@@ -186,7 +186,7 @@ export default function CTASection() {
         >
           {/* Inner glow effect */}
           <motion.div
-            className="absolute top-0 left-1/2 -translate-x-1/2 w-[300px] h-[200px] bg-gradient-to-b from-emerald-400/10 dark:from-emerald-400/20 to-transparent rounded-full blur-3xl pointer-events-none"
+            className="absolute top-0 left-1/2 -translate-x-1/2 w-[300px] h-50 bg-linear-to-b from-emerald-400/10 dark:from-emerald-400/20 to-transparent rounded-full blur-3xl pointer-events-none"
             animate={{
               opacity: [0.5, 0.8, 0.5],
               scale: [1, 1.1, 1],
@@ -196,7 +196,7 @@ export default function CTASection() {
 
           {/* Animated gradient border glow */}
           <motion.div
-            className="absolute -inset-[1px] rounded-3xl pointer-events-none"
+            className="absolute -inset-px rounded-3xl pointer-events-none"
             style={{
               background:
                 'linear-gradient(135deg, rgba(16,185,129,0.3), rgba(20,184,166,0.1), rgba(16,185,129,0.3))',
@@ -207,7 +207,7 @@ export default function CTASection() {
             transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
           />
           {/* Dark mode enhanced neon border glow */}
-          <div className="absolute -inset-[1px] rounded-3xl pointer-events-none hidden dark:block">
+          <div className="absolute -inset-px rounded-3xl pointer-events-none hidden dark:block">
             <motion.div
               className="absolute inset-0 rounded-3xl"
               style={{

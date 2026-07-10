@@ -60,7 +60,6 @@ import {
   updateDailyStreak,
   getTimeUntilMidnight,
   selectDailyQuestions,
-  COURSE_QUIZ_GROUPS,
   loadAdaptiveResults,
   saveAdaptiveResults,
   scoreQuestionForAdaptive,
@@ -86,12 +85,81 @@ import { InteractiveFlashcard } from './quiz/InteractiveFlashcard';
 import { ExamMode } from './quiz/ExamMode';
 import { useBackgroundGeneration } from '@/hooks/useBackgroundGeneration';
 import { GraduationCap, Cpu } from 'lucide-react';
+import { appendToQuestionCache, loadQuestionCache, getPreferredTypes, setPreferredTypes, ALL_QUESTION_TYPES } from '@/lib/questionCache';
+import { getLocalCourseContent, isLocalCourse } from '@/lib/localLibrary';
+
+const TYPE_CHIP_LABELS: Record<string, string> = {
+  multiple_choice: 'MCQ',
+  true_false: 'True/False',
+  fill_blank: 'Typing',
+  matching: 'Matching',
+};
 
 // ---------- Main QuizView ----------
+const ANSWERED_EVER_KEY = 'synapse-answered-questions';
+
+function loadAnsweredEver(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(ANSWERED_EVER_KEY);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function persistAnsweredEver(id: string): void {
+  try {
+    const current = loadAnsweredEver();
+    current.add(id);
+    localStorage.setItem(ANSWERED_EVER_KEY, JSON.stringify([...current].slice(-2000)));
+  } catch {
+    // storage unavailable — repeat-avoidance just won't persist
+  }
+}
+
 export function QuizView() {
   const { navigate, currentQuestions, activeCourse, updateMastery, adaptiveResults, addAdaptiveResult, masteryMap, courses, setCurrentQuestions, setActiveCourse } = useAppStore();
 
-  const allQuestions = currentQuestions;
+  const [selectedCourse, setSelectedCourse] = useState<string>('all');
+  const bgCourseId = selectedCourse !== 'all' ? selectedCourse : activeCourse?.id ?? null;
+  const bgGen = useBackgroundGeneration(bgCourseId);
+
+  // The quiz pool = questions loaded into the store PLUS everything the
+  // background generator has cached for this course — so the pool grows live
+  // as Auto-gen works instead of being stuck at the first batch.
+  const allQuestions = useMemo(() => {
+    const cache = bgCourseId ? loadQuestionCache(bgCourseId)?.questions ?? [] : [];
+    if (cache.length === 0) return currentQuestions;
+    const seen = new Set(currentQuestions.map((q) => q.question.toLowerCase()));
+    const merged = [...currentQuestions];
+    for (const q of cache) {
+      if (!seen.has(q.question.toLowerCase())) {
+        seen.add(q.question.toLowerCase());
+        merged.push(q);
+      }
+    }
+    return merged;
+    // bgGen.cachedCount changes whenever the generator stores new questions
+     
+  }, [currentQuestions, bgCourseId, bgGen.cachedCount]);
+
+  // Questions answered in ANY previous session: served last, so finishing a
+  // set and coming back gives the next set instead of repeats. Snapshotted at
+  // session boundaries so the list doesn't shrink mid-quiz.
+  const [answeredBaseline, setAnsweredBaseline] = useState<Set<string>>(() => loadAnsweredEver());
+
+  // Learner-configured question types: applied to the pool AND sent with
+  // every generation request
+  const [preferredTypes, setPreferredTypesState] = useState<string[]>(() => getPreferredTypes());
+  const toggleQuestionType = (t: string) => {
+    setPreferredTypesState((prev) => {
+      const next = prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t];
+      if (next.length === 0) return prev; // at least one type stays on
+      setPreferredTypes(next);
+      return next;
+    });
+  };
 
   const [studyMode, setStudyMode] = useState<StudyMode>('quiz');
   // Exam mode overlay + background generation (per-course context)
@@ -102,19 +170,33 @@ export function QuizView() {
   const handlePracticeCourse = useCallback(async (course: (typeof courses)[number]) => {
     setPreparingCourseId(course.id);
     try {
-      const existingRes = await fetch(`/api/questions?courseId=${course.id}`);
-      if (existingRes.ok) {
-        const existingData = await existingRes.json();
-        if (existingData.questions?.length > 0) {
-          setActiveCourse(course);
-          setCurrentQuestions(existingData.questions);
-          return;
+      // Background-generated cache first — instant start, works offline
+      const cached = loadQuestionCache(course.id);
+      if (cached && cached.questions.length > 0) {
+        setActiveCourse(course);
+        setCurrentQuestions(cached.questions);
+        return;
+      }
+      if (!isLocalCourse(course.id)) {
+        const existingRes = await fetch(`/api/questions?courseId=${course.id}`);
+        if (existingRes.ok) {
+          const existingData = await existingRes.json();
+          if (existingData.questions?.length > 0) {
+            setActiveCourse(course);
+            setCurrentQuestions(existingData.questions);
+            return;
+          }
         }
       }
       const genRes = await aiFetch('/api/questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ courseId: course.id }),
+        body: JSON.stringify({
+          courseId: course.id,
+          types: getPreferredTypes(),
+          // Local-first courses aren't in the shared DB — content rides along
+          content: isLocalCourse(course.id) ? await getLocalCourseContent(course.id) : undefined,
+        }),
       });
       if (!genRes.ok) {
         const err = await genRes.json().catch(() => ({ error: 'Failed to generate questions.' }));
@@ -130,9 +212,10 @@ export function QuizView() {
     }
   }, [courses, setActiveCourse, setCurrentQuestions]);
   const [adaptiveOn, setAdaptiveOn] = useState(false);
-  const [selectedCourse, setSelectedCourse] = useState<string>('all');
-  const bgCourseId = selectedCourse !== 'all' ? selectedCourse : activeCourse?.id ?? null;
-  const bgGen = useBackgroundGeneration(bgCourseId);
+  // "More Questions": serve unseen cached questions first (background gen may
+  // already have them), generate the next sections on demand if the cache is
+  // thin, then continue the quiz right where the new questions begin.
+  const [loadingMore, setLoadingMore] = useState(false);
   const [showBookmarked, setShowBookmarked] = useState(false);
   const [bookmarkedQuestions, setBookmarkedQuestions] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set();
@@ -259,7 +342,15 @@ export function QuizView() {
         return isFuzzyMatch(userAnswer, q.answer, 3);
       }
       if (q.type === 'fill_blank') {
-        return userAnswer.trim().toLowerCase() === q.answer.trim().toLowerCase();
+        return isFuzzyMatch(userAnswer, q.answer, 1);
+      }
+      if (q.type === 'matching') {
+        // "left-right, left-right" pairs — the order the learner matched in
+        // is irrelevant, only the pairings matter
+        const toSet = (s: string) => new Set(s.split(',').map((p) => p.trim().toLowerCase()).filter(Boolean));
+        const userSet = toSet(userAnswer);
+        const correctSet = toSet(q.answer);
+        return userSet.size === correctSet.size && [...correctSet].every((p) => userSet.has(p));
       }
       return ua === ca;
     },
@@ -549,7 +640,9 @@ export function QuizView() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [studyMode, showFlashcardSummary, handleFlashcardPrev, handleFlashcardNext]);
 
-  // Filter questions by selected course and bookmarked
+  // Filter questions by selected course and bookmarked. Questions already
+  // answered in previous sessions are held back while unanswered ones remain,
+  // so returning to quiz practice serves the NEXT set instead of repeats.
   const questions = useMemo(() => {
     if (adaptiveOn && studyMode === 'quiz' && adaptiveQuestions) {
       return adaptiveQuestions;
@@ -558,8 +651,17 @@ export function QuizView() {
     if (showBookmarked) {
       filtered = filtered.filter((q) => bookmarkedQuestions.has(q.id));
     }
+    // Type config: only show the kinds of questions the learner wants
+    if (preferredTypes.length < ALL_QUESTION_TYPES.length) {
+      const typed = filtered.filter((q) => preferredTypes.includes(q.type) || !(ALL_QUESTION_TYPES as readonly string[]).includes(q.type));
+      if (typed.length > 0) filtered = typed;
+    }
+    if (studyMode === 'quiz' && !showBookmarked) {
+      const unanswered = filtered.filter((q) => !answeredBaseline.has(q.id));
+      if (unanswered.length > 0) return unanswered;
+    }
     return filtered;
-  }, [allQuestions, selectedCourse, showBookmarked, bookmarkedQuestions, adaptiveOn, studyMode, adaptiveQuestions]);
+  }, [allQuestions, selectedCourse, showBookmarked, bookmarkedQuestions, adaptiveOn, studyMode, adaptiveQuestions, answeredBaseline, preferredTypes]);
 
   // Difficulty distribution
   const difficultyCounts = useMemo(() => {
@@ -575,6 +677,54 @@ export function QuizView() {
   const handleShuffle = useCallback(() => {
     setCurrentIndex(0);
   }, []);
+
+  const handleMoreQuestions = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const existingIds = new Set(allQuestions.map((q) => q.id));
+      const existingText = new Set(allQuestions.map((q) => q.question.toLowerCase()));
+      const unseen = (qs: Question[]) =>
+        qs.filter((q) => !existingIds.has(q.id) && !existingText.has(q.question.toLowerCase()));
+
+      let fresh: Question[] = bgCourseId ? unseen(loadQuestionCache(bgCourseId)?.questions ?? []) : [];
+
+      // Cache thin? Generate the next sections on demand.
+      if (fresh.length < 5 && bgCourseId) {
+        const offset = loadQuestionCache(bgCourseId)?.sectionsDone ?? 0;
+        const res = await aiFetch('/api/questions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            courseId: bgCourseId,
+            sectionOffset: offset,
+            maxSections: 2,
+            types: getPreferredTypes(),
+            content: isLocalCourse(bgCourseId) ? await getLocalCourseContent(bgCourseId) : undefined,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const cacheNow = appendToQuestionCache(bgCourseId, data.questions ?? [], data.sectionsDone, data.sectionsTotal);
+          fresh = unseen(cacheNow.questions);
+        }
+      }
+
+      if (fresh.length === 0) {
+        toast('No new questions available yet — turn on Auto-gen to build the pool, or try again.');
+        return;
+      }
+
+      const continueFrom = questions.length;
+      setCurrentQuestions([...allQuestions, ...fresh]);
+      setShowResults(false);
+      setCurrentIndex(continueFrom);
+      toast.success(`${fresh.length} more questions loaded`);
+    } catch {
+      toast.error('Could not load more questions. Please try again.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [allQuestions, questions.length, bgCourseId, setCurrentQuestions]);
 
   const handleFlashcardMark = useCallback((type: 'known' | 'learning') => {
     if (!flashcardQuestions[currentIndex]) return;
@@ -639,6 +789,7 @@ export function QuizView() {
   }, [currentIndex, flashcardQuestions]);
 
   const handleCourseChange = (courseId: string) => {
+    setAnsweredBaseline(loadAnsweredEver());
     setSelectedCourse(courseId);
     setCurrentIndex(0);
     setAnswers({});
@@ -660,6 +811,7 @@ export function QuizView() {
   };
 
   const handleModeChange = (mode: StudyMode) => {
+    setAnsweredBaseline(loadAnsweredEver());
     setStudyMode(mode);
     setCurrentIndex(0);
     setAnswers({});
@@ -747,6 +899,9 @@ export function QuizView() {
       setAnswers(newAnswers);
       setAnswered(newAnswered);
       setShowExplanation(true);
+      // Remember across sessions so this question isn't served again while
+      // unanswered ones remain
+      persistAnsweredEver(currentQ.id);
 
       // Grade fill_blank with Levenshtein tolerance
       if (currentQ.type === 'fill_blank') {
@@ -755,6 +910,16 @@ export function QuizView() {
       }
 
       if (isCorrect(currentQ, answer)) {
+        // Correct → show the confetti/explanation briefly, then move on by
+        // itself. A wrong answer stays put so the learner reads the why.
+        const idxNow = currentIndex;
+        setTimeout(() => {
+          setCurrentIndex((i) => {
+            if (i !== idxNow || i >= questions.length - 1) return i;
+            setShowExplanation(false);
+            return i + 1;
+          });
+        }, 1400);
         setShowConfetti(true);
         setTimeout(() => setShowConfetti(false), 1500);
         const newStreak = streak + 1;
@@ -792,7 +957,7 @@ export function QuizView() {
         saveAdaptiveResults([...adaptiveResults, result].slice(-200));
       }
     },
-    [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted, adaptiveOn, studyMode, adaptiveResults, addAdaptiveResult, hintsUsed],
+    [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted, adaptiveOn, studyMode, adaptiveResults, addAdaptiveResult, hintsUsed, currentIndex, questions.length],
   );
 
   // Review mode answer handler
@@ -852,6 +1017,9 @@ export function QuizView() {
   };
 
   const handleRetry = () => {
+    // Refresh the answered snapshot: questions just answered drop out and the
+    // next unanswered set is served
+    setAnsweredBaseline(loadAnsweredEver());
     setCurrentIndex(0);
     setAnswers({});
     setAnswered({});
@@ -972,12 +1140,12 @@ export function QuizView() {
           >
             <div className={`inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-lg ${
               scorePercent >= 0.9
-                ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-white shadow-amber-400/30'
+                ? 'bg-linear-to-r from-amber-400 to-amber-500 text-white shadow-amber-400/30'
                 : scorePercent >= 0.7
-                  ? 'bg-gradient-to-r from-emerald-400 to-teal-500 text-white shadow-emerald-400/30'
+                  ? 'bg-linear-to-r from-emerald-400 to-teal-500 text-white shadow-emerald-400/30'
                   : scorePercent >= 0.5
-                    ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-white shadow-cyan-400/30'
-                    : 'bg-gradient-to-r from-orange-400 to-red-400 text-white shadow-orange-400/30'
+                    ? 'bg-linear-to-r from-cyan-400 to-blue-500 text-white shadow-cyan-400/30'
+                    : 'bg-linear-to-r from-orange-400 to-red-400 text-white shadow-orange-400/30'
             }`}>
               {scorePercent >= 0.9 ? <Trophy className="h-4 w-4" /> : scorePercent >= 0.7 ? <Zap className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
               {scorePercent >= 0.9 ? 'Outstanding' : scorePercent >= 0.7 ? 'Well Done' : scorePercent >= 0.5 ? 'Good Try' : 'Keep Going'}
@@ -1091,7 +1259,15 @@ export function QuizView() {
             </div>
           </div>
 
-          <div className="flex justify-center gap-3">
+          <div className="flex flex-wrap justify-center gap-3">
+            <Button
+              onClick={handleMoreQuestions}
+              disabled={loadingMore}
+              className="glow-emerald"
+            >
+              {loadingMore ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+              More Questions
+            </Button>
             {wrongAnswers.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.8 }}
@@ -1100,7 +1276,7 @@ export function QuizView() {
               >
                 <Button
                   onClick={handleAnalyzeMistakes}
-                  className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20"
+                  className="bg-linear-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20"
                 >
                   <Brain className="h-4 w-4 mr-2" />
                   Analyze My Mistakes
@@ -1194,7 +1370,7 @@ export function QuizView() {
             transition={{ type: 'spring', stiffness: 180, damping: 12, delay: 0.2 }}
             className="mx-auto"
           >
-            <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-lg bg-gradient-to-r from-emerald-400 to-teal-500 text-white shadow-emerald-400/30">
+            <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-lg bg-linear-to-r from-emerald-400 to-teal-500 text-white shadow-emerald-400/30">
               <Layers className="h-4 w-4" />
               Study Complete
             </div>
@@ -1277,7 +1453,7 @@ export function QuizView() {
               transition={{ type: 'spring', stiffness: 300, damping: 15 }}
               className="fixed top-1/4 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
             >
-              <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold text-sm shadow-lg shadow-orange-500/30">
+              <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-linear-to-r from-orange-500 to-amber-500 text-white font-bold text-sm shadow-lg shadow-orange-500/30">
                 <motion.span
                   animate={{ scale: [1, 1.3, 1] }}
                   transition={{ duration: 0.4, repeat: 2 }}
@@ -1300,7 +1476,7 @@ export function QuizView() {
               transition={{ type: 'spring', stiffness: 200, damping: 12 }}
               className="fixed top-1/3 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
             >
-              <div className="relative flex flex-col items-center gap-2 px-8 py-4 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 text-white shadow-2xl shadow-orange-500/40">
+              <div className="relative flex flex-col items-center gap-2 px-8 py-4 rounded-2xl bg-linear-to-br from-amber-500 via-orange-500 to-red-500 text-white shadow-2xl shadow-orange-500/40">
                 <motion.div
                   animate={{ scale: [1, 1.4, 1], rotate: [0, 10, -10, 0] }}
                   transition={{ duration: 0.8, repeat: 2 }}
@@ -1368,7 +1544,7 @@ export function QuizView() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6 rounded-xl p-5 mesh-gradient gradient-border relative overflow-hidden"
+          className="mb-6 rounded-xl p-5 mesh-gradient gradient-border overflow-hidden"
         >
           <div className="relative z-10">
             <div className="flex flex-wrap items-center justify-between gap-y-3 mb-3">
@@ -1530,7 +1706,7 @@ export function QuizView() {
                         style={{ opacity: timerStarted && !showResults ? 0.7 : 0.3 }}
                       />
                     </svg>
-                    <span className={`absolute text-[10px] font-mono font-medium ${
+                    <span className={`absolute inset-0 flex items-center justify-center text-[9px] leading-none font-mono font-medium tabular-nums ${
                       timerSeconds < 30 && !showResults ? 'text-red-500' : 'text-muted-foreground'
                     }`}>{formatTimer(timerSeconds)}</span>
                   </motion.div>
@@ -1568,7 +1744,11 @@ export function QuizView() {
             {/* Course filter tabs (not shown in daily mode) */}
             {studyMode !== 'daily' && studyMode !== 'review' && (
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            {COURSE_QUIZ_GROUPS.map((group) => (
+            {[
+              { id: 'all', label: 'All Questions' },
+              // Real uploaded courses only — no hardcoded demo groups
+              ...courses.map((c) => ({ id: c.id, label: c.title })),
+            ].map((group) => (
               <button
                 key={group.id}
                 onClick={() => { handleCourseChange(group.id); if (showBookmarked) setShowBookmarked(false); }}
@@ -1578,13 +1758,41 @@ export function QuizView() {
                     : 'border border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
                 }`}
               >
-                <group.icon className="h-3.5 w-3.5" />
+                <BookOpen className="h-3.5 w-3.5" />
                 {group.label}
                 <span className={`ml-0.5 text-[10px] ${selectedCourse === group.id ? 'bg-white/20 px-1 rounded' : 'text-muted-foreground'}`}>
                   {group.id === 'all'
                     ? allQuestions.length
                     : allQuestions.filter((q) => q.courseId === group.id).length}
                 </span>
+              </button>
+            ))}
+            {/* Shuffle the current pool */}
+            <button
+              onClick={() => {
+                setCurrentQuestions([...allQuestions].sort(() => Math.random() - 0.5));
+                setCurrentIndex(0);
+              }}
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all"
+              title="Shuffle question order"
+            >
+              <Shuffle className="h-3.5 w-3.5" />
+              Shuffle
+            </button>
+            {/* Question-type config: which kinds to show and generate */}
+            <span className="mx-1 h-4 w-px bg-border shrink-0" aria-hidden />
+            {ALL_QUESTION_TYPES.map((t) => (
+              <button
+                key={t}
+                onClick={() => toggleQuestionType(t)}
+                className={`rounded-full px-2.5 py-1.5 text-[11px] font-medium whitespace-nowrap border transition-all ${
+                  preferredTypes.includes(t)
+                    ? 'border-primary/40 bg-primary/10 text-primary'
+                    : 'border-border text-muted-foreground/60 hover:text-foreground'
+                }`}
+                title={`${preferredTypes.includes(t) ? 'Disable' : 'Enable'} ${TYPE_CHIP_LABELS[t]} questions (applies to display and generation)`}
+              >
+                {TYPE_CHIP_LABELS[t]}
               </button>
             ))}
             {/* Bookmarked filter chip */}
@@ -1876,7 +2084,7 @@ export function QuizView() {
                 transition={{ type: 'spring', stiffness: 180, damping: 12, delay: 0.1 }}
                 className="mx-auto"
               >
-                <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-lg bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-amber-400/30">
+                <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold shadow-lg bg-linear-to-r from-amber-400 to-orange-500 text-white shadow-amber-400/30">
                   <Trophy className="h-4 w-4" />
                   Challenge Complete!
                 </div>
@@ -2004,7 +2212,7 @@ export function QuizView() {
                 <div className="flex items-center gap-3">
                   <div className="h-2 flex-1 rounded-full bg-muted/50 overflow-hidden">
                     <motion.div
-                      className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+                      className="h-full rounded-full bg-linear-to-r from-emerald-500 to-teal-500"
                       animate={{ width: `${((24 * 60 - (dailyTimeLeft.hours * 60 + dailyTimeLeft.minutes)) / (24 * 60)) * 100}%` }}
                       transition={{ duration: 1 }}
                     />
@@ -2078,7 +2286,7 @@ export function QuizView() {
                   animate={{ opacity: 1, x: 0 }}
                   className="flex items-center gap-2"
                 >
-                  <Badge variant="secondary" className="text-xs bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/10">
+                  <Badge variant="secondary" className="text-xs bg-linear-to-r from-primary/10 to-secondary/10 border border-primary/10">
                     {dailyCurrentQ.concept}
                   </Badge>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${
@@ -2404,7 +2612,7 @@ export function QuizView() {
               {/* Concept tag */}
               {reviewCurrentQ.concept && (
                 <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="text-xs bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/10">
+                  <Badge variant="secondary" className="text-xs bg-linear-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/10">
                     {reviewCurrentQ.concept}
                   </Badge>
                 </div>
@@ -2694,7 +2902,7 @@ export function QuizView() {
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: -40, scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-              className="glass rounded-xl p-6 space-y-6 glow-emerald gradient-border relative overflow-hidden"
+              className="glass rounded-xl p-6 space-y-6 glow-emerald gradient-border overflow-hidden"
             >
               {/* Concept tag + bookmark */}
               <div className="flex items-center justify-between">
@@ -2704,7 +2912,7 @@ export function QuizView() {
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                     >
-                      <Badge variant="secondary" className="text-xs bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/10">
+                      <Badge variant="secondary" className="text-xs bg-linear-to-r from-primary/10 to-secondary/10 border border-primary/10">
                         {currentQ.concept}
                       </Badge>
                     </motion.div>
@@ -2907,6 +3115,29 @@ export function QuizView() {
 
               {currentQ.type === 'fill_blank' && !answered[currentQ.id] && (
                 <div className="space-y-2">
+                  {/* Letter boxes: one slot per character of the answer, with
+                      what the learner typed mapped in. Casing is forgiven. */}
+                  {currentQ.answer.length <= 16 && (
+                    <div className="flex flex-wrap gap-1.5 justify-center py-1" aria-hidden>
+                      {currentQ.answer.split('').map((ch, i) => {
+                        const typedCh = (fillBlankValues[currentQ.id] || '')[i] || '';
+                        return ch === ' ' ? (
+                          <span key={i} className="w-3" />
+                        ) : (
+                          <span
+                            key={i}
+                            className={`flex h-9 w-8 items-center justify-center rounded-md border text-sm font-semibold uppercase transition-colors ${
+                              typedCh
+                                ? 'border-primary/50 bg-primary/10 text-foreground'
+                                : 'border-border bg-background/50 text-transparent'
+                            }`}
+                          >
+                            {typedCh || '·'}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                   <div className="flex gap-2 items-center">
                     <Input
                       placeholder="Fill in the blank..."

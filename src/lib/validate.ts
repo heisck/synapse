@@ -10,11 +10,14 @@ export interface ValidatedQuestion {
   question: string;
   type: string;
   options?: string[];
+  matchingPairs?: Array<{ left: string; right: string }>;
   answer: string;
   explanation: string;
   concept?: string;
   difficulty: 'easy' | 'medium' | 'hard';
 }
+
+export const GENERATABLE_TYPES = ['multiple_choice', 'true_false', 'fill_blank', 'matching'] as const;
 
 export interface ValidationResult {
   valid: ValidatedQuestion[];
@@ -80,7 +83,8 @@ export function validateQuestions(items: unknown[]): ValidationResult {
       errors.push(`${label}: "question" is empty or too short`);
       return;
     }
-    if (!answer) {
+    if (!answer && type !== 'matching') {
+      // matching's canonical answer is built from its pairs below
       errors.push(`${label}: "answer" is empty`);
       return;
     }
@@ -95,7 +99,15 @@ export function validateQuestions(items: unknown[]): ValidationResult {
       return;
     }
 
+    const ALLOWED_TYPES = new Set([...GENERATABLE_TYPES, 'short_answer', 'error_correction']);
+    if (!ALLOWED_TYPES.has(type as (typeof GENERATABLE_TYPES)[number])) {
+      errors.push(`${label}: unknown type "${type}" — use one of ${[...ALLOWED_TYPES].join(', ')}`);
+      return;
+    }
+
     let options: string[] | undefined;
+    let matchingPairs: Array<{ left: string; right: string }> | undefined;
+    let finalAnswer = answer;
     if (type === 'multiple_choice') {
       const raw = Array.isArray(q.options) ? q.options : null;
       if (!raw) {
@@ -118,6 +130,40 @@ export function validateQuestions(items: unknown[]): ValidationResult {
         errors.push(`${label}: true_false answer must be "True" or "False"`);
         return;
       }
+    } else if (type === 'fill_blank') {
+      if (!question.includes('___')) {
+        errors.push(`${label}: fill_blank question must contain a "___" blank`);
+        return;
+      }
+      if (answer.length > 60) {
+        errors.push(`${label}: fill_blank answer must be a short term (got ${answer.length} chars)`);
+        return;
+      }
+    } else if (type === 'matching') {
+      const rawPairs = Array.isArray(q.matchingPairs) ? q.matchingPairs : null;
+      if (!rawPairs) {
+        errors.push(`${label}: matching needs a "matchingPairs" array of {left, right} objects`);
+        return;
+      }
+      matchingPairs = rawPairs
+        .map((p) => ({
+          left: String((p as Record<string, unknown>)?.left ?? '').trim(),
+          right: String((p as Record<string, unknown>)?.right ?? '').trim(),
+        }))
+        .filter((p) => p.left && p.right);
+      const uniqueLefts = new Set(matchingPairs.map((p) => normalize(p.left)));
+      const uniqueRights = new Set(matchingPairs.map((p) => normalize(p.right)));
+      if (matchingPairs.length < 3 || matchingPairs.length > 5 || uniqueLefts.size !== matchingPairs.length || uniqueRights.size !== matchingPairs.length) {
+        errors.push(`${label}: matching needs 3-5 pairs with distinct left and right values`);
+        return;
+      }
+      const pairLeak = matchingPairs.map((p) => isMetaLeak(p.left) || isMetaLeak(p.right)).find(Boolean);
+      if (pairLeak) {
+        errors.push(`${label}: ${pairLeak}`);
+        return;
+      }
+      // Canonical answer: "left-right" pairs — graded order-insensitively
+      finalAnswer = matchingPairs.map((p) => `${p.left}-${p.right}`).join(', ');
     }
 
     const key = normalize(question);
@@ -132,7 +178,8 @@ export function validateQuestions(items: unknown[]): ValidationResult {
       question,
       type,
       options,
-      answer,
+      matchingPairs,
+      answer: finalAnswer,
       explanation,
       concept: typeof q.concept === 'string' && q.concept.trim() ? q.concept.trim() : undefined,
       difficulty,

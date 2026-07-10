@@ -189,7 +189,7 @@ export function PersonaSelector() {
                 <motion.div
                   className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
                     isSelected
-                      ? 'bg-gradient-to-br from-emerald-400 to-teal-500 shadow-md shadow-emerald-500/20'
+                      ? 'bg-linear-to-br from-emerald-400 to-teal-500 shadow-md shadow-emerald-500/20'
                       : 'bg-muted'
                   }`}
                   animate={isSelected ? { scale: [1, 1.08, 1] } : { scale: 1 }}

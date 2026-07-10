@@ -31,7 +31,7 @@ const springEntrance = {
 
 function GradientAccentLine() {
   return (
-    <div className="mx-auto mb-5 h-1 w-16 rounded-full bg-gradient-to-r from-primary/60 via-primary to-primary/60 opacity-60" />
+    <div className="mx-auto mb-5 h-1 w-16 rounded-full bg-linear-to-r from-primary/60 via-primary to-primary/60 opacity-60" />
   );
 }
 
@@ -82,7 +82,7 @@ function SearchVariant({ title, description, actionLabel, onAction }: Omit<Empty
         <motion.div
           animate={{ y: [-20, 20, -20] }}
           transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute left-2 right-2 h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent rounded-full"
+          className="absolute left-2 right-2 h-0.5 bg-linear-to-r from-transparent via-primary to-transparent rounded-full"
         />
       </motion.div>
       <GradientAccentLine />
@@ -120,7 +120,7 @@ function ErrorVariant({ title, description, actionLabel, onAction }: Omit<EmptyS
       >
         <AlertTriangle className="h-8 w-8 text-amber-500" />
       </motion.div>
-      <div className="mx-auto mb-5 h-1 w-16 rounded-full bg-gradient-to-r from-amber-400/60 via-amber-500 to-amber-400/60 opacity-60" />
+      <div className="mx-auto mb-5 h-1 w-16 rounded-full bg-linear-to-r from-amber-400/60 via-amber-500 to-amber-400/60 opacity-60" />
       <h3 className="text-lg font-semibold mb-1 text-amber-600 dark:text-amber-400">{title}</h3>
       <p className="text-sm text-muted-foreground max-w-sm mb-6">{description}</p>
       {actionLabel && onAction && (

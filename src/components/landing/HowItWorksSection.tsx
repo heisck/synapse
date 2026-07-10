@@ -60,7 +60,7 @@ function StepCard({
       }}
     >
       {/* Step number circle with floating pulse */}
-      <div className="relative z-10 flex-shrink-0">
+      <div className="relative z-10 shrink-0">
         <motion.div
           className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full ${step.color} flex items-center justify-center shadow-lg transition-shadow duration-300 group-hover:shadow-emerald-500/20`}
           whileHover={{ scale: 1.1 }}

@@ -8,7 +8,7 @@ export function TypingIndicator() {
   return (
     <div className="flex items-end gap-2 mb-3">
       {/* Assistant avatar hint */}
-      <div className="flex-shrink-0 mt-1 w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-sm shadow-emerald-500/20">
+      <div className="shrink-0 mt-1 w-7 h-7 rounded-full bg-linear-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-sm shadow-emerald-500/20">
         <span className="text-[10px] font-bold text-white">AI</span>
       </div>
 
@@ -26,7 +26,7 @@ export function TypingIndicator() {
           {[0, 1, 2].map((i) => (
             <motion.div
               key={i}
-              className="h-2 w-2 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500"
+              className="h-2 w-2 rounded-full bg-linear-to-br from-emerald-400 to-teal-500"
               animate={{ y: [0, -5, 0], scale: [1, 1.1, 1] }}
               transition={{
                 repeat: Infinity,

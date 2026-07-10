@@ -226,7 +226,7 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
                       <>
                         <motion.div
                           layoutId="sidebar-active"
-                          className="absolute inset-0 rounded-lg bg-gradient-to-r from-primary/8 to-transparent backdrop-blur-sm border border-primary/15"
+                          className="absolute inset-0 rounded-lg bg-linear-to-r from-primary/8 to-transparent backdrop-blur-sm border border-primary/15"
                           transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                         />
                         <motion.div
@@ -242,7 +242,7 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
                     {isActive && isMobile && (
                       <motion.div
                         layoutId="mobile-sidebar-active"
-                        className="absolute inset-0 rounded-lg bg-gradient-to-r from-primary to-teal-500 opacity-90"
+                        className="absolute inset-0 rounded-lg bg-linear-to-r from-primary to-teal-500 opacity-90"
                         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                       />
                     )}

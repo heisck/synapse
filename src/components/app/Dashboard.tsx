@@ -1,5 +1,6 @@
 'use client';
 
+import { deleteLocalCourse, isLocalCourse } from '@/lib/localLibrary';
 import { aiFetch } from '@/lib/aiKey';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
@@ -186,7 +187,7 @@ function TypewriterText({ text, speed = 40, className = '' }: { text: string; sp
         <motion.span
           animate={{ opacity: [1, 0] }}
           transition={{ duration: 0.4, repeat: Infinity, repeatType: 'reverse' }}
-          className="inline-block w-[2px] h-[0.85em] bg-primary ml-0.5 align-middle rounded-full"
+          className="inline-block w-0.5 h-[0.85em] bg-primary ml-0.5 align-middle rounded-full"
         />
       )}
     </span>
@@ -200,9 +201,9 @@ function GradientDivider() {
       initial={{ scaleX: 0, opacity: 0 }}
       animate={{ scaleX: 1, opacity: 1 }}
       transition={{ duration: 0.8, ease: 'easeOut' }}
-      className="h-[2px] w-full origin-left overflow-hidden rounded-full"
+      className="h-0.5 w-full origin-left overflow-hidden rounded-full"
     >
-      <div className="h-full w-full bg-gradient-to-r from-transparent via-primary/40 to-transparent animate-gradient-sweep" />
+      <div className="h-full w-full bg-linear-to-r from-transparent via-primary/40 to-transparent animate-gradient-sweep" />
     </motion.div>
   );
 }
@@ -359,7 +360,7 @@ function ActivityItem({ activity, index, total }: { activity: DashboardActivity;
       className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors relative"
     >
       {/* Timeline connector dot */}
-      <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-primary/30 via-primary/10 to-transparent last:hidden pointer-events-none" style={{ display: index < total - 1 ? 'block' : 'none' }} />
+      <div className="absolute left-1.75 top-0 bottom-0 w-0.5 bg-linear-to-b from-primary/30 via-primary/10 to-transparent last:hidden pointer-events-none" style={{ display: index < total - 1 ? 'block' : 'none' }} />
       <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 z-10">
         <Icon className="h-4 w-4 text-primary" />
       </div>
@@ -529,7 +530,7 @@ function StudyBuddiesOnlineWidget() {
                   {/* Avatar with pulsing online dot */}
                   <div className="relative">
                     <Avatar className="h-10 w-10">
-                      <AvatarFallback className={`bg-gradient-to-br ${buddy.avatarGradient} text-white text-xs font-bold`}>
+                      <AvatarFallback className={`bg-linear-to-br ${buddy.avatarGradient} text-white text-xs font-bold`}>
                         {buddy.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
@@ -565,7 +566,7 @@ function StudyBuddiesOnlineWidget() {
               >
                 <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
                   <Avatar className="h-9 w-9 shrink-0">
-                    <AvatarFallback className={`bg-gradient-to-br ${expandedBuddy.avatarGradient} text-white text-xs font-bold`}>
+                    <AvatarFallback className={`bg-linear-to-br ${expandedBuddy.avatarGradient} text-white text-xs font-bold`}>
                       {expandedBuddy.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
@@ -1919,7 +1920,7 @@ export function Dashboard() {
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
                 transition={{ duration: 1.2, delay: 1, ease: 'easeOut' }}
-                className="h-[2px] w-full max-w-[120px] rounded-full origin-left mt-1"
+                className="h-0.5 w-full max-w-30 rounded-full origin-left mt-1"
                 style={{
                   background: 'linear-gradient(90deg, #f59e0b, #ef4444, #fbbf24, #f59e0b)',
                   backgroundSize: '300% 100%',
@@ -1984,7 +1985,7 @@ export function Dashboard() {
         </div>
 
         <motion.div
-          className="relative h-24 w-[260px] sm:w-[320px] shrink-0"
+          className="relative h-24 w-65 sm:w-[320px] shrink-0"
           style={{ perspective: 600 }}
           onWheel={handleCommandWheel}
           role="listbox"
@@ -2086,7 +2087,7 @@ export function Dashboard() {
 
           {/* Horizontal Timeline */}
           <div className="relative overflow-x-auto pb-2">
-            <div className="flex items-start min-w-[480px] sm:min-w-0 justify-between gap-0">
+            <div className="flex items-start min-w-120 sm:min-w-0 justify-between gap-0">
               {[
                 { label: 'Get Started', icon: PlayCircle, done: onboardingComplete },
                 { label: 'First Session', icon: MessageSquare, done: studySessions.length >= 1 },
@@ -2137,7 +2138,7 @@ export function Dashboard() {
                           </div>
                         )}
                       </div>
-                      <span className={`text-xs font-medium text-center leading-tight max-w-[72px] ${isDone ? 'text-emerald-600 dark:text-emerald-400' : isCurrent ? 'text-foreground' : 'text-muted-foreground/50'}`}>
+                      <span className={`text-xs font-medium text-center leading-tight max-w-18 ${isDone ? 'text-emerald-600 dark:text-emerald-400' : isCurrent ? 'text-foreground' : 'text-muted-foreground/50'}`}>
                         {milestone.label}
                       </span>
                     </motion.div>
@@ -2148,13 +2149,13 @@ export function Dashboard() {
                         initial={{ scaleX: 0 }}
                         animate={{ scaleX: 1 }}
                         transition={{ duration: 0.5, delay: idx * 0.1 + 0.15 }}
-                        className="flex-1 flex items-center mt-[18px] -mx-1 origin-left"
+                        className="flex-1 flex items-center mt-4.5 -mx-1 origin-left"
                       >
                         <div
-                          className={`h-[2px] w-full rounded-full ${
+                          className={`h-0.5 w-full rounded-full ${
                             milestone.done
-                              ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
-                              : 'bg-gradient-to-r from-muted-foreground/20 to-muted-foreground/15'
+                              ? 'bg-linear-to-r from-emerald-500 to-emerald-400'
+                              : 'bg-linear-to-r from-muted-foreground/20 to-muted-foreground/15'
                           }`}
                         />
                       </motion.div>
@@ -2183,7 +2184,7 @@ export function Dashboard() {
               onClick={() => handleCourseClick(lastCourse)}
               className="w-full text-left p-4 pt-2 flex items-center gap-4 group"
             >
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-teal-500/10">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-primary/20 to-teal-500/10">
                 <BookOpen className="h-6 w-6 text-primary/70" />
               </div>
               <div className="flex-1 min-w-0">
@@ -2287,7 +2288,7 @@ export function Dashboard() {
                           initial={{ height: 0 }}
                           animate={{ height: `${heightPct}%` }}
                           transition={{ duration: 0.5, ease: 'easeOut', delay: i * 0.05 }}
-                          className="w-full rounded-t-md bg-gradient-to-t from-teal-500 to-emerald-400 flex items-start justify-center pt-0.5 min-h-[18px]"
+                          className="w-full rounded-t-md bg-linear-to-t from-teal-500 to-emerald-400 flex items-start justify-center pt-0.5 min-h-4.5"
                         >
                           <span className="text-[10px] font-semibold text-white leading-none pt-0.5">{day.count}</span>
                         </motion.div>
@@ -2397,7 +2398,7 @@ export function Dashboard() {
                       aria-label={`Open bookmarked course: ${course.title}`}
                     >
                       <div className="w-2 h-2 rounded-full bg-primary" />
-                      <span className="text-xs font-medium text-primary max-w-[120px] truncate">{course.title}</span>
+                      <span className="text-xs font-medium text-primary max-w-30 truncate">{course.title}</span>
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleBookmark(course.id); }}
                         className="ml-1 h-4 w-4 rounded-full flex items-center justify-center hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
@@ -2452,7 +2453,7 @@ export function Dashboard() {
               <div className="space-y-1.5">
                 <div className="h-2.5 w-full rounded-full bg-muted/50 overflow-hidden">
                   <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500"
+                    className="h-full rounded-full bg-linear-to-r from-emerald-500 via-teal-500 to-emerald-500"
                     initial={{ width: 0 }}
                     animate={{ width: `${weeklyGoalPct}%` }}
                     transition={{ duration: 0.8, ease: 'easeOut' }}
@@ -2655,7 +2656,7 @@ export function Dashboard() {
             transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
           >
             <div className="glass card-shadow rounded-xl overflow-hidden">
-              <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-3">
+              <div className="bg-linear-to-r from-emerald-600 to-teal-600 px-5 py-3">
                 <div className="flex items-center gap-2 text-white">
                   <BarChart3 className="h-4 w-4" />
                   <span className="text-sm font-semibold">Weekly Activity</span>
@@ -2664,7 +2665,7 @@ export function Dashboard() {
               </div>
               <div className="p-4" style={{ minHeight: 220 }}>
                 {!hasWeeklyData ? (
-                  <div className="flex h-[200px] flex-col items-center justify-center gap-3 text-center">
+                  <div className="flex h-50 flex-col items-center justify-center gap-3 text-center">
                     <motion.div
                       animate={{ y: [0, -5, 0] }}
                       transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
@@ -2672,7 +2673,7 @@ export function Dashboard() {
                     >
                       <BarChart3 className="h-6 w-6 text-primary/70" />
                     </motion.div>
-                    <p className="text-sm text-muted-foreground max-w-[240px]">
+                    <p className="text-sm text-muted-foreground max-w-60">
                       No sessions logged this week yet — your daily activity will chart here as you study.
                     </p>
                   </div>
@@ -2728,7 +2729,7 @@ export function Dashboard() {
             transition={{ duration: 0.5, delay: 0.2, ease: 'easeOut' }}
           >
             <div className="glass card-shadow rounded-xl overflow-hidden">
-              <div className="bg-gradient-to-r from-teal-600 to-emerald-600 px-5 py-3">
+              <div className="bg-linear-to-r from-teal-600 to-emerald-600 px-5 py-3">
                 <div className="flex items-center gap-2 text-white">
                   <TrendingUp className="h-4 w-4" />
                   <span className="text-sm font-semibold">Mastery Trend</span>
@@ -2737,7 +2738,7 @@ export function Dashboard() {
               </div>
               <div className="p-4" style={{ minHeight: 220 }}>
                 {!hasMasteryData ? (
-                  <div className="flex h-[200px] flex-col items-center justify-center gap-3 text-center">
+                  <div className="flex h-50 flex-col items-center justify-center gap-3 text-center">
                     <motion.div
                       animate={{ y: [0, -5, 0] }}
                       transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
@@ -2745,7 +2746,7 @@ export function Dashboard() {
                     >
                       <TrendingUp className="h-6 w-6 text-primary/70" />
                     </motion.div>
-                    <p className="text-sm text-muted-foreground max-w-[240px]">
+                    <p className="text-sm text-muted-foreground max-w-60">
                       Your mastery trend appears after a couple of weeks of tutoring and quizzes.
                     </p>
                   </div>
@@ -2854,8 +2855,8 @@ export function Dashboard() {
                           transition={{ duration: 0.8, delay: 0.5 + i * 0.1 }}
                           className={`h-full rounded-full ${
                             wa.masteryEstimate <= 2
-                              ? 'bg-gradient-to-r from-red-500 to-orange-500'
-                              : 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                              ? 'bg-linear-to-r from-red-500 to-orange-500'
+                              : 'bg-linear-to-r from-amber-500 to-yellow-400'
                           }`}
                         />
                       </div>
@@ -2908,7 +2909,7 @@ export function Dashboard() {
                       <h4 className="text-sm font-semibold">Study Priority</h4>
                       {(weakAreasDialogReport as Record<string, string[]>).studyPriority!.slice(0, 3).map((topic, i) => (
                         <div key={i} className="flex items-center gap-3">
-                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-linear-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold">
                             {i + 1}
                           </div>
                           <span className="text-sm">{topic}</span>
@@ -3024,7 +3025,9 @@ function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof Cou
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/courses/${course.id}`, { method: 'DELETE' });
+      const res = isLocalCourse(course.id)
+        ? (await deleteLocalCourse(course.id), { ok: true } as Response)
+        : await fetch(`/api/courses/${course.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete course');
       removeCourse(course.id);
       toast.success(`"${course.title}" deleted.`);
@@ -3049,7 +3052,7 @@ function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof Cou
     >
       <div className="glass rounded-xl overflow-hidden border border-border/50 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:glow-emerald card-hover-shadow-lift">
         {/* Thumbnail */}
-        <div className="relative h-32 bg-gradient-to-br from-emerald-500/20 via-teal-500/15 to-emerald-600/10 flex items-center justify-center overflow-hidden">
+        <div className="relative h-32 bg-linear-to-br from-emerald-500/20 via-teal-500/15 to-emerald-600/10 flex items-center justify-center overflow-hidden">
           <BookOpen className="h-10 w-10 text-primary/40 group-hover:text-primary/60 transition-colors relative z-10" />
           <Badge className="absolute top-3 right-3 text-[10px] z-20" variant="secondary">
             {course.subject}
@@ -3064,7 +3067,7 @@ function EnhancedCourseCard({ course, onClick }: { course: Parameters<typeof Cou
           </button>
           {/* Gradient overlay that slides up from bottom on hover */}
           <motion.div
-            className="absolute inset-0 bg-gradient-to-t from-primary/60 via-primary/20 to-transparent z-10"
+            className="absolute inset-0 bg-linear-to-t from-primary/60 via-primary/20 to-transparent z-10"
             initial={{ opacity: 0, y: '100%' }}
             whileHover={{ opacity: 1, y: '0%' }}
             transition={{ duration: 0.35, ease: 'easeOut' }}
@@ -3163,7 +3166,7 @@ function WeeklyReviewSummary() {
       <div className="relative z-10">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center">
+            <div className="h-8 w-8 rounded-lg bg-linear-to-br from-emerald-500 to-teal-500 flex items-center justify-center">
               <TrendingUp className="h-4 w-4 text-white" />
             </div>
             <div>
@@ -3238,7 +3241,7 @@ function QuickReviewCards() {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
+        <div className="h-7 w-7 rounded-lg bg-linear-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
           <Target className="h-3.5 w-3.5 text-amber-500" />
         </div>
         <div>
@@ -3258,7 +3261,7 @@ function QuickReviewCards() {
             onClick={() => navigate('tutor')}
           >
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-semibold text-foreground truncate max-w-[140px]">{c.concept}</span>
+              <span className="text-xs font-semibold text-foreground truncate max-w-35">{c.concept}</span>
               <span className={`text-[10px] font-bold tabular-nums ${c.level < 30 ? 'text-red-500' : c.level < 50 ? 'text-amber-500' : 'text-emerald-500'}`}>
                 {c.level}%
               </span>

@@ -63,12 +63,12 @@ function TransitionIndicator({ show }: { show: boolean }) {
           animate={{ scaleX: 1, opacity: 1 }}
           exit={{ scaleX: 0, opacity: 0 }}
           transition={{ duration: 0.15, ease: 'easeOut' }}
-          className="absolute top-0 left-0 right-0 h-[2px] z-50 origin-left"
+          className="absolute top-0 left-0 right-0 h-0.5 z-50 origin-left"
         >
           <motion.div
             animate={{ x: ['-100%', '100%'] }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="h-full w-1/2 bg-gradient-to-r from-transparent via-primary to-transparent"
+            className="h-full w-1/2 bg-linear-to-r from-transparent via-primary to-transparent"
           />
         </motion.div>
       )}

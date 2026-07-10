@@ -123,7 +123,7 @@ export function InteractiveFlashcard({
         initial={{ opacity: 0.5, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
-        className={`glass rounded-2xl p-6 sm:p-8 min-h-[320px] flex flex-col ${
+        className={`glass rounded-2xl p-6 sm:p-8 min-h-80 flex flex-col ${
           phase === 'correct'
             ? 'ring-2 ring-emerald-500/60'
             : phase === 'revealed' && answeredWrong

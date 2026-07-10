@@ -175,7 +175,7 @@ export function MasteryTracker() {
               </div>
               <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
                 <motion.div
-                  className={`absolute inset-y-0 left-0 rounded-full bg-gradient-to-r ${getGradientStyle(concept.level)}`}
+                  className={`absolute inset-y-0 left-0 rounded-full bg-linear-to-r ${getGradientStyle(concept.level)}`}
                   initial={{ width: 0 }}
                   animate={{ width: `${concept.level}%` }}
                   transition={{
@@ -184,7 +184,7 @@ export function MasteryTracker() {
                     ease: [0.22, 1, 0.36, 1],
                   }}
                 >
-                  <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/20 to-white/30 rounded-full" />
+                  <div className="absolute inset-0 bg-linear-to-t from-transparent via-white/20 to-white/30 rounded-full" />
                 </motion.div>
               </div>
             </motion.div>

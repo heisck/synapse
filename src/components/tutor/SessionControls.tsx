@@ -137,7 +137,7 @@ export function SessionControls({ onRevision, onEndSession }: SessionControlsPro
                 <motion.div
                   className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
                     isActive
-                      ? 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-md shadow-emerald-500/25'
+                      ? 'bg-linear-to-br from-emerald-400 to-teal-500 text-white shadow-md shadow-emerald-500/25'
                       : isPast
                         ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400'
                         : 'bg-muted text-muted-foreground'

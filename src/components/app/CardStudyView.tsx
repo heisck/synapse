@@ -1,6 +1,8 @@
 'use client';
 
 import { aiFetch } from '@/lib/aiKey';
+import { loadQuestionCache } from '@/lib/questionCache';
+import { getLocalCourseContent, isLocalCourse } from '@/lib/localLibrary';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -82,9 +84,13 @@ export function CardStudyView() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/questions?courseId=${encodeURIComponent(courseId)}`);
-      const data = await res.json();
-      let list: Question[] = res.ok && Array.isArray(data.questions) ? data.questions : [];
+      // Background-generated cache first; the shared DB only serves legacy courses
+      let list: Question[] = loadQuestionCache(courseId)?.questions ?? [];
+      if (list.length === 0 && !isLocalCourse(courseId)) {
+        const res = await fetch(`/api/questions?courseId=${encodeURIComponent(courseId)}`);
+        const data = await res.json();
+        list = res.ok && Array.isArray(data.questions) ? data.questions : [];
+      }
 
       if (list.length === 0) {
         // No persisted questions yet — generate a fresh set via the LLM.
@@ -92,7 +98,10 @@ export function CardStudyView() {
         const genRes = await aiFetch('/api/questions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ courseId }),
+          body: JSON.stringify({
+            courseId,
+            content: isLocalCourse(courseId) ? await getLocalCourseContent(courseId) : undefined,
+          }),
         });
         const genData = await genRes.json();
         if (!genRes.ok || !Array.isArray(genData.questions) || genData.questions.length === 0) {

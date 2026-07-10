@@ -86,7 +86,7 @@ export function CourseContextPanel() {
           <CollapsibleTrigger className="w-full flex items-center justify-between px-4 py-3 hover:bg-emerald-100/30 dark:hover:bg-emerald-900/20 transition-colors cursor-pointer">
             <div className="flex items-center gap-2.5">
               {/* Course icon with gradient bg */}
-              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 shadow-sm shadow-emerald-500/20">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-linear-to-br from-emerald-400 to-teal-500 shadow-sm shadow-emerald-500/20">
                 <BookOpen className="w-4 h-4 text-white" />
               </div>
               <div className="flex flex-col items-start">
@@ -114,7 +114,7 @@ export function CourseContextPanel() {
           {/* Mini progress bar */}
           <div className="h-0.5 bg-emerald-100 dark:bg-emerald-900/40">
             <motion.div
-              className="h-full bg-gradient-to-r from-emerald-400 to-teal-400"
+              className="h-full bg-linear-to-r from-emerald-400 to-teal-400"
               initial={false}
               animate={{ width: `${progressPercent}%` }}
               transition={{ type: 'spring', stiffness: 200, damping: 25 }}

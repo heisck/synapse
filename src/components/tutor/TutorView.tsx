@@ -1463,11 +1463,11 @@ export function TutorView() {
             <div className="px-3 pb-3 pt-1">
               <div className="max-w-3xl mx-auto">
                 {/* Gradient border glow wrapper */}
-                <div className="relative gradient-border rounded-xl">
+                <div className="gradient-border rounded-xl">
                   {inputFocused && (
                     <motion.div
                       layoutId="input-glow"
-                      className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-emerald-500/30 via-teal-500/30 to-emerald-500/30 blur-sm -z-10"
+                      className="absolute -inset-px rounded-xl bg-linear-to-r from-emerald-500/30 via-teal-500/30 to-emerald-500/30 blur-sm -z-10"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
@@ -1975,7 +1975,7 @@ export function TutorView() {
                     </div>
                     <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
                       <motion.div
-                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                        className="h-full rounded-full bg-linear-to-r from-emerald-500 to-teal-400"
                         initial={{ width: 0 }}
                         animate={{ width: `${sessionStats.avgMastery}%` }}
                         transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 }}
@@ -2029,7 +2029,7 @@ export function TutorView() {
                     Continue Studying
                   </Button>
                   <Button
-                    className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+                    className="flex-1 bg-linear-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
                     onClick={handleSaveAndClose}
                   >
                     <CheckCircle2 className="w-4 h-4 mr-1.5" />
@@ -2072,7 +2072,7 @@ export function TutorView() {
                 value={noteDialogContent}
                 onChange={(e) => setNoteDialogContent(e.target.value)}
                 placeholder="Note content..."
-                className="text-sm min-h-[120px] max-h-[200px] resize-y"
+                className="text-sm min-h-30 max-h-50 resize-y"
               />
             </div>
             <div className="space-y-2">
@@ -2103,7 +2103,7 @@ export function TutorView() {
             <Button
               onClick={handleSaveNoteDialog}
               disabled={!noteDialogTitle.trim()}
-              className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+              className="bg-linear-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
             >
               <CheckCircle2 className="w-4 h-4 mr-1.5" />
               Save Note

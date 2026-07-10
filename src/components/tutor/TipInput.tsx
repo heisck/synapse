@@ -71,7 +71,7 @@ export function TipInput() {
       >
         <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
           <motion.div
-            className="flex items-center justify-center w-5 h-5 rounded-md bg-gradient-to-br from-amber-400 to-orange-400"
+            className="flex items-center justify-center w-5 h-5 rounded-md bg-linear-to-br from-amber-400 to-orange-400"
             animate={{ rotate: [0, 15, -15, 0] }}
             transition={{ repeat: Infinity, duration: 3, repeatDelay: 2, ease: 'easeInOut' }}
           >
@@ -145,7 +145,7 @@ export function TipInput() {
                     type="submit"
                     size="sm"
                     disabled={!tip.trim()}
-                    className="h-9 w-9 p-0 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-md shadow-emerald-500/20 transition-shadow disabled:opacity-40"
+                    className="h-9 w-9 p-0 rounded-lg bg-linear-to-br from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-md shadow-emerald-500/20 transition-shadow disabled:opacity-40"
                   >
                     <Send className="w-4 h-4" />
                   </Button>
