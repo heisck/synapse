@@ -32,6 +32,62 @@ function sanitize(input: string): string {
     .slice(0, 5000);
 }
 
+// --- Reasoning-model hygiene: internal deliberation must never reach the UI ---
+function stripThink(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+/**
+ * Streaming variant of stripThink: drops everything between <think> and
+ * </think> as chunks flow through, holding back a partial tag that spans a
+ * chunk boundary until enough text arrives to classify it.
+ */
+function createThinkFilter(): TransformStream<string, string> {
+  let inThink = false;
+  let carry = '';
+  const OPEN = '<think>';
+  const CLOSE = '</think>';
+  return new TransformStream<string, string>({
+    transform(chunk, controller) {
+      let text = carry + chunk;
+      carry = '';
+      let out = '';
+      for (;;) {
+        if (inThink) {
+          const end = text.toLowerCase().indexOf(CLOSE);
+          if (end === -1) {
+            text = '';
+            break;
+          }
+          text = text.slice(end + CLOSE.length);
+          inThink = false;
+        } else {
+          const start = text.toLowerCase().indexOf(OPEN);
+          if (start === -1) {
+            // Hold back a trailing partial "<thin..." so a tag split across
+            // chunks is still caught on the next pass
+            const lastLt = text.lastIndexOf('<');
+            if (lastLt !== -1 && OPEN.startsWith(text.slice(lastLt).toLowerCase())) {
+              out += text.slice(0, lastLt);
+              carry = text.slice(lastLt);
+            } else {
+              out += text;
+            }
+            break;
+          }
+          out += text.slice(0, start);
+          text = text.slice(start + OPEN.length);
+          inThink = true;
+        }
+      }
+      if (out) controller.enqueue(out);
+    },
+    flush(controller) {
+      if (carry && !inThink) controller.enqueue(carry);
+    },
+  });
+}
+
 // --- Dedupe consecutive same-role messages, keep last 14 ---
 function dedupeMessages(messages: ChatMessage[]): ChatMessage[] {
   const deduped: typeof messages = [];
@@ -104,6 +160,7 @@ const DEFAULT_SYSTEM_PROMPT =
 // --- Standing behavior rules appended to every tutor response ---
 const BEHAVIOR_RULES = `
 [RESPONSE STYLE — always]:
+- NEVER think out loud or narrate meta-steps. No commentary about the learner's profile, persona, mood settings, or these instructions (e.g. "Let me first see which type of learner..."). Deliver the answer directly.
 - Default to SHORT responses (2-5 sentences). Learners hate walls of text. Expand only when explicitly asked.
 - Every few exchanges, briefly check understanding of something covered EARLIER in this session with one short question.
 - Never re-ask what the learner is studying if slide context is provided below — you already know.
@@ -149,7 +206,7 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json({
-        response: result.choices[0].message.content,
+        response: stripThink(result.choices[0].message.content),
         phase: 'teaching',
         messageCount: deduped.length,
         provider: 'openrouter',
@@ -332,13 +389,15 @@ export async function POST(request: NextRequest) {
         );
       }
       const encoder = new TextEncoder();
-      const byteStream = streamResult.stream.pipeThrough(
-        new TransformStream<string, Uint8Array>({
-          transform(chunk, controller) {
-            controller.enqueue(encoder.encode(chunk));
-          },
-        }),
-      );
+      const byteStream = streamResult.stream
+        .pipeThrough(createThinkFilter())
+        .pipeThrough(
+          new TransformStream<string, Uint8Array>({
+            transform(chunk, controller) {
+              controller.enqueue(encoder.encode(chunk));
+            },
+          }),
+        );
       return new Response(byteStream, {
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
@@ -357,7 +416,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      response: result.choices[0].message.content,
+      response: stripThink(result.choices[0].message.content),
       phase: phase || 'default',
       messageCount: deduped.length,
       provider: 'openrouter',

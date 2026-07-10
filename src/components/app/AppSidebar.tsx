@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import {
   Brain,
@@ -433,6 +433,10 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
 export function AppSidebar() {
   const { sidebarOpen, setSidebarOpen, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
 
+  // Drag state for the floating mobile menu button
+  const dragAreaRef = useRef<HTMLDivElement>(null);
+  const draggedRef = useRef(false);
+
   const [hasReminder] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -449,9 +453,26 @@ export function AppSidebar() {
 
   return (
     <TooltipProvider>
-      {/* Mobile menu trigger — bottom-right so it never sits over a page's
-          header content (top-left was getting covered on phones) */}
-      <div className="fixed bottom-6 right-6 z-50 lg:hidden">
+      {/* Invisible drag bounds for the floating menu button */}
+      <div ref={dragAreaRef} className="fixed inset-3 pointer-events-none lg:hidden" aria-hidden="true" />
+      {/* Mobile menu trigger — draggable so it can be moved off any button it
+          happens to cover; a drag is distinguished from a tap so releasing a
+          drag doesn't open the menu */}
+      <motion.div
+        drag
+        dragConstraints={dragAreaRef}
+        dragMomentum={false}
+        dragElastic={0.08}
+        onDragStart={() => { draggedRef.current = true; }}
+        onDragEnd={() => { setTimeout(() => { draggedRef.current = false; }, 0); }}
+        onClickCapture={(e) => {
+          if (draggedRef.current) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
+        className="fixed bottom-6 right-6 z-50 lg:hidden touch-none"
+      >
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
           <SheetTrigger asChild>
             <Button variant="outline" size="icon" className="glass h-11 w-11 rounded-full shadow-lg relative">
@@ -493,7 +514,7 @@ export function AppSidebar() {
             <SidebarContent onNavigate={() => setSidebarOpen(false)} isMobile />
           </SheetContent>
         </Sheet>
-      </div>
+      </motion.div>
 
       {/* Collapsed state: invisible hover strip along the left edge. The
           sidebar itself disappears entirely; hovering near the edge reveals

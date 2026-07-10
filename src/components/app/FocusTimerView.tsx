@@ -674,6 +674,7 @@ export function FocusTimerView() {
             strokeWidth="6"
             strokeLinecap="round"
             strokeDasharray={circumference}
+            initial={false}
             animate={{ strokeDashoffset }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
           />

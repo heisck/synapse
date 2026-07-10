@@ -533,6 +533,16 @@ select:focus-visible {
   outline: none;
 }
 
+/* iOS Safari auto-zooms into any focused field whose font-size is under
+   16px — hard-floor form fields on small screens so the page never zooms */
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* 10. Enhanced diagonal shimmer */
 @utility shimmer-diagonal {
   background: linear-gradient(

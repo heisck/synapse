@@ -2110,9 +2110,11 @@ export function Dashboard() {
                       transition={{ duration: 0.4, delay: idx * 0.1 }}
                       className="flex flex-col items-center gap-2"
                     >
-                      {/* Circle node */}
+                      {/* Circle node — states are mutually exclusive: a done
+                          milestone always shows the check, even when an earlier
+                          one is still open (both used to render, stacked) */}
                       <div className="relative">
-                        {isDone && (
+                        {isDone ? (
                           <motion.div
                             initial={{ scale: 0.8 }}
                             animate={{ scale: 1 }}
@@ -2120,8 +2122,7 @@ export function Dashboard() {
                           >
                             <CheckCircle2 className="h-5 w-5 text-white" />
                           </motion.div>
-                        )}
-                        {isCurrent && (
+                        ) : isCurrent ? (
                           <motion.div
                             animate={{ boxShadow: ['0 0 0 0 rgba(16,185,129,0.4)', '0 0 0 10px rgba(16,185,129,0)', '0 0 0 0 rgba(16,185,129,0.4)'] }}
                             transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
@@ -2129,8 +2130,7 @@ export function Dashboard() {
                           >
                             <Icon className="h-5 w-5 text-emerald-500" />
                           </motion.div>
-                        )}
-                        {isLocked && (
+                        ) : (
                           <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-muted-foreground/25 bg-muted/30">
                             <Icon className="h-5 w-5 text-muted-foreground/40" />
                           </div>

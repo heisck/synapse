@@ -398,7 +398,7 @@ export function NotesView() {
 
       {/* Search and Filters */}
       <motion.div variants={fadeUp} className="space-y-3">
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <div className={searchFocused ? 'gradient-border rounded-md' : ''}>
@@ -425,7 +425,7 @@ export function NotesView() {
               variant="outline"
               size="sm"
               onClick={cycleSortMode}
-              className="w-full sm:w-auto shrink-0 hover:glow-emerald transition-shadow duration-300"
+              className="shrink-0"
             >
               <motion.span
                 key={sortMode}

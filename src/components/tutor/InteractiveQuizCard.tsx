@@ -21,14 +21,18 @@ export interface QuizPayload {
 }
 
 /**
- * Finds a ```quiz fenced JSON block in an assistant message and parses it.
+ * Finds a fenced JSON quiz block in an assistant message and parses it.
+ * The protocol asks for ```quiz, but models routinely tag the fence
+ * ```flashcards / ```flashcard / ```json instead — accept them all rather
+ * than leaking raw JSON into the chat.
  * Returns the payload plus the surrounding prose, or null if none present.
  */
 export function parseQuizPayload(content: string): { payload: QuizPayload; before: string; after: string } | null {
-  const match = content.match(/```quiz\s*\n?([\s\S]*?)```/)
+  const match = content.match(/```(quiz|flashcards?|json)\s*\n?([\s\S]*?)```/)
   if (!match) return null
+  const fenceTag = match[1]
   try {
-    const parsed = JSON.parse(match[1])
+    const parsed = JSON.parse(match[2])
     const questions = Array.isArray(parsed?.questions) ? parsed.questions : []
     const valid: QuizPayloadQuestion[] = questions.filter(
       (q: QuizPayloadQuestion) =>
@@ -39,7 +43,8 @@ export function parseQuizPayload(content: string): { payload: QuizPayload; befor
     if (valid.length === 0) return null
     return {
       payload: {
-        mode: parsed.mode === 'flashcards' ? 'flashcards' : 'quiz',
+        // Fence tag doubles as the mode when the JSON omits it
+        mode: parsed.mode === 'flashcards' || (!parsed.mode && fenceTag.startsWith('flashcard')) ? 'flashcards' : 'quiz',
         title: typeof parsed.title === 'string' ? parsed.title : undefined,
         questions: valid,
       },

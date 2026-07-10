@@ -122,23 +122,23 @@ function ShareStatsModal({ open, onClose }: { open: boolean; onClose: () => void
   const totalStudyMinutes = useTotalStudyTime();
   const hours = Math.floor(totalStudyMinutes / 60);
 
-  const statsText = useMemo(() => {
-    const card = [
-      '╔══════════════════════════════════════╗',
-      '║      🧠 SynapseLearn Stats 🧠        ║',
-      '╠══════════════════════════════════════╣',
-      `║  📊 Level:    ${String(userBuddy.level).padEnd(24)}║`,
-      `║  ⭐ XP:       ${String(userBuddy.totalXP.toLocaleString()).padEnd(24)}║`,
-      `║  🔥 Streak:   ${String(`${userBuddy.streak} days`).padEnd(24)}║`,
-      `║  📚 Courses:  ${String(userBuddy.coursesCompleted.toString()).padEnd(24)}║`,
-      `║  🎯 Accuracy: ${String(`${userBuddy.quizAccuracy}%`).padEnd(24)}║`,
-      `║  ⏱️ Study:    ${String(`${hours}+ hours`).padEnd(24)}║`,
-      '╠══════════════════════════════════════╣',
-      '║   Join me on SynapseLearn! 🚀       ║',
-      '╚══════════════════════════════════════╝',
-    ].join('\n');
-    return card;
-  }, [userBuddy, hours]);
+  const statsText = useMemo(
+    () =>
+      `🧠 SynapseLearn — Level ${userBuddy.level} · ${userBuddy.totalXP.toLocaleString()} XP · ${userBuddy.streak}-day streak · ${userBuddy.quizAccuracy}% quiz accuracy · ${hours}+ hours studied. Join me!`,
+    [userBuddy, hours],
+  );
+
+  const shareStats = useMemo(
+    () => [
+      { label: 'Level', value: String(userBuddy.level) },
+      { label: 'Total XP', value: userBuddy.totalXP.toLocaleString() },
+      { label: 'Streak', value: `${userBuddy.streak} days` },
+      { label: 'Courses', value: String(userBuddy.coursesCompleted) },
+      { label: 'Accuracy', value: `${userBuddy.quizAccuracy}%` },
+      { label: 'Study Time', value: `${hours}+ hrs` },
+    ],
+    [userBuddy, hours],
+  );
 
   const handleCopy = async () => {
     try {
@@ -147,6 +147,70 @@ function ShareStatsModal({ open, onClose }: { open: boolean; onClose: () => void
     } catch {
       toast.error('Failed to copy to clipboard');
     }
+  };
+
+  // Render the card to a canvas and download it as a PNG — a real image
+  // people can post, instead of ASCII art
+  const handleDownloadImage = () => {
+    const W = 1000;
+    const H = 540;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      toast.error('Could not create the image');
+      return;
+    }
+
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, '#071410');
+    bg.addColorStop(0.5, '#0b241c');
+    bg.addColorStop(1, '#071410');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    const glow = ctx.createRadialGradient(W * 0.8, H * 0.15, 40, W * 0.8, H * 0.15, 420);
+    glow.addColorStop(0, 'rgba(16,185,129,0.25)');
+    glow.addColorStop(1, 'rgba(16,185,129,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.strokeStyle = 'rgba(16,185,129,0.45)';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(12, 12, W - 24, H - 24);
+
+    ctx.fillStyle = '#34d399';
+    ctx.font = 'bold 44px system-ui, -apple-system, sans-serif';
+    ctx.fillText('SynapseLearn', 56, 96);
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.font = '26px system-ui, -apple-system, sans-serif';
+    ctx.fillText(`${userBuddy.name || 'Student'} — study stats`, 56, 140);
+
+    const cols = 3;
+    const cellW = (W - 112) / cols;
+    shareStats.forEach((stat, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = 56 + col * cellW;
+      const y = 220 + row * 130;
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.font = '22px system-ui, -apple-system, sans-serif';
+      ctx.fillText(stat.label.toUpperCase(), x, y);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 46px system-ui, -apple-system, sans-serif';
+      ctx.fillText(stat.value, x, y + 52);
+    });
+
+    ctx.fillStyle = 'rgba(52,211,153,0.9)';
+    ctx.font = '24px system-ui, -apple-system, sans-serif';
+    ctx.fillText('Join me on SynapseLearn', 56, H - 56);
+
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = 'synapselearn-stats.png';
+    a.click();
+    toast.success('Stats card downloaded!');
   };
 
   const handleTwitter = () => {
@@ -186,20 +250,38 @@ function ShareStatsModal({ open, onClose }: { open: boolean; onClose: () => void
               </motion.button>
             </div>
 
-            <div className="bg-muted/50 rounded-xl p-4 mb-4 overflow-x-auto">
-              <pre className="text-xs font-mono text-foreground/80 whitespace-pre leading-relaxed">
-                {statsText}
-              </pre>
+            {/* Visual stats card preview */}
+            <div className="relative rounded-xl mb-4 overflow-hidden border border-emerald-500/30 bg-gradient-to-br from-emerald-950 via-emerald-900/80 to-teal-950 p-5">
+              <div className="absolute -top-10 -right-10 h-40 w-40 rounded-full bg-emerald-500/20 blur-2xl" aria-hidden="true" />
+              <div className="relative z-10 space-y-4">
+                <div>
+                  <p className="text-lg font-bold text-emerald-300">SynapseLearn</p>
+                  <p className="text-xs text-emerald-100/70">{userBuddy.name || 'Student'} — study stats</p>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {shareStats.map((stat) => (
+                    <div key={stat.label}>
+                      <p className="text-[10px] uppercase tracking-wider text-emerald-100/60">{stat.label}</p>
+                      <p className="text-lg font-bold text-white tabular-nums">{stat.value}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-emerald-300/90">Join me on SynapseLearn 🚀</p>
+              </div>
             </div>
 
-            <div className="flex gap-2">
-              <Button onClick={handleCopy} className="flex-1">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button onClick={handleDownloadImage} className="flex-1">
+                <Share2 className="h-4 w-4 mr-2" />
+                Download PNG
+              </Button>
+              <Button variant="outline" onClick={handleCopy} className="flex-1">
                 <Copy className="h-4 w-4 mr-2" />
-                Copy to Clipboard
+                Copy Text
               </Button>
               <Button variant="outline" onClick={handleTwitter} className="flex-1">
                 <ExternalLink className="h-4 w-4 mr-2" />
-                Share on Twitter
+                Share on X
               </Button>
             </div>
           </motion.div>

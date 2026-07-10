@@ -620,6 +620,13 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
   const renderContent = isAssistant && isStreaming && !isComplete && !quizData ? displayedText : message.content
   const showCursor = isAssistant && isStreaming && !isComplete && !quizData
 
+  // A quiz/flashcards fence that hasn't finished streaming (or failed to
+  // parse) must never leak raw JSON into the chat — cut it off and show a
+  // preparing hint until the block completes and parses into a card
+  const partialFenceIdx = isAssistant && !quizData ? renderContent.search(/```(?:quiz|flashcards?)\b/) : -1
+  const visibleContent = partialFenceIdx >= 0 ? renderContent.slice(0, partialFenceIdx).trim() : renderContent
+  const preparingCards = partialFenceIdx >= 0
+
   return (
     <motion.div
       data-message-id={message.id}
@@ -700,7 +707,13 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
               </>
             ) : (
               <>
-                <MarkdownContent content={renderContent} />
+                {visibleContent && <MarkdownContent content={visibleContent} />}
+                {preparingCards && (
+                  <span className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Preparing your cards…
+                  </span>
+                )}
                 <BlinkingCursor visible={showCursor} />
               </>
             )}

@@ -2756,6 +2756,7 @@ export function QuizView() {
                             strokeWidth="5"
                             strokeLinecap="round"
                             strokeDasharray={dailyTimerCircumference}
+                            initial={false}
                             animate={{ strokeDashoffset: dailyTimerStroke }}
                             transition={{ duration: 0.5, ease: 'easeOut' }}
                           />
@@ -3552,7 +3553,7 @@ export function QuizView() {
                     strokeWidth="12" strokeLinecap="round"
                     strokeDasharray={2 * Math.PI * 54}
                     initial={{ strokeDashoffset: 2 * Math.PI * 54 }}
-                    animate={{ strokeDashoffset: 2 * Math.PI * 54 * (1 - reviewQuestions.length > 0 ? reviewedCount / reviewQuestions.length : 0) }}
+                    animate={{ strokeDashoffset: 2 * Math.PI * 54 * (1 - (reviewQuestions.length > 0 ? reviewedCount / reviewQuestions.length : 0)) }}
                     transition={{ duration: 1.5, ease: 'easeOut' }}
                   />
                 </svg>

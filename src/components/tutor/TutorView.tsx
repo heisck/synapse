@@ -561,11 +561,13 @@ export function TutorView() {
       clearTimeout(silenceTimerRef.current)
     }
     silenceTimerRef.current = setTimeout(() => {
-      if (speechRef.current && voiceState === 'listening') {
+      // Check the ref, not voiceState: this closure captures voiceState from
+      // when the timer was armed, so the state check never saw 'listening'
+      if (speechRef.current) {
         speechRef.current.stop()
       }
     }, 5000)
-  }, [voiceState])
+  }, [])
 
   const stopVoice = useCallback(() => {
     if (silenceTimerRef.current) {
@@ -629,11 +631,18 @@ export function TutorView() {
     recognition.onerror = (event: { error: string }) => {
       if (event.error === 'no-speech' || event.error === 'aborted') {
         setVoiceState('idle')
-      } else {
-        setVoiceState('error')
-        toast.error(`Voice input error: ${event.error}`)
-        setTimeout(() => setVoiceState('idle'), 2000)
+        return
       }
+      const friendly: Record<string, string> = {
+        'not-allowed': 'Microphone access is blocked — allow the mic for this site in your browser settings.',
+        'service-not-allowed': 'Voice recognition is disabled by your browser. Try Chrome or Edge.',
+        'audio-capture': 'No microphone found. Plug one in or check your input settings.',
+        network: 'Voice recognition needs an internet connection and is only available in some browsers (Chrome/Edge work best).',
+        'language-not-supported': 'This language is not supported for voice input.',
+      }
+      setVoiceState('error')
+      toast.error(friendly[event.error] || `Voice input failed (${event.error}). Try again or type instead.`)
+      setTimeout(() => setVoiceState('idle'), 2000)
     }
 
     recognition.onend = () => {
@@ -1336,7 +1345,6 @@ export function TutorView() {
                       // callback body — strictly after the click fires, never
                       // during render. The rule's call-graph analysis can't
                       // distinguish that from an unsafe render-time ref read.
-                      // eslint-disable-next-line react-hooks/refs
                       onClick={() => handleTopicClick(topic)}
                     >
                       {topic}
@@ -1400,7 +1408,12 @@ export function TutorView() {
                         <Button
                           size="sm"
                           disabled={isLoading}
-                          onClick={() => handleSend('Give me flashcards on what we are studying')}
+                          onClick={() => {
+                            // Name the topic explicitly when we know it — a bare
+                            // "what we are studying" made the model ask back
+                            const knownTopic = activeTopic || activeCourse?.title || activeSlides[currentSlideIndex]?.title
+                            handleSend(knownTopic ? `Give me flashcards on ${knownTopic}` : 'Give me flashcards on what we are studying')
+                          }}
                         >
                           Create flashcards
                         </Button>
