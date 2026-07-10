@@ -651,10 +651,11 @@ export function QuizView() {
     if (showBookmarked) {
       filtered = filtered.filter((q) => bookmarkedQuestions.has(q.id));
     }
-    // Type config: only show the kinds of questions the learner wants
+    // Type config: strictly show only the kinds the learner selected. An
+    // empty result is honest — it means the pool has none of that type yet
+    // (run Auto-gen to generate them).
     if (preferredTypes.length < ALL_QUESTION_TYPES.length) {
-      const typed = filtered.filter((q) => preferredTypes.includes(q.type) || !(ALL_QUESTION_TYPES as readonly string[]).includes(q.type));
-      if (typed.length > 0) filtered = typed;
+      filtered = filtered.filter((q) => preferredTypes.includes(q.type) || !(ALL_QUESTION_TYPES as readonly string[]).includes(q.type));
     }
     if (studyMode === 'quiz' && !showBookmarked) {
       const unanswered = filtered.filter((q) => !answeredBaseline.has(q.id));

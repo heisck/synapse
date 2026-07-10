@@ -309,7 +309,7 @@ export function TutorView() {
     mq.addEventListener('change', update)
     return () => mq.removeEventListener('change', update)
   }, [])
-  const [mobileSlidesDismissed, setMobileSlidesDismissed] = useState(false)
+  const [mobileSlidesOpen, setMobileSlidesOpen] = useState(false)
 
   const breakTimer = useBreakTimer()
   const adaptiveResultsForCoach = useAppStore((s) => s.adaptiveResults)
@@ -496,7 +496,7 @@ export function TutorView() {
   // Re-open the mobile overlay whenever the learner picks a slide mode again
   useEffect(() => {
     if (tutorMode === 'slide' || tutorMode === 'hybrid') {
-      queueMicrotask(() => setMobileSlidesDismissed(false))
+      queueMicrotask(() => setMobileSlidesOpen(true))
     }
   }, [tutorMode])
 
@@ -756,6 +756,18 @@ export function TutorView() {
   const handleSend = useCallback(async (text?: string) => {
     const content = (text || input).trim()
     if (!content) return
+
+    // Typing "next" / "n" advances the slide without calling the AI
+    if (/^(next|n)$/i.test(content) && activeSlides.length > 0) {
+      setInput('')
+      if (currentSlideIndex < activeSlides.length - 1) {
+        setCurrentSlideIndex(currentSlideIndex + 1)
+        toast(`Slide ${currentSlideIndex + 2}/${activeSlides.length}: ${activeSlides[currentSlideIndex + 1]?.title ?? ''}`)
+      } else {
+        toast('Already on the last slide')
+      }
+      return
+    }
 
     const sessionId = activeSessionId || crypto.randomUUID()
     if (!activeSessionId) {
@@ -1249,7 +1261,7 @@ export function TutorView() {
         )}
 
         {/* Mobile: slides as a fullscreen overlay — no split view on phones */}
-        {showSlidePanel && isMobile && !mobileSlidesDismissed && (
+        {isMobile && mobileSlidesOpen && activeSlides.length > 0 && (
           <div className="fixed inset-0 z-40 bg-background flex flex-col">
             {/* Controls on top */}
             <div className="flex items-center justify-between gap-2 p-3 border-b">
@@ -1285,7 +1297,7 @@ export function TutorView() {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => setMobileSlidesDismissed(true)}
+                  onClick={() => setMobileSlidesOpen(false)}
                   aria-label="Close slides"
                 >
                   <X className="w-4 h-4" />
@@ -1396,6 +1408,15 @@ export function TutorView() {
             {/* Slide controls: advance slides without leaving the chat */}
             {activeSlides.length > 0 && (
               <div className="flex items-center gap-1 min-w-0 shrink-0 max-w-[55%]">
+                {/* Mobile: reopen the fullscreen slide overlay any time */}
+                <button
+                  onClick={() => setMobileSlidesOpen(true)}
+                  className="md:hidden flex items-center gap-1 px-1.5 py-1 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors text-[11px] font-medium"
+                  aria-label="Open slides"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  Slides
+                </button>
                 <button
                   onClick={() => setCurrentSlideIndex(Math.max(0, currentSlideIndex - 1))}
                   disabled={currentSlideIndex === 0}
@@ -1807,7 +1828,7 @@ export function TutorView() {
                       transition={{ duration: 0.25, ease: 'easeOut' }}
                       className="mt-2"
                     >
-                      <div className="hidden md:flex flex-wrap gap-1.5 justify-center">
+                      <div className="hidden md:flex flex-nowrap gap-1.5 justify-center overflow-x-auto scrollbar-none">
                         {QUICK_ACTIONS.map((action, index) => (
                           <motion.button
                             key={action.label}

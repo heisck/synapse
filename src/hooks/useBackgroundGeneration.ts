@@ -76,7 +76,11 @@ export function useBackgroundGeneration(courseId: string | null, options?: { for
   useEffect(() => {
     if (!enabled || !courseId || paused || loopActive.current) return;
     const cache = loadQuestionCache(courseId);
-    if (cache?.sectionsTotal != null && cache.sectionsDone >= cache.sectionsTotal) return;
+    // Re-runnable: after a full pass, toggling Auto-gen on again walks the
+    // sections once more, ADDING new questions (dedup by text) — until the
+    // per-course cap. The learner's key, the learner's call.
+    const QUESTION_CAP = 500;
+    if ((cache?.questions.length ?? 0) >= QUESTION_CAP) return;
 
     abortRef.current = false;
     loopActive.current = true;
@@ -84,7 +88,12 @@ export function useBackgroundGeneration(courseId: string | null, options?: { for
     (async () => {
       try {
         setState((s) => ({ ...s, running: true, error: null }));
-        let offset = loadQuestionCache(courseId)?.sectionsDone ?? 0;
+        const startCache = loadQuestionCache(courseId);
+        // Completed a full pass before? Start another from the top to ADD more
+        let offset =
+          startCache?.sectionsTotal != null && (startCache?.sectionsDone ?? 0) >= startCache.sectionsTotal
+            ? 0
+            : startCache?.sectionsDone ?? 0;
         for (;;) {
           if (abortRef.current) break;
           const res = await aiFetch('/api/questions', {
@@ -123,7 +132,7 @@ export function useBackgroundGeneration(courseId: string | null, options?: { for
             sectionsTotal: cacheNow.sectionsTotal,
             cachedCount: cacheNow.questions.length,
           }));
-          if (!data.hasMore) break;
+          if (cacheNow.questions.length >= 500 || !data.hasMore) break;
         }
       } finally {
         loopActive.current = false;

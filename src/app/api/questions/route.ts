@@ -86,7 +86,7 @@ async function generateQuestions(
     .join('\n');
   const mixNote =
     types.length > 1
-      ? `Mix the types: roughly half multiple_choice and the rest spread across the other allowed types.`
+      ? `MANDATORY MIX: include AT LEAST ONE question of EACH allowed type (${types.join(', ')}) — a batch with only multiple_choice is invalid.`
       : `Every question must be type "${types[0]}".`;
 
   const basePrompt = (intro: string) => `${intro}

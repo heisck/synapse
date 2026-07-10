@@ -7,7 +7,6 @@ import { useAppStore } from '@/stores/appStore';
 import { useSessionPersistence } from '@/hooks/useSessionPersistence';
 import { usePresence } from '@/hooks/usePresence';
 import { listLocalCourses } from '@/lib/localLibrary';
-import type { Course } from '@/types';
 
 export function StoreInitializer() {
   const { setCourses, courses, achievements } = useAppStore();
@@ -65,22 +64,11 @@ export function StoreInitializer() {
     if (courses.length > 0) return;
 
     const fetchCourses = async () => {
-      // Local-first (ROADMAP Phase 2): this browser's own library comes
-      // first; the shared DB only contributes legacy/shared courses.
+      // Local-first ONLY (ROADMAP Phase 2): a new browser is a clean slate.
+      // The shared DB is never consulted for courses — not a grain of one
+      // learner's content ever shows up on another device.
       const local = await listLocalCourses();
-      let remote: Course[] = [];
-      try {
-        const res = await fetch('/api/courses');
-        if (res.ok) {
-          const data: { success: boolean; courses: Course[] } = await res.json();
-          remote = data.courses || [];
-        }
-      } catch {
-        // offline / server down — local courses still work
-      }
-      const localIds = new Set(local.map((c) => c.id));
-      const merged = [...local, ...remote.filter((c) => !localIds.has(c.id))];
-      if (merged.length > 0) setCourses(merged);
+      if (local.length > 0) setCourses(local);
     };
 
     fetchCourses();
