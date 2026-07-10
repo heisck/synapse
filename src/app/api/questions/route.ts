@@ -181,11 +181,14 @@ export async function POST(request: NextRequest) {
     // Section the material instead of truncating it: previously everything
     // past the first 3000 chars was invisible to the model, so questions only
     // ever covered the start of a course. Each ~2800-char section (split on
-    // slide boundaries) gets its own generation pass. Capped per request to
-    // stay inside serverless time limits — the background-generation toggle
-    // (ROADMAP) will walk the remaining sections incrementally.
-    const MAX_SECTIONS_PER_REQUEST = 4;
-    const sections = sectionContent(content, 2800).slice(0, MAX_SECTIONS_PER_REQUEST);
+    // slide boundaries) gets its own generation pass, capped per request to
+    // stay inside serverless time limits. `sectionOffset`/`maxSections` let
+    // the client walk ALL sections incrementally (background generation and
+    // exam mode use maxSections=1 per tick).
+    const allSections = sectionContent(content, 2800);
+    const sectionOffset = Math.max(0, Math.min(Number(body.sectionOffset) || 0, allSections.length));
+    const maxSections = Math.max(1, Math.min(Number(body.maxSections) || 4, 4));
+    const sections = allSections.slice(sectionOffset, sectionOffset + maxSections);
     const auth = authFromRequest(request);
     const questions: ValidatedQuestion[] = [];
     const seenQ = new Set<string>();
@@ -199,8 +202,9 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+    const sectionsDone = sectionOffset + sections.length;
 
-    if (questions.length === 0) {
+    if (questions.length === 0 && sectionsDone >= allSections.length) {
       return NextResponse.json(
         { error: 'Failed to generate questions. Please try with different content.' },
         { status: 502 },
@@ -230,6 +234,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       questions: savedQuestions.map(toClientQuestion),
+      sectionsTotal: allSections.length,
+      sectionsDone,
+      hasMore: sectionsDone < allSections.length,
     });
   } catch (error) {
     const mapped = llmErrorResponse(error);

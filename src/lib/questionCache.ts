@@ -1,0 +1,95 @@
+/**
+ * Browser-side question cache (docs/ROADMAP.md — background generation).
+ * Questions generated section-by-section are stored per course in
+ * localStorage, so re-opening quiz/exam mode is instant and background
+ * generation can resume exactly where it stopped.
+ */
+import type { Question } from '@/types';
+
+export interface CourseQuestionCache {
+  courseId: string;
+  questions: Question[];
+  sectionsDone: number;
+  sectionsTotal: number | null;
+  updatedAt: number;
+}
+
+const KEY_PREFIX = 'synapse-qcache-';
+const TOGGLE_KEY = 'synapse-bg-generation';
+
+export function loadQuestionCache(courseId: string): CourseQuestionCache | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(KEY_PREFIX + courseId);
+    return raw ? (JSON.parse(raw) as CourseQuestionCache) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveQuestionCache(cache: CourseQuestionCache): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(KEY_PREFIX + cache.courseId, JSON.stringify(cache));
+  } catch {
+    // Quota exceeded — drop the oldest course cache and retry once
+    try {
+      const entries = Object.keys(localStorage)
+        .filter((k) => k.startsWith(KEY_PREFIX))
+        .map((k) => ({ k, at: (JSON.parse(localStorage.getItem(k) || '{}') as CourseQuestionCache).updatedAt || 0 }))
+        .sort((a, b) => a.at - b.at);
+      if (entries[0]) {
+        localStorage.removeItem(entries[0].k);
+        localStorage.setItem(KEY_PREFIX + cache.courseId, JSON.stringify(cache));
+      }
+    } catch {
+      // storage unavailable — cache just won't persist
+    }
+  }
+}
+
+/** Merge new questions into a course's cache, deduping by question text. */
+export function appendToQuestionCache(
+  courseId: string,
+  newQuestions: Question[],
+  sectionsDone: number,
+  sectionsTotal: number | null,
+): CourseQuestionCache {
+  const existing = loadQuestionCache(courseId);
+  const seen = new Set((existing?.questions ?? []).map((q) => q.question.toLowerCase()));
+  const merged = [...(existing?.questions ?? [])];
+  for (const q of newQuestions) {
+    if (!seen.has(q.question.toLowerCase())) {
+      seen.add(q.question.toLowerCase());
+      merged.push(q);
+    }
+  }
+  const cache: CourseQuestionCache = {
+    courseId,
+    questions: merged,
+    sectionsDone: Math.max(sectionsDone, existing?.sectionsDone ?? 0),
+    sectionsTotal: sectionsTotal ?? existing?.sectionsTotal ?? null,
+    updatedAt: Date.now(),
+  };
+  saveQuestionCache(cache);
+  return cache;
+}
+
+/** The user-facing toggle: generate questions in the background or not. */
+export function isBackgroundGenerationEnabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(TOGGLE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setBackgroundGenerationEnabled(enabled: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(TOGGLE_KEY, enabled ? '1' : '0');
+  } catch {
+    // ignore
+  }
+}

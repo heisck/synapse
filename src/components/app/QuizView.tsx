@@ -82,6 +82,10 @@ import {
   ERROR_REPORT_STORAGE_KEY,
   WeaknessReportDialog,
 } from './quiz/components';
+import { InteractiveFlashcard } from './quiz/InteractiveFlashcard';
+import { ExamMode } from './quiz/ExamMode';
+import { useBackgroundGeneration } from '@/hooks/useBackgroundGeneration';
+import { GraduationCap, Cpu } from 'lucide-react';
 
 // ---------- Main QuizView ----------
 export function QuizView() {
@@ -90,6 +94,8 @@ export function QuizView() {
   const allQuestions = currentQuestions;
 
   const [studyMode, setStudyMode] = useState<StudyMode>('quiz');
+  // Exam mode overlay + background generation (per-course context)
+  const [examOpen, setExamOpen] = useState(false);
   // Course picker in the empty state: reuse existing questions for a course,
   // or generate them from its slides — never force a re-upload
   const [preparingCourseId, setPreparingCourseId] = useState<string | null>(null);
@@ -125,6 +131,8 @@ export function QuizView() {
   }, [courses, setActiveCourse, setCurrentQuestions]);
   const [adaptiveOn, setAdaptiveOn] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<string>('all');
+  const bgCourseId = selectedCourse !== 'all' ? selectedCourse : activeCourse?.id ?? null;
+  const bgGen = useBackgroundGeneration(bgCourseId);
   const [showBookmarked, setShowBookmarked] = useState(false);
   const [bookmarkedQuestions, setBookmarkedQuestions] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set();
@@ -466,17 +474,12 @@ export function QuizView() {
   // Timer state
   const [timerSeconds, setTimerSeconds] = useState(0);
 
-  // Flashcard state
-  const [flipped, setFlipped] = useState(false);
+  // Flashcard state (interaction state lives inside InteractiveFlashcard)
   const [knownCards, setKnownCards] = useState<Set<string>>(new Set());
   const [stillLearningCards, setStillLearningCards] = useState<Set<string>>(new Set());
   const [difficultCards, setDifficultCards] = useState<Set<string>>(new Set());
   const [flashcardReviewed, setFlashcardReviewed] = useState<Set<string>>(new Set());
   const [showFlashcardSummary, setShowFlashcardSummary] = useState(false);
-  const [hasEverFlipped, setHasEverFlipped] = useState(false);
-
-  // Swipe motion values for flashcard (no re-renders)
-  const dragXMotion = useMotionValue(0);
 
   // Bookmark persistence — save side only; loaded lazily at declaration above.
   useEffect(() => {
@@ -497,11 +500,6 @@ export function QuizView() {
     });
   }, []);
 
-  // checkOpacity and crossOpacity use the existing dragXMotion (defined above for flashcard swipe)
-  const checkOpacity = useTransform(dragXMotion, [0, 100], [0, 0.7]);
-  const crossOpacity = useTransform(dragXMotion, [-100, 0], [0.7, 0]);
-  const hasDraggedRef = useRef(false);
-
   // Timer effect
   useEffect(() => {
     if (!timerStarted || showResults) return;
@@ -521,12 +519,10 @@ export function QuizView() {
     : 0;
 
   const handleFlashcardPrev = useCallback(() => {
-    setFlipped(false);
     setCurrentIndex((prev) => Math.max(0, prev - 1));
   }, []);
 
   const handleFlashcardNext = useCallback(() => {
-    setFlipped(false);
     if (currentIndex < flashcardQuestions.length - 1) {
       setCurrentIndex((prev) => prev + 1);
     }
@@ -539,13 +535,6 @@ export function QuizView() {
       // Ignore if user is typing in an input/textarea
       if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
       switch (e.code) {
-        case 'Space':
-          e.preventDefault();
-          setFlipped((prev) => {
-            if (!prev) setHasEverFlipped(true);
-            return !prev;
-          });
-          break;
         case 'ArrowLeft':
           e.preventDefault();
           handleFlashcardPrev();
@@ -585,7 +574,6 @@ export function QuizView() {
 
   const handleShuffle = useCallback(() => {
     setCurrentIndex(0);
-    setFlipped(false);
   }, []);
 
   const handleFlashcardMark = useCallback((type: 'known' | 'learning') => {
@@ -616,7 +604,6 @@ export function QuizView() {
       setDifficultCards((prev) => new Set(prev).add(id));
     }
 
-    setFlipped(false);
     if (currentIndex < flashcardQuestions.length - 1) {
       setCurrentIndex((prev) => prev + 1);
     } else {
@@ -626,13 +613,11 @@ export function QuizView() {
 
   const handleFlashcardReset = useCallback(() => {
     setCurrentIndex(0);
-    setFlipped(false);
     setKnownCards(new Set());
     setStillLearningCards(new Set());
     setDifficultCards(new Set());
     setFlashcardReviewed(new Set());
     setShowFlashcardSummary(false);
-    setHasEverFlipped(false);
   }, []);
 
   const handleMarkDifficult = useCallback(() => {
@@ -662,13 +647,11 @@ export function QuizView() {
     setShowResults(false);
     setStreak(0);
     setBestStreak(0);
-    setFlipped(false);
     setKnownCards(new Set());
     setStillLearningCards(new Set());
     setDifficultCards(new Set());
     setFlashcardReviewed(new Set());
     setShowFlashcardSummary(false);
-    setHasEverFlipped(false);
     setTimerStarted(false);
     setTimerSeconds(0);
     setHintsUsed({});
@@ -685,13 +668,11 @@ export function QuizView() {
     setShowResults(false);
     setStreak(0);
     setBestStreak(0);
-    setFlipped(false);
     setKnownCards(new Set());
     setStillLearningCards(new Set());
     setDifficultCards(new Set());
     setFlashcardReviewed(new Set());
     setShowFlashcardSummary(false);
-    setHasEverFlipped(false);
     setTimerStarted(false);
     setTimerSeconds(0);
     setDailyShowResults(false);
@@ -1369,6 +1350,20 @@ export function QuizView() {
           )}
         </AnimatePresence>
 
+        {/* Exam mode: fullscreen locked overlay */}
+        {examOpen && (
+          <ExamMode
+            courseId={bgCourseId}
+            courseTitle={
+              selectedCourse !== 'all'
+                ? courses.find((c) => c.id === selectedCourse)?.title ?? activeCourse?.title ?? 'Exam'
+                : activeCourse?.title ?? 'All questions'
+            }
+            initialPool={questions}
+            onExit={() => setExamOpen(false)}
+          />
+        )}
+
         {/* Animated header */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -1402,6 +1397,39 @@ export function QuizView() {
                 >
                   <Brain className="w-3.5 h-3.5" />
                   Adaptive
+                </button>
+                {/* Background generation toggle — builds the question cache section by section */}
+                {bgCourseId && (
+                  <button
+                    onClick={() => bgGen.setEnabled(!bgGen.enabled)}
+                    className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all border ${
+                      bgGen.enabled
+                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-700 dark:text-cyan-400'
+                        : 'text-muted-foreground hover:text-foreground border-transparent'
+                    }`}
+                    title={
+                      bgGen.enabled
+                        ? bgGen.paused
+                          ? 'Background generation paused while the tutor is teaching'
+                          : 'Generating questions in the background — click to stop'
+                        : 'Generate questions in the background so quizzes start instantly'
+                    }
+                  >
+                    {bgGen.running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cpu className="w-3.5 h-3.5" />}
+                    Auto-gen
+                    {bgGen.enabled && bgGen.sectionsTotal != null && (
+                      <span className="tabular-nums">{bgGen.sectionsDone}/{bgGen.sectionsTotal}</span>
+                    )}
+                  </button>
+                )}
+                {/* Exam mode */}
+                <button
+                  onClick={() => setExamOpen(true)}
+                  className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all border border-transparent text-muted-foreground hover:text-foreground"
+                  title="Timed exam: set a duration and question count"
+                >
+                  <GraduationCap className="w-3.5 h-3.5" />
+                  Exam
                 </button>
                 {/* Mode toggle — full-width evenly spaced on phones, inline on larger screens */}
                 <div className="flex w-full sm:w-auto items-center rounded-lg border border-border bg-background/50 p-0.5">
@@ -3069,221 +3097,15 @@ export function QuizView() {
         {/* Flashcard Mode - 3D Flip with Swipe */}
         {studyMode === 'flashcard' && flashcardQuestions[currentIndex] && (
           <div className="space-y-6">
-            <div className="relative w-full mx-auto" style={{ perspective: '1000px' }}>
-              {/* Card stack effect - hint of next card behind */}
-              {currentIndex < flashcardQuestions.length - 1 && (
-                <div
-                  className="absolute inset-x-3 top-3 glass rounded-2xl pointer-events-none"
-                  style={{
-                    transform: 'scale(0.97)',
-                    opacity: 0.3,
-                    zIndex: 0,
-                  }}
-                >
-                  <div className="p-8 min-h-[280px] sm:min-h-[320px]" />
-                </div>
-              )}
-
-              {/* Main card with swipe gesture */}
-              <motion.div
-                key={flashcardQuestions[currentIndex].id}
-                initial={{ opacity: 0.5, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.25, ease: 'easeOut' }}
-                style={{ zIndex: 1, position: 'relative' }}
-              >
-                <motion.div
-                  drag={flipped ? 'x' : false}
-                  dragConstraints={{ left: 0, right: 0 }}
-                  dragElastic={0.8}
-                  onDragStart={() => { hasDraggedRef.current = true; }}
-                  onDrag={(_, info) => { dragXMotion.set(info.offset.x); }}
-                  onDragEnd={(_, info) => {
-                    dragXMotion.set(0);
-                    setTimeout(() => { hasDraggedRef.current = false; }, 100);
-                    if (flipped) {
-                      if (info.offset.x > 100) {
-                        handleFlashcardMark('known');
-                        return;
-                      }
-                      if (info.offset.x < -100) {
-                        handleFlashcardMark('learning');
-                        return;
-                      }
-                    }
-                  }}
-                  onClick={() => {
-                    if (hasDraggedRef.current) return;
-                    setFlipped(!flipped);
-                    if (!flipped) setHasEverFlipped(true);
-                  }}
-                  whileTap={!flipped ? { scale: 0.98 } : undefined}
-                  className="relative cursor-pointer select-none"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Flashcard ${currentIndex + 1} of ${flashcardQuestions.length}. ${flipped ? 'Showing answer.' : 'Tap or press Space to flip.'}`}
-                >
-                  {/* Swipe direction hint icons */}
-                  {flipped && (
-                    <>
-                      <motion.div
-                        style={{ opacity: checkOpacity }}
-                        className="absolute right-5 top-1/2 -translate-y-1/2 z-20 pointer-events-none"
-                      >
-                        <div className="flex flex-col items-center gap-1">
-                          <CheckCircle2 className="h-14 w-14 text-emerald-500" />
-                          <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">I know this</span>
-                        </div>
-                      </motion.div>
-                      <motion.div
-                        style={{ opacity: crossOpacity }}
-                        className="absolute left-5 top-1/2 -translate-y-1/2 z-20 pointer-events-none"
-                      >
-                        <div className="flex flex-col items-center gap-1">
-                          <XCircle className="h-14 w-14 text-rose-500" />
-                          <span className="text-xs font-medium text-rose-600 dark:text-rose-400">Still learning</span>
-                        </div>
-                      </motion.div>
-                    </>
-                  )}
-
-                  {/* 3D flip container */}
-                  <motion.div
-                    animate={{ rotateY: flipped ? 180 : 0 }}
-                    transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
-                    style={{ transformStyle: 'preserve-3d' }}
-                    className="relative"
-                  >
-                    {/* Front face */}
-                    <div
-                      className="glass rounded-2xl p-8 min-h-[280px] sm:min-h-[320px] flex flex-col items-center justify-center text-center bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent"
-                      style={{ backfaceVisibility: 'hidden', position: 'relative' }}
-                    >
-                      <div className="flex items-center gap-2 mb-4 flex-wrap justify-center">
-                        <HelpCircle className="w-5 h-5 text-primary/60" />
-                        <Badge variant="secondary" className="text-xs bg-primary/10 border-primary/10">
-                          {flashcardQuestions[currentIndex].concept || flashcardQuestions[currentIndex].type.replace('_', ' ')}
-                        </Badge>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${
-                          flashcardQuestions[currentIndex].difficulty === 'easy'
-                            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
-                            : flashcardQuestions[currentIndex].difficulty === 'medium'
-                              ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
-                              : 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/20'
-                        }`}>
-                          {flashcardQuestions[currentIndex].difficulty}
-                        </span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${TYPE_BADGE_GRADIENT[flashcardQuestions[currentIndex].type] || 'bg-muted text-muted-foreground border-border'}`}>
-                          {flashcardQuestions[currentIndex].type.replace('_', ' ')}
-                        </span>
-                        {flashcardQuestions[currentIndex].courseId && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium border border-border bg-muted/50 text-muted-foreground">
-                            {COURSE_QUIZ_GROUPS.find((g) => g.id === flashcardQuestions[currentIndex].courseId)?.label || flashcardQuestions[currentIndex].courseId}
-                          </span>
-                        )}
-                      </div>
-                      <h2 className="text-lg sm:text-xl font-semibold leading-relaxed max-w-lg">
-                        {flashcardQuestions[currentIndex].question}
-                      </h2>
-                      {!hasEverFlipped && (
-                        <motion.p
-                          initial={{ opacity: 0, y: 5 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.5 }}
-                          className="text-xs text-muted-foreground mt-6 flex items-center gap-1.5"
-                        >
-                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse" />
-                          Tap or press Space to reveal
-                        </motion.p>
-                      )}
-                      {/* Progress indicator */}
-                      <div className="mt-auto pt-4 flex items-center justify-center gap-3 text-xs text-muted-foreground">
-                        <span className="font-semibold tabular-nums text-foreground/70">{currentIndex + 1}/{flashcardQuestions.length}</span>
-                        {difficultCards.has(flashcardQuestions[currentIndex].id) && (
-                          <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                            <AlertTriangle className="h-3 w-3" /> Difficult
-                          </span>
-                        )}
-                      </div>
-                      {/* Swipe hint for users who have flipped before */}
-                      {hasEverFlipped && !flipped && (
-                        <p className="text-[11px] text-muted-foreground/50 flex items-center gap-1.5 mt-3">
-                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary/40 animate-pulse" />
-                          Tap, swipe, or press Space to flip
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Back face */}
-                    <div
-                      className="glass rounded-2xl p-8 min-h-[280px] sm:min-h-[320px] flex flex-col items-center justify-center text-center absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent"
-                      style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
-                    >
-                      <div className="flex items-center gap-2 mb-4">
-                        <Lightbulb className="w-5 h-5 text-emerald-500" />
-                        <Badge variant="secondary" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/10">
-                          Answer
-                        </Badge>
-                        {flashcardQuestions[currentIndex].concept && (
-                          <Badge variant="secondary" className="text-xs bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/10">
-                            {flashcardQuestions[currentIndex].concept}
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-base sm:text-lg font-medium leading-relaxed max-w-lg">
-                        {flashcardQuestions[currentIndex].answer}
-                      </p>
-                      {flashcardQuestions[currentIndex].explanation && (
-                        <p className="text-sm text-muted-foreground mt-4 max-w-lg leading-relaxed">
-                          {flashcardQuestions[currentIndex].explanation}
-                        </p>
-                      )}
-                      <p className="text-xs text-muted-foreground mt-6 opacity-60">Swipe right → Known · Swipe left → Learning</p>
-                      {/* Keyboard shortcut hints */}
-                      <div className="mt-2 flex items-center justify-center gap-3 text-[10px] text-muted-foreground/50">
-                        <span><kbd className="font-mono bg-muted/60 px-1 py-0.5 rounded border border-border/40 text-[10px]">Space</kbd> flip</span>
-                        <span><kbd className="font-mono bg-muted/60 px-1 py-0.5 rounded border border-border/40 text-[10px]">←</kbd> prev</span>
-                        <span><kbd className="font-mono bg-muted/60 px-1 py-0.5 rounded border border-border/40 text-[10px]">→</kbd> next</span>
-                      </div>
-                    </div>
-                  </motion.div>
-                </motion.div>
-              </motion.div>
-            </div>
-
-            {/* Known / Still Learning / Mark Difficult buttons */}
-            {flipped && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex items-center justify-center gap-3"
-              >
-                <Button
-                  variant="outline"
-                  className="flex-1 max-w-[160px] border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/50"
-                  onClick={(e) => { e.stopPropagation(); handleFlashcardMark('learning'); }}
-                >
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  Learning
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className={`shrink-0 h-10 w-10 ${difficultCards.has(flashcardQuestions[currentIndex].id) ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'border-border text-muted-foreground hover:border-amber-500/50 hover:text-amber-600 dark:hover:text-amber-400'}`}
-                  onClick={(e) => { e.stopPropagation(); handleMarkDifficult(); }}
-                  title={difficultCards.has(flashcardQuestions[currentIndex].id) ? 'Remove from review queue' : 'Mark as difficult'}
-                >
-                  <AlertTriangle className="h-4 w-4" />
-                </Button>
-                <Button
-                  className="flex-1 max-w-[160px]"
-                  onClick={(e) => { e.stopPropagation(); handleFlashcardMark('known'); }}
-                >
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Known
-                </Button>
-              </motion.div>
-            )}
+            <InteractiveFlashcard
+              key={flashcardQuestions[currentIndex].id}
+              question={flashcardQuestions[currentIndex]}
+              index={currentIndex}
+              total={flashcardQuestions.length}
+              isDifficult={difficultCards.has(flashcardQuestions[currentIndex].id)}
+              onMark={handleFlashcardMark}
+              onToggleDifficult={handleMarkDifficult}
+            />
 
             {/* Flashcard navigation */}
             <div className="flex items-center justify-between">
@@ -3303,8 +3125,8 @@ export function QuizView() {
                   size="sm"
                   onClick={() => {
                     const shuffled = [...flashcardQuestions].sort(() => Math.random() - 0.5);
+                    setCurrentQuestions(shuffled);
                     setCurrentIndex(0);
-                    setFlipped(false);
                   }}
                   className="text-muted-foreground"
                 >
@@ -3339,7 +3161,7 @@ export function QuizView() {
                 {flashcardQuestions.map((q, i) => (
                   <button
                     key={q.id}
-                    onClick={() => { setCurrentIndex(i); setFlipped(false); }}
+                    onClick={() => setCurrentIndex(i)}
                     className={`h-2.5 rounded-full transition-all ${
                       i === currentIndex
                         ? 'bg-primary w-7 shadow-sm shadow-primary/30'
