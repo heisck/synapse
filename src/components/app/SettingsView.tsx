@@ -51,6 +51,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useTheme } from 'next-themes';
 import { exportProfileCode, importProfileCode, resetAllData } from '@/lib/transfer';
 import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
+import { getByoStorage, setByoStorage } from '@/lib/byoStorage';
 
 /** Personas must match the tutor's PersonaSelector so the default applies. */
 const PERSONA_OPTIONS = [
@@ -88,7 +89,7 @@ function SectionCard({
         <div className={`flex h-6 w-6 items-center justify-center rounded-md ${isDanger ? 'bg-red-500/10' : 'bg-muted'}`}>
           <Icon className={`h-3.5 w-3.5 ${isDanger ? 'text-red-500' : 'text-muted-foreground'}`} />
         </div>
-        <h3 className={`text-sm font-semibold ${isDanger ? 'text-red-600 dark:text-red-400' : ''}`}>{title}</h3>
+        <h3 className={`text-sm lg:text-base font-semibold ${isDanger ? 'text-red-600 dark:text-red-400' : ''}`}>{title}</h3>
       </div>
       <div className="p-5 space-y-4">
         {children}
@@ -109,9 +110,9 @@ function SettingRow({
   return (
     <div className="flex items-center justify-between gap-4 group">
       <div className="min-w-0">
-        <p className="text-sm font-medium group-hover:text-foreground transition-colors">{label}</p>
+        <p className="text-sm lg:text-[15px] font-medium group-hover:text-foreground transition-colors">{label}</p>
         {description && (
-          <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+          <p className="text-xs lg:text-sm text-muted-foreground mt-0.5">{description}</p>
         )}
       </div>
       <div className="shrink-0">{children}</div>
@@ -210,6 +211,15 @@ export function SettingsView() {
     setOpenRouterKey(trimmed);
     setOrKeySaved(!!trimmed);
     toast.success(trimmed ? 'API key saved to this browser' : 'API key removed');
+  };
+  // Bring-your-own storage (Cloudinary + database) — browser-only, like the key
+  const [byo, setByo] = useState({ dbUrl: '', dbAuthToken: '', cloudinaryUrl: '' });
+  useEffect(() => {
+    setByo(getByoStorage());
+  }, []);
+  const handleSaveByo = () => {
+    setByoStorage(byo);
+    toast.success('Storage settings saved to this browser');
   };
 
   // Compact mode: apply/remove a root class the stylesheet reacts to
@@ -334,11 +344,11 @@ export function SettingsView() {
       variants={stagger}
       initial="initial"
       animate="animate"
-      className="space-y-6 pt-2 lg:pt-4 max-w-3xl"
+      className="space-y-6 pt-2 lg:pt-4 max-w-4xl mx-auto"
     >
       <motion.div variants={fadeUp}>
-        <h1 className="text-2xl font-bold gradient-text">Settings</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <h1 className="text-2xl lg:text-3xl font-bold gradient-text">Settings</h1>
+        <p className="text-sm lg:text-base text-muted-foreground mt-1">
           Manage your preferences and application settings
         </p>
       </motion.div>
@@ -487,6 +497,51 @@ export function SettingsView() {
             If AI replies stop with a rate-limit message, your key has hit its free limit — wait
             for it to reset or paste a different key.
           </p>
+        </div>
+      </SectionCard>
+
+      {/* Your Storage — bring-your-own database + Cloudinary (Phase 3) */}
+      <SectionCard icon={Database} title="Your Storage">
+        <div className="space-y-3">
+          <p className="text-xs lg:text-sm text-muted-foreground">
+            Own your data completely: connect your own database and Cloudinary account, and your
+            courses, slides and progress sync to infrastructure only you control. Keys are stored
+            in this browser only. Cross-device sync using these keys arrives in an upcoming
+            update — saving them now means you are ready the moment it ships.
+          </p>
+          <div className="space-y-2">
+            <label className="text-sm font-medium" htmlFor="byo-db-url">Database URL</label>
+            <Input
+              id="byo-db-url"
+              type="text"
+              value={byo.dbUrl}
+              onChange={(e) => setByo((p) => ({ ...p, dbUrl: e.target.value }))}
+              placeholder="libsql://your-db.turso.io or postgres://..."
+              autoComplete="off"
+              className="font-mono text-xs"
+            />
+            <label className="text-sm font-medium" htmlFor="byo-db-token">Database auth token (if your DB uses one)</label>
+            <Input
+              id="byo-db-token"
+              type="password"
+              value={byo.dbAuthToken}
+              onChange={(e) => setByo((p) => ({ ...p, dbAuthToken: e.target.value }))}
+              placeholder="ey..."
+              autoComplete="off"
+              className="font-mono text-xs"
+            />
+            <label className="text-sm font-medium" htmlFor="byo-cloudinary">Cloudinary URL (for your slide files)</label>
+            <Input
+              id="byo-cloudinary"
+              type="password"
+              value={byo.cloudinaryUrl}
+              onChange={(e) => setByo((p) => ({ ...p, cloudinaryUrl: e.target.value }))}
+              placeholder="cloudinary://key:secret@cloud-name"
+              autoComplete="off"
+              className="font-mono text-xs"
+            />
+          </div>
+          <Button size="sm" onClick={handleSaveByo}>Save storage settings</Button>
         </div>
       </SectionCard>
 

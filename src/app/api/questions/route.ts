@@ -43,6 +43,28 @@ function tryParseJSON(text: string): unknown | null {
   }
 }
 
+/** Splits material into sections of ~maxChars, preferring slide boundaries. */
+function sectionContent(content: string, maxChars: number): string[] {
+  const blocks = content.split(/\n\n(?=## )/);
+  const sections: string[] = [];
+  let current = '';
+  for (const block of blocks) {
+    if (current && current.length + block.length > maxChars) {
+      sections.push(current);
+      current = block;
+    } else {
+      current = current ? `${current}\n\n${block}` : block;
+    }
+    // A single oversized block still gets hard-split so nothing is dropped
+    while (current.length > maxChars * 1.5) {
+      sections.push(current.slice(0, maxChars));
+      current = current.slice(maxChars);
+    }
+  }
+  if (current.trim()) sections.push(current);
+  return sections;
+}
+
 async function generateQuestions(content: string, auth: LLMAuth): Promise<ValidatedQuestion[]> {
   const promptVariants = [
     buildQuizGenPrompt('General', 'Content Analysis', 'medium', 'multiple_choice'),
@@ -146,7 +168,7 @@ export async function POST(request: NextRequest) {
         where: { courseId },
         orderBy: { order: 'asc' },
       });
-      content = slides.map((s) => s.content).join('\n\n');
+      content = slides.map((s) => `## ${s.title}\n${s.content}`).join('\n\n');
     }
 
     if (!content || content.trim().length === 0) {
@@ -156,7 +178,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const questions = await generateQuestions(content, authFromRequest(request));
+    // Section the material instead of truncating it: previously everything
+    // past the first 3000 chars was invisible to the model, so questions only
+    // ever covered the start of a course. Each ~2800-char section (split on
+    // slide boundaries) gets its own generation pass. Capped per request to
+    // stay inside serverless time limits — the background-generation toggle
+    // (ROADMAP) will walk the remaining sections incrementally.
+    const MAX_SECTIONS_PER_REQUEST = 4;
+    const sections = sectionContent(content, 2800).slice(0, MAX_SECTIONS_PER_REQUEST);
+    const auth = authFromRequest(request);
+    const questions: ValidatedQuestion[] = [];
+    const seenQ = new Set<string>();
+    for (const section of sections) {
+      const generated = await generateQuestions(section, auth);
+      for (const q of generated) {
+        const key = q.question.toLowerCase();
+        if (!seenQ.has(key)) {
+          seenQ.add(key);
+          questions.push(q);
+        }
+      }
+    }
 
     if (questions.length === 0) {
       return NextResponse.json(

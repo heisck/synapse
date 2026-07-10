@@ -2367,8 +2367,8 @@ export function QuizView() {
           className="mb-6 rounded-xl p-5 mesh-gradient gradient-border relative overflow-hidden"
         >
           <div className="relative z-10">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-y-3 mb-3">
+              <div className="flex flex-wrap items-center gap-3 min-w-0">
                 <h1 className="text-xl font-bold gradient-text">{studyMode === 'quiz' ? 'Quiz Practice' : studyMode === 'flashcard' ? 'Flashcard Study' : studyMode === 'review' ? 'Spaced Review' : 'Daily Challenge'}</h1>
                 {/* Adaptive toggle */}
                 <button
@@ -2394,11 +2394,11 @@ export function QuizView() {
                   <Brain className="w-3.5 h-3.5" />
                   Adaptive
                 </button>
-                {/* Mode toggle */}
-                <div className="flex items-center rounded-lg border border-border bg-background/50 p-0.5">
+                {/* Mode toggle — full-width evenly spaced on phones, inline on larger screens */}
+                <div className="flex w-full sm:w-auto items-center rounded-lg border border-border bg-background/50 p-0.5">
                   <button
                     onClick={() => handleModeChange('quiz')}
-                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                    className={`flex flex-1 sm:flex-initial items-center justify-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
                       studyMode === 'quiz'
                         ? 'bg-primary text-primary-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
@@ -2409,7 +2409,7 @@ export function QuizView() {
                   </button>
                   <button
                     onClick={() => handleModeChange('flashcard')}
-                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                    className={`flex flex-1 sm:flex-initial items-center justify-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
                       studyMode === 'flashcard'
                         ? 'bg-primary text-primary-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
@@ -2420,7 +2420,7 @@ export function QuizView() {
                   </button>
                   <button
                     onClick={() => handleModeChange('daily')}
-                    className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                    className={`flex flex-1 sm:flex-initial items-center justify-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
                       studyMode === 'daily'
                         ? 'bg-primary text-primary-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
@@ -2431,7 +2431,7 @@ export function QuizView() {
                   </button>
                   <button
                     onClick={() => handleModeChange('review')}
-                    className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                    className={`relative flex flex-1 sm:flex-initial items-center justify-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
                       studyMode === 'review'
                         ? 'bg-primary text-primary-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
