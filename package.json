@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "test:a11y": "node scripts/a11y-scan.mjs",
     "db:push": "prisma db push",
+    "db:push:prod": "node scripts/db-push-prod.mjs",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset"

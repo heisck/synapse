@@ -17,6 +17,9 @@ loadEnv({ path: '.env' })
 export default defineConfig({
   schema: path.join('prisma', 'schema.prisma'),
   datasource: {
-    url: process.env.DATABASE_URL ?? '',
+    // PRISMA_CLI_URL_OVERRIDE is set by scripts/db-push-prod.mjs to point
+    // `prisma migrate diff` at a shadow copy of the Turso schema; it is never
+    // set during normal db push / migrate / studio usage.
+    url: process.env.PRISMA_CLI_URL_OVERRIDE ?? process.env.DATABASE_URL ?? '',
   },
 })
