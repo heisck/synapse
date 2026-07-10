@@ -535,6 +535,17 @@ export function TutorView() {
     prevMessagesLen.current = messages.length
   }, [messages, isLoading])
 
+  // Returning to this view: land on the newest message without manual
+  // scrolling. The mount-time scroll above fires before the page transition
+  // (~300ms) finishes laying out, so re-pin once afterwards.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const viewport = scrollRef.current?.querySelector<HTMLElement>('[data-radix-scroll-area-viewport]')
+      if (viewport) viewport.scrollTo({ top: viewport.scrollHeight })
+    }, 380)
+    return () => clearTimeout(t)
+  }, [])
+
   // Auto-resize textarea
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value)
