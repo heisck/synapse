@@ -133,7 +133,7 @@ function ConfettiParticles() {
 
 function StepIndicator({ currentStep }: { currentStep: number }) {
   return (
-    <div className="flex items-center justify-center gap-0 pt-4 pb-2">
+    <div className="flex items-center justify-center gap-0 pt-4 pb-2 px-2 max-w-full overflow-hidden">
       {Array.from({ length: TOTAL_STEPS }, (_, i) => {
         const stepNum = i + 1;
         const isCompleted = stepNum < currentStep;
@@ -155,7 +155,7 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
                     ? { duration: 1.5, repeat: Infinity, ease: 'easeInOut' }
                     : { duration: 0.3 }
                 }
-                className={`relative flex h-9 w-9 items-center justify-center rounded-full border-2 transition-colors duration-300 ${
+                className={`relative flex h-7 w-7 sm:h-9 sm:w-9 items-center justify-center rounded-full border-2 transition-colors duration-300 ${
                   isCurrent
                     ? 'border-primary bg-primary text-primary-foreground'
                     : isCompleted
@@ -178,7 +178,7 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
               </motion.span>
             </div>
             {stepNum < TOTAL_STEPS && (
-              <div className="mx-2 mt-[-18px] h-0.5 w-8 sm:w-12 overflow-hidden rounded-full bg-muted-foreground/15">
+              <div className="mx-1 sm:mx-2 mt-[-18px] h-0.5 w-4 sm:w-12 overflow-hidden rounded-full bg-muted-foreground/15">
                 <motion.div
                   className="h-full bg-linear-to-r from-emerald-500 to-teal-500 rounded-full"
                   initial={{ width: '0%' }}

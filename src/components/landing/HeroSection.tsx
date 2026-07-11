@@ -265,7 +265,7 @@ export default function HeroSection() {
         {/* Badge: "AI-Powered Learning Platform" */}
         <div ref={badgeRef} className="opacity-0 mb-3 sm:mb-4 flex justify-center gap-3 flex-wrap">
           <motion.span
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full relative overflow-hidden text-sm font-medium text-emerald-700 dark:text-emerald-300"
+            className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full relative overflow-hidden text-xs sm:text-sm font-medium whitespace-nowrap text-emerald-700 dark:text-emerald-300"
             animate={{ scale: [1, 1.02, 1] }}
             transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
           >
@@ -306,7 +306,7 @@ export default function HeroSection() {
         {/* Heading with animated gradient text */}
         <h1
           ref={headingRef}
-          className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.1] mb-6"
+          className="text-5xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.1] mb-6"
         >
           Learn Anything.{' '}
           <span className="relative inline-block">

@@ -236,6 +236,41 @@ export function QuizView() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [answered, setAnswered] = useState<Record<string, boolean>>({});
+
+  // Session resume: leaving the quiz page and coming back continues exactly
+  // where you were (index + this-round answers). "Try Again" / mode / course
+  // changes start a new set as before.
+  const QUIZ_PROGRESS_KEY = 'synapse-quiz-progress';
+  const progressRestoredRef = useRef(false);
+  useEffect(() => {
+    if (progressRestoredRef.current) return;
+    progressRestoredRef.current = true;
+    try {
+      const raw = localStorage.getItem(QUIZ_PROGRESS_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        index: number; answers: Record<string, string>; answered: Record<string, boolean>; at: number;
+      };
+      // Stale after a day — a fresh visit deserves a fresh set
+      if (!saved || Date.now() - saved.at > 24 * 60 * 60 * 1000) return;
+      if (Object.keys(saved.answered ?? {}).length === 0) return;
+      queueMicrotask(() => {
+        setAnswers(saved.answers ?? {});
+        setAnswered(saved.answered ?? {});
+        setCurrentIndex(Math.max(0, saved.index ?? 0));
+      });
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    if (!progressRestoredRef.current) return;
+    try {
+      if (Object.keys(answered).length === 0) {
+        localStorage.removeItem(QUIZ_PROGRESS_KEY);
+      } else {
+        localStorage.setItem(QUIZ_PROGRESS_KEY, JSON.stringify({ index: currentIndex, answers, answered, at: Date.now() }));
+      }
+    } catch { /* quota */ }
+  }, [currentIndex, answers, answered]);
   const [showExplanation, setShowExplanation] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [showResults, setShowResults] = useState(false);

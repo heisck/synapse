@@ -2,7 +2,8 @@
 
 import { aiFetch } from '@/lib/aiKey';
 import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
-import { useAppStore } from '@/stores/appStore'
+import { useAppStore, listCourseChats, loadCourseChatMessages, clearCourseChat } from '@/stores/appStore'
+import { isLocalCourse, getLocalSlides } from '@/lib/localLibrary'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -51,6 +52,8 @@ import {
   StickyNote,
   Layers,
   ClipboardCheck,
+  SquarePen,
+  History,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -310,6 +313,36 @@ export function TutorView() {
     return () => mq.removeEventListener('change', update)
   }, [])
   const [mobileSlidesOpen, setMobileSlidesOpen] = useState(false)
+  // Session history overlay: search / resume / delete archived chats
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyQuery, setHistoryQuery] = useState('')
+  const [historyVersion, setHistoryVersion] = useState(0)
+  // Mobile hybrid: slides-on-top height (px), adjusted by dragging the divider.
+  // Dragging all the way down → slide mode; all the way up → chat mode.
+  const [hybridHeight, setHybridHeight] = useState(() =>
+    typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.38) : 280,
+  )
+  const hybridDragRef = useRef<{ startY: number; startH: number } | null>(null)
+  const handleHybridDragMove = (e: React.PointerEvent) => {
+    const drag = hybridDragRef.current
+    if (!drag) return
+    const next = drag.startH + (e.clientY - drag.startY)
+    setHybridHeight(Math.max(40, Math.min(window.innerHeight - 180, next)))
+  }
+  const handleHybridDragEnd = () => {
+    if (!hybridDragRef.current) return
+    hybridDragRef.current = null
+    // Snap at the extremes — mode changes happen once, on release, so the UI
+    // never flickers open/closed mid-drag
+    if (hybridHeight <= 90) {
+      setTutorMode('text')
+      setHybridHeight(Math.round(window.innerHeight * 0.38))
+    } else if (hybridHeight >= window.innerHeight * 0.62) {
+      setTutorMode('slide')
+      setMobileSlidesOpen(true)
+      setHybridHeight(Math.round(window.innerHeight * 0.38))
+    }
+  }
 
   const breakTimer = useBreakTimer()
   const adaptiveResultsForCoach = useAppStore((s) => s.adaptiveResults)
@@ -493,9 +526,10 @@ export function TutorView() {
 
   const showSlidePanel = (tutorMode === 'slide' || tutorMode === 'hybrid') && activeSlides.length > 0
 
-  // Re-open the mobile overlay whenever the learner picks a slide mode again
+  // Re-open the mobile fullscreen overlay when Slide mode is picked.
+  // Hybrid on phones uses the draggable split instead — no overlay.
   useEffect(() => {
-    if (tutorMode === 'slide' || tutorMode === 'hybrid') {
+    if (tutorMode === 'slide') {
       queueMicrotask(() => setMobileSlidesOpen(true))
     }
   }, [tutorMode])
@@ -530,10 +564,18 @@ export function TutorView() {
   // When a deck exists and the right panel is open, it answers on the side
   const quizShownAside = latestQuiz !== null && rightPanelOpen && tutorMode !== 'cards'
 
-  // Initialize session on mount
+  // Initialize session on mount — RESUME, never wipe. Leaving the page and
+  // coming back continues the conversation; a blank slate only happens via
+  // the New-session button.
   useEffect(() => {
     if (!activeSessionId) {
       const state = useAppStore.getState()
+      if (state.messages.length > 0) {
+        // Restored conversation (from localStorage) — attach a session id
+        // WITHOUT calling setActiveSession, which would clear the messages
+        useAppStore.setState({ activeSessionId: crypto.randomUUID() })
+        return
+      }
       // A fresh session starts with the user's chosen default persona
       if (state.settings.defaultPersona && state.settings.defaultPersona !== state.activePersona) {
         state.setActivePersona(state.settings.defaultPersona)
@@ -548,6 +590,15 @@ export function TutorView() {
         createdAt: new Date().toISOString(),
       })
     }
+  }, [])
+
+  // On (re)entry with an existing conversation, jump to the last message
+  useEffect(() => {
+    const el = scrollRef.current?.querySelector('[data-radix-scroll-area-viewport]')
+    if (el && useAppStore.getState().messages.length > 1) {
+      queueMicrotask(() => { el.scrollTop = el.scrollHeight })
+    }
+    // mount-only: resuming a session should land at the latest exchange
   }, [])
 
   // Timer
@@ -958,6 +1009,12 @@ export function TutorView() {
       setActiveSlides(course.slides)
       return
     }
+    // Local-first courses live in this browser's IndexedDB, not the server
+    if (isLocalCourse(course.id)) {
+      const slides = await getLocalSlides(course.id)
+      if (slides.length > 0) setActiveSlides(slides)
+      return
+    }
     try {
       const res = await fetch(`/api/courses/${course.id}`)
       if (!res.ok) return
@@ -1011,6 +1068,21 @@ export function TutorView() {
     )
   }, [])
 
+  // New session: archive the current thread per course, then a clean page
+  const handleNewSession = useCallback(() => {
+    const state = useAppStore.getState()
+    const sessionId = crypto.randomUUID()
+    state.setActiveSession(sessionId)
+    useAppStore.setState({ messages: [] })
+    addMessage({
+      id: crypto.randomUUID(),
+      sessionId,
+      role: 'assistant',
+      content: `Fresh session${userName ? ', ' + userName : ''}! What shall we learn now?`,
+      createdAt: new Date().toISOString(),
+    })
+  }, [addMessage, userName])
+
   // Scroll to starred message handler
   const handleScrollToMessage = useCallback((messageId: string) => {
     const el = document.querySelector(`[data-message-id="${messageId}"]`)
@@ -1024,18 +1096,14 @@ export function TutorView() {
       {/* Header - Frosted glass */}
       <header className="glass-header flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 z-10">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-          <h1
-            className={activeTopic ? 'text-base sm:text-lg font-semibold truncate min-w-0' : 'sr-only'}
-            title={activeTopic || undefined}
-          >
-            {activeTopic || 'AI Tutor'}
-          </h1>
+          {/* Title stays for screen readers only — the header is for controls */}
+          <h1 className="sr-only">{activeTopic || 'AI Tutor'}</h1>
           <Badge variant="secondary" className={`${getPhaseColor(sessionPhase)} shrink-0 hidden sm:inline-flex`}>
             {sessionPhase}
           </Badge>
           {/* Mode Selector — pill sizes itself to the active button */}
           <div className="hidden sm:flex items-center rounded-lg border border-border bg-background/50 p-0.5">
-            {TUTOR_MODES.map((mode) => {
+            {TUTOR_MODES.filter((m) => activeSlides.length > 0 || (m.id !== 'slide' && m.id !== 'hybrid')).map((mode) => {
               const Icon = mode.icon
               const isActive = tutorMode === mode.id
               return (
@@ -1069,7 +1137,7 @@ export function TutorView() {
           </div>
           {/* Mode Selector — phones: icon-only so it fits the header */}
           <div className="flex sm:hidden items-center rounded-lg border border-border bg-background/50 p-0.5">
-            {TUTOR_MODES.map((mode) => {
+            {TUTOR_MODES.filter((m) => activeSlides.length > 0 || (m.id !== 'slide' && m.id !== 'hybrid')).map((mode) => {
               const Icon = mode.icon
               const isActive = tutorMode === mode.id
               return (
@@ -1089,12 +1157,57 @@ export function TutorView() {
           </div>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Phones: New session / History / Upload collapse into one ... menu */}
+          <div className="sm:hidden">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="More actions">
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={handleNewSession}>
+                  <SquarePen className="w-3.5 h-3.5 mr-2" /> New session
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setHistoryOpen(true)}>
+                  <History className="w-3.5 h-3.5 mr-2" /> History
+                </DropdownMenuItem>
+                {quickTopics.length === 0 && !activeTopic && (
+                  <DropdownMenuItem onClick={() => navigate('upload')}>
+                    <BookOpen className="w-3.5 h-3.5 mr-2" /> Upload slides
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          {/* New session — a clean page, current chat stays archived per course */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden sm:inline-flex h-8 w-8"
+            title="Start a new session"
+            aria-label="Start a new session"
+            onClick={handleNewSession}
+          >
+            <SquarePen className="w-4 h-4" />
+          </Button>
+          {/* History — fullscreen overlay: search, resume, delete */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden sm:inline-flex h-8 w-8"
+            title="Session history"
+            aria-label="Session history"
+            onClick={() => setHistoryOpen(true)}
+          >
+            <History className="w-4 h-4" />
+          </Button>
           {/* Upload prompt lives up here, not inside the chat thread */}
           {quickTopics.length === 0 && !activeTopic && (
             <Button
               variant="outline"
               size="sm"
-              className="h-7 rounded-full text-xs gap-1.5 px-2.5"
+              className="hidden sm:inline-flex h-7 rounded-full text-xs gap-1.5 px-2.5"
               onClick={() => navigate('upload')}
               title="Upload slides to get topic suggestions"
             >
@@ -1281,8 +1394,10 @@ export function TutorView() {
               {rightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
             </Button>
           </motion.div>
-          {/* Study Soundscapes */}
-          <StudySoundscapes />
+          {/* Study Soundscapes — desktop only; the ... menu keeps phones tight */}
+          <div className="hidden sm:block">
+            <StudySoundscapes />
+          </div>
         </div>
       </header>
 
@@ -1293,8 +1408,112 @@ export function TutorView() {
           <BreakOverlay secondsLeft={breakTimer.breakSecondsLeft} onEndEarly={breakTimer.endBreakEarly} />
         )}
 
+        {/* Session history: fullscreen overlay — search, click to resume, delete */}
+        {historyOpen && (
+          <div className="fixed inset-0 z-50 bg-background flex flex-col">
+            <div className="flex items-center justify-between gap-2 p-3 border-b">
+              <div className="flex items-center gap-2 min-w-0">
+                <History className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-sm font-semibold">Session History</span>
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setHistoryOpen(false)} aria-label="Close history">
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="p-3 border-b">
+              <Input
+                placeholder="Search conversations..."
+                value={historyQuery}
+                onChange={(e) => setHistoryQuery(e.target.value)}
+                className="h-9 text-sm placeholder:text-xs"
+              />
+            </div>
+            {/* Plain scroll div: Radix ScrollArea's table wrapper let wide
+                rows push past the right edge */}
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+              <div className="p-3 space-y-2 max-w-2xl mx-auto w-full">
+                {(() => {
+                  void historyVersion // re-list after deletes
+                  const q = historyQuery.trim().toLowerCase()
+                  const entries = listCourseChats()
+                    .map((entry) => {
+                      const course = courses.find((c) => c.id === entry.courseId)
+                      const msgs = loadCourseChatMessages(entry.courseId)
+                      const title = entry.courseId === 'general' ? 'General chat' : course?.title ?? 'Untitled course'
+                      const lastText = [...msgs].reverse().find((m) => m.content)?.content ?? ''
+                      return { ...entry, title, msgs, lastText }
+                    })
+                    .filter((e) =>
+                      !q ||
+                      e.title.toLowerCase().includes(q) ||
+                      e.msgs.some((m) => m.content.toLowerCase().includes(q)),
+                    )
+                  if (entries.length === 0) {
+                    return (
+                      <p className="text-sm text-muted-foreground text-center py-10">
+                        {q ? 'No conversations match your search.' : 'No archived sessions yet — your chats will appear here.'}
+                      </p>
+                    )
+                  }
+                  return entries.map((entry) => (
+                    <div
+                      key={entry.courseId}
+                      className="flex items-start gap-2 rounded-xl border border-border/60 glass p-3 hover:border-primary/30 transition-colors min-w-0 max-w-full overflow-hidden"
+                    >
+                      <button
+                        className="flex-1 min-w-0 text-left"
+                        onClick={async () => {
+                          const course = courses.find((c) => c.id === entry.courseId)
+                          useAppStore.setState({
+                            activeSessionId: crypto.randomUUID(),
+                            activeCourseId: entry.courseId === 'general' ? null : entry.courseId,
+                            activeTopic: entry.courseId === 'general' ? null : entry.title,
+                            messages: entry.msgs,
+                          })
+                          // Bring the course's slides back too, so the Slide /
+                          // Hybrid modes reappear with the resumed session
+                          if (course) {
+                            setActiveCourse(course)
+                            if (course.slides?.length) setActiveSlides(course.slides)
+                            else if (isLocalCourse(course.id)) {
+                              const slides = await getLocalSlides(course.id)
+                              if (slides.length > 0) setActiveSlides(slides)
+                            }
+                          }
+                          setHistoryOpen(false)
+                          toast(`Resumed ${entry.title}`)
+                        }}
+                      >
+                        <p className="text-sm font-medium truncate">{entry.title}</p>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">{entry.lastText}</p>
+                        <p className="text-[11px] text-muted-foreground/70 mt-1">
+                          {entry.messageCount} messages{entry.lastAt ? ` · ${new Date(entry.lastAt).toLocaleString()}` : ''}
+                        </p>
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                        aria-label={`Delete ${entry.title} history`}
+                        title="Delete this conversation"
+                        onClick={() => {
+                          clearCourseChat(entry.courseId)
+                          setHistoryVersion((v) => v + 1)
+                          toast(`Deleted ${entry.title} history`)
+                        }}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ))
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Mobile: slides as a fullscreen overlay — no split view on phones */}
-        {isMobile && mobileSlidesOpen && activeSlides.length > 0 && (
+        {isMobile && tutorMode === 'slide' && mobileSlidesOpen && activeSlides.length > 0 && (
           <div className="fixed inset-0 z-40 bg-background flex flex-col">
             {/* Controls on top */}
             <div className="flex items-center justify-between gap-2 p-3 border-b">
@@ -1359,7 +1578,8 @@ export function TutorView() {
           <motion.div
             key="slide-panel"
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: tutorMode === 'slide' ? '50%' : '40%', opacity: 1 }}
+            // Slide mode means SLIDE: the whole page, not a half split
+            animate={{ width: tutorMode === 'slide' ? '100%' : '40%', opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ width: { type: 'spring', stiffness: 260, damping: 32 }, opacity: { duration: 0.2 } }}
             style={{ willChange: 'width' }}
@@ -1428,8 +1648,49 @@ export function TutorView() {
         )}
         </AnimatePresence>
 
-        {/* Chat Panel */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        {/* Chat Panel — hidden entirely in slide-only mode on desktop */}
+        <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${!isMobile && tutorMode === 'slide' && activeSlides.length > 0 ? 'hidden' : ''}`}>
+          {/* Mobile hybrid: slides on top, chat below, draggable divider */}
+          {isMobile && tutorMode === 'hybrid' && activeSlides.length > 0 && (
+            <div className="flex flex-col border-b shrink-0" style={{ height: hybridHeight + 20 }}>
+              <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/40">
+                <span className="text-xs font-semibold truncate flex items-center gap-1.5 min-w-0">
+                  <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <span className="truncate">{activeSlides[currentSlideIndex]?.title}</span>
+                </span>
+                <span className="flex items-center gap-1 shrink-0">
+                  <Button variant="ghost" size="icon" className="h-6 w-6" disabled={currentSlideIndex === 0} onClick={() => setCurrentSlideIndex(currentSlideIndex - 1)} aria-label="Previous slide">
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </Button>
+                  <Badge variant="secondary" className="text-[10px] tabular-nums">{currentSlideIndex + 1}/{activeSlides.length}</Badge>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" disabled={currentSlideIndex === activeSlides.length - 1} onClick={() => setCurrentSlideIndex(currentSlideIndex + 1)} aria-label="Next slide">
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Button>
+                </span>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-3">
+                <div className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                  {activeSlides[currentSlideIndex]?.content}
+                </div>
+              </div>
+              {/* Drag divider: down = more slide (bottom = slide-only), up = more chat (top = chat-only) */}
+              <div
+                className="flex h-5 shrink-0 items-center justify-center cursor-row-resize touch-none select-none bg-background/60"
+                onPointerDown={(e) => {
+                  hybridDragRef.current = { startY: e.clientY, startH: hybridHeight }
+                  ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+                }}
+                onPointerMove={handleHybridDragMove}
+                onPointerUp={handleHybridDragEnd}
+                onPointerCancel={handleHybridDragEnd}
+                role="separator"
+                aria-label="Resize slides panel"
+              >
+                <div className="h-1 w-12 rounded-full bg-border" />
+              </div>
+            </div>
+          )}
+
           {/* Course Context Panel - fallback when no dedicated slide panel */}
           {!showSlidePanel && <CourseContextPanel />}
 
@@ -1443,7 +1704,7 @@ export function TutorView() {
               <div className="flex items-center gap-1 min-w-0 shrink-0 max-w-[55%]">
                 {/* Mobile: reopen the fullscreen slide overlay any time */}
                 <button
-                  onClick={() => setMobileSlidesOpen(true)}
+                  onClick={() => { setTutorMode('slide'); setMobileSlidesOpen(true) }}
                   className="md:hidden flex items-center gap-1 px-1.5 py-1 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors text-[11px] font-medium"
                   aria-label="Open slides"
                 >
@@ -1624,6 +1885,8 @@ export function TutorView() {
                     onSaveAsNote={msg.role === 'assistant' ? handleSaveAsNote : undefined}
                     scrollToMessage={handleScrollToMessage}
                     quizAside={quizShownAside && latestQuiz?.messageId === msg.id}
+                    onResend={msg.role === 'user' ? (content) => handleSend(content) : undefined}
+                    onRecall={msg.role === 'user' ? (content) => { setInput(content); textareaRef.current?.focus() } : undefined}
                   />
                 ))
             }
@@ -1676,7 +1939,7 @@ export function TutorView() {
                         setTimeout(() => e.target.scrollIntoView({ block: 'end', behavior: 'smooth' }), 300)
                       }}
                       onBlur={() => setInputFocused(false)}
-                      className="resize-none flex-1 border-0 shadow-none focus-visible:ring-0 p-2 text-base sm:text-sm bg-transparent placeholder:text-muted-foreground"
+                      className="resize-none flex-1 min-w-0 border-0 shadow-none focus-visible:ring-0 p-2 text-sm bg-transparent placeholder:text-muted-foreground placeholder:text-xs sm:placeholder:text-sm placeholder:truncate"
                       style={{ minHeight: INPUT_SIZES[inputSize].minH, maxHeight: INPUT_SIZES[inputSize].maxH }}
                       rows={INPUT_SIZES[inputSize].rows}
                     />

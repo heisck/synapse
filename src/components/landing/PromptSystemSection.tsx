@@ -115,10 +115,11 @@ function LayerCard({
         <div className="absolute inset-0 rounded-2xl bg-linear-to-br from-emerald-500/0 to-teal-500/0 group-hover:from-emerald-500/[0.04] group-hover:to-teal-500/[0.03] dark:group-hover:from-emerald-400/[0.08] dark:group-hover:to-cyan-400/[0.06] transition-all duration-500" />
 
         <div className="relative z-10">
-          <div className={`w-12 h-12 rounded-xl ${layer.color} flex items-center justify-center mb-4`}>
-            <Icon className="w-6 h-6" />
-          </div>
-          <div className="flex items-center gap-2 mb-2">
+          {/* Icon and layer number share one line */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className={`w-12 h-12 rounded-xl ${layer.color} flex items-center justify-center shrink-0`}>
+              <Icon className="w-6 h-6" />
+            </div>
             <span className="text-xs font-mono text-emerald-500 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded">
               L{index + 1}
             </span>

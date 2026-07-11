@@ -568,18 +568,22 @@ export function MatchingInput({
                         : 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-grab active:cursor-grabbing'
                 }`}
               >
-                <div className="flex items-center gap-2">
-                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
-                  <span className="flex-1 min-w-0 break-words">{p.left}</span>
-                  {isMatched && (
-                    <motion.span
-                      initial={{ opacity: 0, x: 10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      className="text-xs opacity-70 truncate max-w-30 text-emerald-600 dark:text-emerald-400"
-                    >
-                      {matches[p.left]}
-                    </motion.span>
-                  )}
+                {/* Matched value sits on its own line — squeezing it next to
+                    the term collapsed the column and broke words letter-by-letter */}
+                <div className="flex items-start gap-2">
+                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <span className="break-words">{p.left}</span>
+                    {isMatched && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 2 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="text-[11px] opacity-70 truncate text-emerald-600 dark:text-emerald-400"
+                      >
+                        → {matches[p.left]}
+                      </motion.div>
+                    )}
+                  </div>
                 </div>
               </motion.button>
             );

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Brain, Copy, Check, RefreshCw, Volume2, VolumeX, Loader2, Star, BookMarked } from 'lucide-react'
+import { Brain, Copy, Check, RefreshCw, RotateCcw, Volume2, VolumeX, Loader2, Star, BookMarked } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -42,6 +42,10 @@ interface ChatBubbleProps {
   scrollToMessage?: (messageId: string) => void
   /** The quiz in this message is being answered in the side panel — show a chip instead */
   quizAside?: boolean
+  /** Resend this user message (e.g. after the AI hit a snag) */
+  onResend?: (content: string) => void
+  /** Put this user message's text back into the composer for editing */
+  onRecall?: (content: string) => void
 }
 
 function CopyCodeButton({ code }: { code: string }) {
@@ -500,7 +504,7 @@ function MessageActions({
   )
 }
 
-export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveAsNote, scrollToMessage, quizAside = false }: ChatBubbleProps) {
+export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveAsNote, scrollToMessage, quizAside = false, onResend, onRecall }: ChatBubbleProps) {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
   const isAssistant = message.role === 'assistant'
@@ -635,7 +639,7 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
       transition={{ type: 'spring', stiffness: 300, damping: 24 }}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}
     >
-      <div className={`flex items-end gap-2 max-w-[80%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      <div className={`flex items-end gap-2 max-w-[85%] sm:max-w-[80%] min-w-0 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
         {!isUser && (
           <motion.div
             initial={{ scale: 0, opacity: 0 }}
@@ -647,7 +651,7 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
           </motion.div>
         )}
         <div
-          className="flex flex-col gap-1"
+          className="flex flex-col gap-1 min-w-0"
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
@@ -656,7 +660,8 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 350, damping: 26, delay: 0.05 }}
             onClick={showCursor ? completeTypewriter : undefined}
-            className={`relative px-4 py-2.5 text-sm leading-relaxed overflow-hidden ${
+            onDoubleClick={isUser && onRecall ? () => onRecall(message.content) : undefined}
+            className={`relative px-4 py-2.5 text-sm leading-relaxed overflow-hidden min-w-0 max-w-full break-words [overflow-wrap:anywhere] ${
               isUser
                 ? 'bg-emerald-600 text-white rounded-2xl rounded-br-md chat-bubble-user'
                 : 'tutor-ai-bubble glass-card-shine rounded-2xl rounded-bl-md'
@@ -693,7 +698,7 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
             )}
 
             {isUser ? (
-              <p className="whitespace-pre-wrap">{message.content}</p>
+              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
             ) : quizData && quizAside ? (
               <span className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px]">?</span>
@@ -730,6 +735,38 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
               {formatTime(message.createdAt)}
             </span>
           </motion.div>
+
+          {/* User message actions: copy + resend. Hover on desktop, always
+              visible on touch screens. Double-click the bubble to put the
+              text back into the composer. */}
+          {isUser && (onResend || onRecall) && (
+            <div className={`flex justify-end gap-1 mr-1 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-100 md:opacity-0'}`}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
+                aria-label="Copy message"
+                title="Copy"
+                onClick={async () => {
+                  try { await navigator.clipboard.writeText(message.content) } catch { /* ignore */ }
+                }}
+              >
+                <Copy className="h-3 w-3" />
+              </Button>
+              {onResend && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
+                  aria-label="Resend message"
+                  title="Resend"
+                  onClick={() => onResend(message.content)}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+          )}
 
           {/* Hover actions + reactions collapse together in ONE container —
               two separately-animated collapses made the bubble jump twice

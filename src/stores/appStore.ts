@@ -29,6 +29,30 @@ function loadCourseChat(courseId: string): ChatMessage[] {
   }
 }
 
+export function loadCourseChatMessages(courseId: string): ChatMessage[] {
+  return loadCourseChat(courseId);
+}
+
+/** Archived per-course chats, newest first — powers the tutor's History menu. */
+export function listCourseChats(): Array<{ courseId: string; messageCount: number; lastAt: string | null }> {
+  if (typeof window === 'undefined') return [];
+  const out: Array<{ courseId: string; messageCount: number; lastAt: string | null }> = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(COURSE_CHAT_PREFIX)) continue;
+      const msgs = loadCourseChat(key.slice(COURSE_CHAT_PREFIX.length));
+      if (msgs.length === 0) continue;
+      out.push({
+        courseId: key.slice(COURSE_CHAT_PREFIX.length),
+        messageCount: msgs.length,
+        lastAt: msgs[msgs.length - 1]?.createdAt ?? null,
+      });
+    }
+  } catch { /* ignore */ }
+  return out.sort((a, b) => (b.lastAt ?? '').localeCompare(a.lastAt ?? ''));
+}
+
 export function clearCourseChat(courseId: string): void {
   if (typeof window === 'undefined') return;
   try { localStorage.removeItem(`${COURSE_CHAT_PREFIX}${courseId}`); } catch { /* ignore */ }
@@ -293,7 +317,7 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get): 
     // Per-course chat continuity: archive the outgoing course's thread, and
     // (if the "keep previous chat" setting is on) resume the incoming
     // course's thread from where it stopped. All browser-only.
-    archiveCourseChat(s.activeCourseId, s.messages);
+    archiveCourseChat(s.activeCourseId ?? 'general', s.messages);
     const resumed = s.settings.keepChatHistory && courseId ? loadCourseChat(courseId) : [];
     return {
       activeSessionId: sessionId,
@@ -309,13 +333,14 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get): 
   messages: [],
   addMessage: (msg) => set((s) => {
     const messages = [...s.messages, msg];
-    archiveCourseChat(s.activeCourseId, messages);
+    // Course-less chats archive under 'general' so History always has them
+    archiveCourseChat(s.activeCourseId ?? 'general', messages);
     return { messages };
   }),
   updateMessage: (id, content) =>
     set((s) => {
       const messages = s.messages.map((m) => (m.id === id ? { ...m, content } : m));
-      archiveCourseChat(s.activeCourseId, messages);
+      archiveCourseChat(s.activeCourseId ?? 'general', messages);
       return { messages };
     }),
   clearMessages: () => set((s) => {

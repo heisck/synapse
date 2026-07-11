@@ -558,7 +558,7 @@ export function SettingsView() {
               type="text"
               value={byo.dbUrl}
               onChange={(e) => setByo((p) => ({ ...p, dbUrl: e.target.value }))}
-              placeholder="libsql://your-db.turso.io or postgres://..."
+              placeholder="libsql://your-db.turso.io"
               autoComplete="off"
               className="font-mono text-xs"
             />
@@ -578,7 +578,7 @@ export function SettingsView() {
               type="password"
               value={byo.cloudinaryUrl}
               onChange={(e) => setByo((p) => ({ ...p, cloudinaryUrl: e.target.value }))}
-              placeholder="cloudinary://key:secret@cloud-name"
+              placeholder="cloudinary://..."
               autoComplete="off"
               className="font-mono text-xs"
             />
