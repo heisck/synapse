@@ -100,6 +100,7 @@ export default function HeroSection() {
   const ctaRef = useRef<HTMLDivElement>(null);
   const statsRef = useRef<HTMLDivElement>(null);
   const navigate = useAppStore((s) => s.navigate);
+  const onboardingComplete = useAppStore((s) => s.onboardingComplete);
   const [displayedText, setDisplayedText] = useState('');
   const [typingComplete, setTypingComplete] = useState(false);
   const [showCursor, setShowCursor] = useState(true);
@@ -361,8 +362,8 @@ export default function HeroSection() {
                 className="relative bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-6 text-base font-semibold rounded-xl shadow-lg shadow-emerald-500/25 transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/40 hover:-translate-y-0.5"
                 onClick={(e) => {
                   e.stopPropagation();
-                  // Use setTimeout to avoid competing with framer-motion exit animations
-                  setTimeout(() => navigate('onboarding'), 50);
+                  // Set-up users go straight in; others do onboarding first
+                  setTimeout(() => navigate(onboardingComplete ? 'dashboard' : 'onboarding'), 50);
                 }}
               >
                 <Zap className="mr-2 w-4 h-4" />

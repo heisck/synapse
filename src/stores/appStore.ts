@@ -2,6 +2,38 @@ import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import type { AppView, LearnerProfile, MasteryMap, DecisionLoopState, ChatMessage, Course, Slide, Question, UserTip, UserFeedback, Note, Goal, AppSettings, Achievement, StudySession, StudyGoal, StudyNotification, AdaptiveResult, StudyBuddy, StarredMessage } from '@/types';
 
+// --- Per-course tutor chat archive (browser-only, localStorage) ---
+// Lets "I'd like to learn X" resume the previous conversation for that
+// course from where it stopped. Capped so quota stays sane.
+const COURSE_CHAT_PREFIX = 'synapse-course-chat-';
+const COURSE_CHAT_MAX_MESSAGES = 80;
+
+function archiveCourseChat(courseId: string | null, messages: ChatMessage[]): void {
+  if (typeof window === 'undefined' || !courseId || messages.length === 0) return;
+  try {
+    localStorage.setItem(
+      `${COURSE_CHAT_PREFIX}${courseId}`,
+      JSON.stringify(messages.slice(-COURSE_CHAT_MAX_MESSAGES)),
+    );
+  } catch { /* quota — skip */ }
+}
+
+function loadCourseChat(courseId: string): ChatMessage[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(`${COURSE_CHAT_PREFIX}${courseId}`);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function clearCourseChat(courseId: string): void {
+  if (typeof window === 'undefined') return;
+  try { localStorage.removeItem(`${COURSE_CHAT_PREFIX}${courseId}`); } catch { /* ignore */ }
+}
+
 /** Progress through one in-chat quiz/flashcard deck. */
 export interface QuizCardProgress {
   index: number;
@@ -257,14 +289,40 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get): 
   activeCourseId: null,
   activeTopic: null,
   sessionPhase: 'discovery',
-  setActiveSession: (sessionId, courseId, topic) => set({ activeSessionId: sessionId, activeCourseId: courseId ?? null, activeTopic: topic ?? null, sessionPhase: topic ? 'starter' : 'discovery', messages: [], masteryMap: {} }),
+  setActiveSession: (sessionId, courseId, topic) => set((s) => {
+    // Per-course chat continuity: archive the outgoing course's thread, and
+    // (if the "keep previous chat" setting is on) resume the incoming
+    // course's thread from where it stopped. All browser-only.
+    archiveCourseChat(s.activeCourseId, s.messages);
+    const resumed = s.settings.keepChatHistory && courseId ? loadCourseChat(courseId) : [];
+    return {
+      activeSessionId: sessionId,
+      activeCourseId: courseId ?? null,
+      activeTopic: topic ?? null,
+      sessionPhase: topic ? 'starter' : 'discovery',
+      messages: resumed,
+      masteryMap: {},
+    };
+  }),
   setSessionPhase: (phase) => set({ sessionPhase: phase }),
   setActiveTopic: (topic) => set({ activeTopic: topic, sessionPhase: 'starter' }),
   messages: [],
-  addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
+  addMessage: (msg) => set((s) => {
+    const messages = [...s.messages, msg];
+    archiveCourseChat(s.activeCourseId, messages);
+    return { messages };
+  }),
   updateMessage: (id, content) =>
-    set((s) => ({ messages: s.messages.map((m) => (m.id === id ? { ...m, content } : m)) })),
-  clearMessages: () => set({ messages: [] }),
+    set((s) => {
+      const messages = s.messages.map((m) => (m.id === id ? { ...m, content } : m));
+      archiveCourseChat(s.activeCourseId, messages);
+      return { messages };
+    }),
+  clearMessages: () => set((s) => {
+    // Explicit clear also wipes the course's archived thread — a real fresh start
+    if (s.activeCourseId) clearCourseChat(s.activeCourseId);
+    return { messages: [] };
+  }),
   masteryMap: {},
   updateMastery: (concept, level, evidence) => set((s) => ({
     masteryMap: {
@@ -438,6 +496,7 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get): 
       dailyGoalHours: 2,
       sessionReminders: true,
       streakAlerts: true,
+      keepChatHistory: true,
     };
     if (typeof window === 'undefined') return DEFAULT_SETTINGS;
     try {

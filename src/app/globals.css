@@ -341,6 +341,10 @@ html.lenis, html.lenis body {
 .gradient-border:hover::before {
   opacity: 1;
 }
+/* Page headers and other non-interactive surfaces: no hover border hint */
+.gradient-border.gradient-border-static:hover::before {
+  opacity: 0;
+}
 
 /* Pulse glow — calmed: no infinite pulsing */
 @utility pulse-glow {

@@ -135,6 +135,8 @@ export interface AppSettings {
   dailyGoalHours: number;
   sessionReminders: boolean;
   streakAlerts: boolean;
+  /** Resume a course's previous tutor chat instead of starting fresh */
+  keepChatHistory: boolean;
 }
 
 export interface Achievement {

@@ -82,6 +82,7 @@ export default function CTASection() {
   const sectionRef = useRef<HTMLElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const navigate = useAppStore((s) => s.navigate);
+  const onboardingComplete = useAppStore((s) => s.onboardingComplete);
   const isInView = useInView(sectionRef, { once: true, margin: '-100px' });
   const [burstKey, setBurstKey] = useState(0);
   const handleHover = useCallback(() => {
@@ -277,8 +278,8 @@ export default function CTASection() {
                 className="relative bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-6 text-base font-semibold rounded-xl shadow-lg shadow-emerald-500/25 transition-all duration-300 hover:shadow-xl hover:shadow-emerald-500/40 hover:-translate-y-0.5 dark:shadow-emerald-500/30 dark:hover:shadow-emerald-500/50"
                 onClick={(e) => {
                   e.stopPropagation();
-                  // Use setTimeout to avoid competing with framer-motion exit animations
-                  setTimeout(() => navigate('onboarding'), 50);
+                  // Set-up users go straight in; others do onboarding first
+                  setTimeout(() => navigate(onboardingComplete ? 'dashboard' : 'onboarding'), 50);
                 }}
               >
                 <Zap className="mr-2 w-4 h-4" />

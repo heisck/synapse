@@ -1877,7 +1877,7 @@ export function Dashboard() {
       {/* Greeting — bare, no card wrapper */}
       <motion.div variants={fadeUp}>
         <div className="flex flex-col-reverse sm:flex-row sm:items-start sm:justify-between gap-3">
-          <div className="space-y-1">
+          <div className="space-y-1 w-full sm:w-auto">
             <div className="flex items-center gap-3 flex-wrap">
               <motion.h1
                 initial={{ opacity: 0, y: 10 }}
@@ -1955,7 +1955,7 @@ export function Dashboard() {
             </Button>
             <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2.5" onClick={() => navigate('upload')} aria-label="Upload slides">
               <Upload className="h-4 w-4" />
-              <span className="text-xs font-medium">Upload slides</span>
+              <span className="hidden sm:inline text-xs font-medium">Upload slides</span>
             </Button>
           </motion.div>
         </div>
@@ -1968,8 +1968,10 @@ export function Dashboard() {
           Start Now / Start Challenge / Generate Plan / Resume / Focus Timer /
           Week Goal / Day Goal. Selecting an item centers it; the centered
           item is what actually runs. */}
-      <motion.div variants={fadeUp} className="flex items-center gap-4">
-        <div className="flex-1 min-w-0">
+      {/* Phones: wheel centered on top, info below it (no truncated text).
+          sm+: info left, wheel right as before. */}
+      <motion.div variants={fadeUp} className="flex flex-col-reverse items-center text-center gap-3 sm:flex-row sm:items-center sm:text-left sm:gap-4">
+        <div className="w-full sm:flex-1 min-w-0">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeCommand.label}
@@ -1978,14 +1980,14 @@ export function Dashboard() {
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.2 }}
             >
-              <h2 className="font-bold text-xl lg:text-2xl truncate">{activeCommand.title}</h2>
-              <p className="text-muted-foreground text-sm lg:text-base line-clamp-1">{activeCommand.description}</p>
+              <h2 className="font-bold text-xl lg:text-2xl sm:truncate">{activeCommand.title}</h2>
+              <p className="text-muted-foreground text-sm lg:text-base line-clamp-2 sm:line-clamp-1">{activeCommand.description}</p>
             </motion.div>
           </AnimatePresence>
         </div>
 
         <motion.div
-          className="relative h-24 w-65 sm:w-[320px] shrink-0"
+          className="relative h-24 w-65 sm:w-[320px] shrink-0 mx-auto sm:mx-0"
           style={{ perspective: 600 }}
           onWheel={handleCommandWheel}
           role="listbox"
@@ -2189,7 +2191,8 @@ export function Dashboard() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">{lastCourse.title}</p>
-                <p className="text-xs text-muted-foreground truncate">{lastCourse.description}</p>
+                {/* Icon + name only on phones */}
+                <p className="hidden sm:block text-xs text-muted-foreground truncate">{lastCourse.description}</p>
               </div>
               <motion.div
                 initial={{ opacity: 0, x: -8 }}
@@ -2200,7 +2203,7 @@ export function Dashboard() {
                 {/* Visually a button, but the whole row above is already the clickable
                     element — a real nested <button> here is invalid HTML. */}
                 <span className={`${buttonVariants({ size: 'sm', variant: 'outline' })} text-primary border-primary/30 group-hover:bg-primary/10 text-xs pointer-events-none`}>
-                  Resume
+                  <span className="hidden sm:inline">Resume</span>
                   <ArrowRight className="h-3.5 w-3.5 ml-1 group-hover:translate-x-0.5 transition-transform" />
                 </span>
               </motion.div>
@@ -2218,7 +2221,7 @@ export function Dashboard() {
         animate="animate"
         transition={{ delay: 0.2 }}
       >
-        <div className="glass mesh-gradient gradient-border rounded-xl p-6 card-shadow relative overflow-hidden h-full">
+        <div className="glass mesh-gradient gradient-border gradient-border-static rounded-xl p-6 card-shadow relative overflow-hidden h-full">
           <div className="relative z-10 flex h-full flex-col gap-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -2424,7 +2427,7 @@ export function Dashboard() {
 
       {/* Weekly Study Goals */}
       <motion.div id="dashboard-weekly-goals" variants={fadeUp} className="scroll-mt-24">
-        <div className="glass mesh-gradient gradient-border rounded-xl p-6 card-shadow relative overflow-hidden">
+        <div className="glass mesh-gradient gradient-border gradient-border-static rounded-xl p-6 card-shadow relative overflow-hidden">
           <div className="relative z-10 space-y-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

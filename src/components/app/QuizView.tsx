@@ -33,12 +33,14 @@ import {
   Loader2,
   X,
   LayoutGrid,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { useAppStore } from '@/stores/appStore';
 import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
 import { toast } from 'sonner';
@@ -77,6 +79,7 @@ import {
   TYPE_BADGE_GRADIENT,
   ErrorCorrectionInput,
   MatchingInput,
+  FillBlankBoxes,
   type ErrorAnalysisResponse,
   ERROR_REPORT_STORAGE_KEY,
   WeaknessReportDialog,
@@ -86,6 +89,7 @@ import { ExamMode } from './quiz/ExamMode';
 import { useBackgroundGeneration } from '@/hooks/useBackgroundGeneration';
 import { GraduationCap, Cpu } from 'lucide-react';
 import { appendToQuestionCache, loadQuestionCache, getPreferredTypes, setPreferredTypes, ALL_QUESTION_TYPES } from '@/lib/questionCache';
+import { isRenderableQuestion } from '@/lib/validate';
 import { getLocalCourseContent, isLocalCourse } from '@/lib/localLibrary';
 
 const TYPE_CHIP_LABELS: Record<string, string> = {
@@ -130,9 +134,12 @@ export function QuizView() {
   // as Auto-gen works instead of being stuck at the first batch.
   const allQuestions = useMemo(() => {
     const cache = bgCourseId ? loadQuestionCache(bgCourseId)?.questions ?? [] : [];
-    if (cache.length === 0) return currentQuestions;
-    const seen = new Set(currentQuestions.map((q) => q.question.toLowerCase()));
-    const merged = [...currentQuestions];
+    // Stale-format sweep on the store pool too (server-fetched questions can
+    // predate current validation rules — old multi-blank fill-ins etc.)
+    const currentQuestions_ = currentQuestions.filter((q) => isRenderableQuestion(q));
+    if (cache.length === 0) return currentQuestions_;
+    const seen = new Set(currentQuestions_.map((q) => q.question.toLowerCase()));
+    const merged = [...currentQuestions_];
     for (const q of cache) {
       if (!seen.has(q.question.toLowerCase())) {
         seen.add(q.question.toLowerCase());
@@ -236,6 +243,9 @@ export function QuizView() {
   const [bestStreak, setBestStreak] = useState(0);
   const [showStreakPopup, setShowStreakPopup] = useState(false);
   const [showQuestionMap, setShowQuestionMap] = useState(false);
+  // Quiz controls live in a right-side panel (like the tutor page)
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const [courseChipQuery, setCourseChipQuery] = useState('');
   const [showBonusPopup, setShowBonusPopup] = useState(false);
   const [hintsUsed, setHintsUsed] = useState<Record<string, boolean>>({});
   const [fillBlankValues, setFillBlankValues] = useState<Record<string, string>>({});
@@ -378,7 +388,7 @@ export function QuizView() {
   const dailyAnimatedScore = useAnimatedCounter(dailyShowResults ? dailyScore : 0, 1500);
   const dailyMultiplier = getScoreMultiplier(dailyStreak.current);
   const dailyStars = getStars(dailyScore, dailyQuestions.length);
-  const dailyTimerCircumference = 2 * Math.PI * 28;
+  const dailyTimerCircumference = 2 * Math.PI * 52;
   const dailyTimerPercent = dailyTimerLeft / DAILY_TIMER_SECONDS;
   const dailyTimerStroke = dailyTimerCircumference * (1 - dailyTimerPercent);
 
@@ -1260,7 +1270,8 @@ export function QuizView() {
             </div>
           </div>
 
-          <div className="flex flex-wrap justify-center gap-3">
+          {/* Stacks full-width on phones so buttons never overflow the card */}
+          <div className="flex flex-col sm:flex-row sm:flex-wrap justify-center gap-2 sm:gap-3 [&_button]:w-full sm:[&_button]:w-auto [&>div]:w-full sm:[&>div]:w-auto">
             <Button
               onClick={handleMoreQuestions}
               disabled={loadingMore}
@@ -1545,135 +1556,13 @@ export function QuizView() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6 rounded-xl p-5 mesh-gradient gradient-border overflow-hidden"
+          className="mb-6 rounded-xl p-5 mesh-gradient gradient-border gradient-border-static overflow-hidden"
         >
           <div className="relative z-10">
-            <div className="flex flex-wrap items-center justify-between gap-y-3 mb-3">
-              <div className="flex flex-wrap items-center gap-3 min-w-0">
-                <h1 className="text-xl font-bold gradient-text">{studyMode === 'quiz' ? 'Quiz Practice' : studyMode === 'flashcard' ? 'Flashcard Study' : studyMode === 'review' ? 'Spaced Review' : 'Daily Challenge'}</h1>
-                {/* Adaptive toggle */}
-                <button
-                  onClick={() => {
-                    setAdaptiveOn((prev) => !prev);
-                    setCurrentIndex(0);
-                    setAnswers({});
-                    setAnswered({});
-                    setShowExplanation(false);
-                    setShowResults(false);
-                    setStreak(0);
-                    setBestStreak(0);
-                    setTimerStarted(false);
-                    setTimerSeconds(0);
-                  }}
-                  className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all border ${
-                    adaptiveOn
-                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-400'
-                      : 'text-muted-foreground hover:text-foreground border-transparent'
-                  }`}
-                  title={adaptiveOn ? 'Disable adaptive difficulty' : 'Enable adaptive difficulty'}
-                >
-                  <Brain className="w-3.5 h-3.5" />
-                  Adaptive
-                </button>
-                {/* Background generation toggle — builds the question cache section by section */}
-                {bgCourseId && (
-                  <button
-                    onClick={() => bgGen.setEnabled(!bgGen.enabled)}
-                    className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all border ${
-                      bgGen.enabled
-                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-700 dark:text-cyan-400'
-                        : 'text-muted-foreground hover:text-foreground border-transparent'
-                    }`}
-                    title={
-                      bgGen.enabled
-                        ? bgGen.paused
-                          ? 'Background generation paused while the tutor is teaching'
-                          : 'Generating questions in the background — click to stop'
-                        : 'Generate questions in the background so quizzes start instantly'
-                    }
-                  >
-                    {bgGen.running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cpu className="w-3.5 h-3.5" />}
-                    Auto-gen
-                    {bgGen.enabled && bgGen.sectionsTotal != null && (
-                      <span className="tabular-nums">{bgGen.sectionsDone}/{bgGen.sectionsTotal}</span>
-                    )}
-                  </button>
-                )}
-                {/* Exam mode */}
-                <button
-                  onClick={() => setExamOpen(true)}
-                  className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all border border-transparent text-muted-foreground hover:text-foreground"
-                  title="Timed exam: set a duration and question count"
-                >
-                  <GraduationCap className="w-3.5 h-3.5" />
-                  Exam
-                </button>
-                {/* Mode toggle — full-width evenly spaced on phones, inline on larger screens */}
-                <div className="flex w-full sm:w-auto items-center rounded-lg border border-border bg-background/50 p-0.5">
-                  <button
-                    onClick={() => handleModeChange('quiz')}
-                    className={`flex flex-1 sm:flex-initial items-center justify-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                      studyMode === 'quiz'
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <HelpCircle className="w-3.5 h-3.5" />
-                    Quiz
-                  </button>
-                  <button
-                    onClick={() => handleModeChange('flashcard')}
-                    className={`flex flex-1 sm:flex-initial items-center justify-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                      studyMode === 'flashcard'
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <Layers className="w-3.5 h-3.5" />
-                    Flashcard
-                  </button>
-                  <button
-                    onClick={() => handleModeChange('daily')}
-                    className={`flex flex-1 sm:flex-initial items-center justify-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                      studyMode === 'daily'
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <Flame className="w-3.5 h-3.5" />
-                    Daily
-                  </button>
-                  <button
-                    onClick={() => handleModeChange('review')}
-                    className={`relative flex flex-1 sm:flex-initial items-center justify-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                      studyMode === 'review'
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <Brain className="w-3.5 h-3.5" />
-                    Review
-                    {overdueCount > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-white px-1">
-                        {overdueCount}
-                      </span>
-                    )}
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* Adaptive badge */}
-                {adaptiveOn && studyMode === 'quiz' && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3 py-1"
-                  >
-                    <Brain className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                    <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Adaptive</span>
-                  </motion.div>
-                )}
+            {/* Row 1: page title + live status (timer / streak / map) */}
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h1 className="text-xl font-bold gradient-text truncate">{studyMode === 'quiz' ? 'Quiz Practice' : studyMode === 'flashcard' ? 'Flashcard Study' : studyMode === 'review' ? 'Spaced Review' : 'Daily Challenge'}</h1>
+              <div className="flex items-center gap-2 shrink-0">
                 {/* Timer display (quiz mode only) */}
                 {studyMode === 'quiz' && timerStarted && (
                   <motion.div
@@ -1707,7 +1596,7 @@ export function QuizView() {
                         style={{ opacity: timerStarted && !showResults ? 0.7 : 0.3 }}
                       />
                     </svg>
-                    <span className={`absolute inset-0 flex items-center justify-center text-[9px] leading-none font-mono font-medium tabular-nums ${
+                    <span className={`absolute inset-0 flex items-center justify-center text-[7px] leading-none font-mono font-medium tabular-nums tracking-tight ${
                       timerSeconds < 30 && !showResults ? 'text-red-500' : 'text-muted-foreground'
                     }`}>{formatTimer(timerSeconds)}</span>
                   </motion.div>
@@ -1740,15 +1629,163 @@ export function QuizView() {
                     </Button>
                   </motion.div>
                 )}
+                {/* All quiz controls live in a side panel — page stays clean */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setControlsOpen(true)}
+                  className="h-8 gap-1.5 text-xs border-border text-muted-foreground hover:text-foreground hover:border-primary/30"
+                  title="Open quiz controls"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Controls</span>
+                </Button>
               </div>
             </div>
+
+            {/* Controls side panel (like the tutor page's right panel) */}
+            <Sheet open={controlsOpen} onOpenChange={setControlsOpen}>
+              <SheetContent side="right" className="w-80 max-w-[85vw] overflow-y-auto p-4">
+                <SheetHeader className="p-0 pb-3">
+                  <SheetTitle className="text-base">Quiz Controls</SheetTitle>
+                  <SheetDescription className="text-xs">
+                    Modes, tools, courses and question types.
+                  </SheetDescription>
+                </SheetHeader>
+
+            {/* Grouped controls — study modes | tools */}
+            <div className="flex flex-col gap-2 mb-3">
+              {/* Tools group: Adaptive / Auto-gen / Exam */}
+              <div className="flex w-full gap-0.5 rounded-lg border border-border bg-background/50 p-0.5 [&>button]:flex-1 [&>button]:justify-center [&>button]:whitespace-nowrap [&>button]:px-1.5 [&>button]:text-[11px]">
+                <button
+                  onClick={() => {
+                    setControlsOpen(false);
+                    setAdaptiveOn((prev) => !prev);
+                    setCurrentIndex(0);
+                    setAnswers({});
+                    setAnswered({});
+                    setShowExplanation(false);
+                    setShowResults(false);
+                    setStreak(0);
+                    setBestStreak(0);
+                    setTimerStarted(false);
+                    setTimerSeconds(0);
+                  }}
+                  className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all border ${
+                    adaptiveOn
+                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-400'
+                      : 'text-muted-foreground hover:text-foreground border-transparent'
+                  }`}
+                  title={adaptiveOn ? 'Disable adaptive difficulty' : 'Enable adaptive difficulty'}
+                >
+                  <Brain className="w-3.5 h-3.5" />
+                  Adaptive
+                </button>
+                {/* Background generation toggle — builds the question cache section by section */}
+                {bgCourseId && (
+                  <button
+                    onClick={() => { setControlsOpen(false); bgGen.setEnabled(!bgGen.enabled); }}
+                    className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all border ${
+                      bgGen.enabled
+                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-700 dark:text-cyan-400'
+                        : 'text-muted-foreground hover:text-foreground border-transparent'
+                    }`}
+                    title={
+                      bgGen.enabled
+                        ? bgGen.paused
+                          ? 'Background generation paused while the tutor is teaching'
+                          : 'Generating questions in the background — click to stop'
+                        : 'Generate questions in the background so quizzes start instantly'
+                    }
+                  >
+                    {bgGen.running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cpu className="w-3.5 h-3.5" />}
+                    Auto-gen
+                    {bgGen.enabled && bgGen.sectionsTotal != null && (
+                      <span className="tabular-nums">{bgGen.sectionsDone}/{bgGen.sectionsTotal}</span>
+                    )}
+                  </button>
+                )}
+                {/* Exam mode */}
+                <button
+                  onClick={() => { setControlsOpen(false); setExamOpen(true); }}
+                  className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all border border-transparent text-muted-foreground hover:text-foreground"
+                  title="Timed exam: set a duration and question count"
+                >
+                  <GraduationCap className="w-3.5 h-3.5" />
+                  Exam
+                </button>
+              </div>
+                {/* Mode toggle — 2x2 grid so it never overflows the panel */}
+                <div className="grid grid-cols-2 w-full gap-0.5 rounded-lg border border-border bg-background/50 p-0.5">
+                  <button
+                    onClick={() => handleModeChange('quiz')}
+                    className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                      studyMode === 'quiz'
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <HelpCircle className="w-3.5 h-3.5" />
+                    Quiz
+                  </button>
+                  <button
+                    onClick={() => handleModeChange('flashcard')}
+                    className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                      studyMode === 'flashcard'
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    Flashcard
+                  </button>
+                  <button
+                    onClick={() => handleModeChange('daily')}
+                    className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                      studyMode === 'daily'
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Flame className="w-3.5 h-3.5" />
+                    Daily
+                  </button>
+                  <button
+                    onClick={() => handleModeChange('review')}
+                    className={`relative flex flex-1 items-center justify-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                      studyMode === 'review'
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Brain className="w-3.5 h-3.5" />
+                    Review
+                    {overdueCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-white px-1">
+                        {overdueCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              </div>
             {/* Course filter tabs (not shown in daily mode) */}
             {studyMode !== 'daily' && studyMode !== 'review' && (
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <>
+            {courses.length > 3 && (
+              <Input
+                placeholder="Search your courses..."
+                value={courseChipQuery}
+                onChange={(e) => setCourseChipQuery(e.target.value)}
+                className="h-8 text-xs mb-2"
+              />
+            )}
+            <div className="flex flex-wrap items-center gap-2 pb-1">
             {[
               { id: 'all', label: 'All Questions' },
               // Real uploaded courses only — no hardcoded demo groups
-              ...courses.map((c) => ({ id: c.id, label: c.title })),
+              ...courses
+                .filter((c) => !courseChipQuery.trim() || c.title.toLowerCase().includes(courseChipQuery.toLowerCase()))
+                .map((c) => ({ id: c.id, label: c.title })),
             ].map((group) => (
               <button
                 key={group.id}
@@ -1818,7 +1855,10 @@ export function QuizView() {
               </motion.button>
             )}
           </div>
+            </>
             )}
+              </SheetContent>
+            </Sheet>
             {/* Adaptive reasoning */}
             {adaptiveOn && studyMode === 'quiz' && adaptiveReasoning && (
               <motion.p
@@ -1942,99 +1982,93 @@ export function QuizView() {
             animate={{ opacity: 1, y: 0 }}
             className="mb-6"
           >
-            <div className={`glass-accent-top rounded-2xl p-6 animated-border relative overflow-hidden ${dailyStreak.current > 3 ? 'ring-2 ring-orange-500/30' : ''}`}>
-              <div className="relative z-10">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-2">
-                    <h2 className="text-2xl font-bold gradient-text-animated">Daily Challenge</h2>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-                      <div className="flex items-center gap-1.5">
-                        <Calendar className="h-4 w-4" />
-                        <span>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
-                      </div>
-                      {dailyStreak.current > 0 && (
-                        <motion.div
-                          initial={{ scale: 0.9 }}
-                          animate={{ scale: 1 }}
-                          className="flex items-center gap-1.5 font-semibold"
-                          style={{ background: 'linear-gradient(90deg, #f97316, #ef4444)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
-                        >
-                          <motion.div
-                            animate={{ scale: [1, 1.15, 1] }}
-                            transition={{ duration: 0.8, repeat: Infinity, ease: 'easeInOut' }}
-                          >
-                            <Flame className="h-4 w-4" style={{ color: '#f97316' }} />
-                          </motion.div>
-                          <span>{dailyStreak.current} day streak!</span>
-                        </motion.div>
-                      )}
-                      {dailyMultiplier > 1 && (
-                        <motion.div
-                          initial={{ scale: 0.8, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-xs font-bold text-amber-600 dark:text-amber-400"
-                        >
-                          <Zap className="h-3 w-3" />
-                          {dailyMultiplier}x multiplier
-                        </motion.div>
-                      )}
+            {/* Focus-style centerpiece: big timer in the middle, meta below.
+                No "Daily Challenge" title here — the page header already says it. */}
+            <div className={`glass-accent-top rounded-2xl p-8 animated-border relative overflow-hidden ${dailyStreak.current > 3 ? 'ring-2 ring-orange-500/30' : ''}`}>
+              <div className="relative z-10 flex flex-col items-center text-center gap-4">
+                {/* Big circular timer — the centerpiece */}
+                {!dailyShowResults && (
+                  <div className="relative" aria-live="polite">
+                    <svg width="128" height="128" className="-rotate-90">
+                      <circle
+                        cx="64"
+                        cy="64"
+                        r="52"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="6"
+                        className="text-muted/20"
+                      />
+                      <motion.circle
+                        cx="64"
+                        cy="64"
+                        r="52"
+                        fill="none"
+                        stroke="url(#dailyTimerGrad)"
+                        strokeWidth="7"
+                        strokeLinecap="round"
+                        strokeDasharray={dailyTimerCircumference}
+                        initial={false}
+                        animate={{ strokeDashoffset: dailyTimerStroke }}
+                        transition={{ duration: 0.5, ease: 'easeOut' }}
+                      />
+                      <defs>
+                        <linearGradient id="dailyTimerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#10b981" />
+                          <stop offset="100%" stopColor="#14b8a6" />
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className={`text-2xl font-mono font-bold tabular-nums ${dailyTimerLeft <= 30 ? 'text-destructive' : 'text-foreground'}`}>
+                        {formatTimer(dailyTimerLeft)}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    {/* Circular SVG Timer */}
-                    {!dailyShowResults && (
-                      <div className="relative" aria-live="polite">
-                        <svg width="64" height="64" className="-rotate-90">
-                          <circle
-                            cx="32"
-                            cy="32"
-                            r="28"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                            className="text-muted/20"
-                          />
-                          <motion.circle
-                            cx="32"
-                            cy="32"
-                            r="28"
-                            fill="none"
-                            stroke="url(#dailyTimerGrad)"
-                            strokeWidth="5"
-                            strokeLinecap="round"
-                            strokeDasharray={dailyTimerCircumference}
-                            initial={false}
-                            animate={{ strokeDashoffset: dailyTimerStroke }}
-                            transition={{ duration: 0.5, ease: 'easeOut' }}
-                          />
-                          <defs>
-                            <linearGradient id="dailyTimerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                              <stop offset="0%" stopColor="#10b981" />
-                              <stop offset="100%" stopColor="#14b8a6" />
-                            </linearGradient>
-                          </defs>
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className={`text-xs font-mono font-bold ${dailyTimerLeft <= 30 ? 'text-destructive' : 'text-foreground'}`}>
-                            {formatTimer(dailyTimerLeft)}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    <div className="text-right space-y-1">
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Clock className="h-3.5 w-3.5" />
-                        <span>Resets in</span>
-                      </div>
-                      <div className="font-mono text-lg font-bold tabular-nums">
-                        {String(dailyTimeLeft.hours).padStart(2, '0')}:{String(dailyTimeLeft.minutes).padStart(2, '0')}:{String(dailyTimeLeft.seconds).padStart(2, '0')}
-                      </div>
-                    </div>
+                )}
+                {/* Meta: date · streak · multiplier · reset countdown */}
+                <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="h-4 w-4" />
+                    <span>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
+                  </div>
+                  {dailyStreak.current > 0 && (
+                    <motion.div
+                      initial={{ scale: 0.9 }}
+                      animate={{ scale: 1 }}
+                      className="flex items-center gap-1.5 font-semibold"
+                      style={{ background: 'linear-gradient(90deg, #f97316, #ef4444)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
+                    >
+                      <motion.div
+                        animate={{ scale: [1, 1.15, 1] }}
+                        transition={{ duration: 0.8, repeat: Infinity, ease: 'easeInOut' }}
+                      >
+                        <Flame className="h-4 w-4" style={{ color: '#f97316' }} />
+                      </motion.div>
+                      <span>{dailyStreak.current} day streak!</span>
+                    </motion.div>
+                  )}
+                  {dailyMultiplier > 1 && (
+                    <motion.div
+                      initial={{ scale: 0.8, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-xs font-bold text-amber-600 dark:text-amber-400"
+                    >
+                      <Zap className="h-3 w-3" />
+                      {dailyMultiplier}x multiplier
+                    </motion.div>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5" />
+                    <span>Resets in</span>
+                    <span className="font-mono font-bold tabular-nums text-foreground">
+                      {String(dailyTimeLeft.hours).padStart(2, '0')}:{String(dailyTimeLeft.minutes).padStart(2, '0')}:{String(dailyTimeLeft.seconds).padStart(2, '0')}
+                    </span>
                   </div>
                 </div>
                 {/* Daily progress bar */}
                 {!dailyShowResults && (
-                  <div className="mt-4">
+                  <div className="w-full max-w-md">
                     <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
                       <span>Question {Math.min(currentIndex + 1, dailyQuestions.length)} of {dailyQuestions.length}</span>
                       <span>{dailyScore} correct</span>
@@ -2903,7 +2937,7 @@ export function QuizView() {
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: -40, scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-              className="glass rounded-xl p-6 space-y-6 glow-emerald gradient-border overflow-hidden"
+              className="glass rounded-xl p-6 space-y-6 glow-emerald gradient-border gradient-border-static overflow-hidden"
             >
               {/* Concept tag + bookmark */}
               <div className="flex items-center justify-between">
@@ -3115,30 +3149,21 @@ export function QuizView() {
               )}
 
               {currentQ.type === 'fill_blank' && !answered[currentQ.id] && (
-                <div className="space-y-2">
-                  {/* Letter boxes: one slot per character of the answer, with
-                      what the learner typed mapped in. Casing is forgiven. */}
-                  {currentQ.answer.length <= 16 && (
-                    <div className="flex flex-wrap gap-1.5 justify-center py-1" aria-hidden>
-                      {currentQ.answer.split('').map((ch, i) => {
-                        const typedCh = (fillBlankValues[currentQ.id] || '')[i] || '';
-                        return ch === ' ' ? (
-                          <span key={i} className="w-3" />
-                        ) : (
-                          <span
-                            key={i}
-                            className={`flex h-9 w-8 items-center justify-center rounded-md border text-sm font-semibold uppercase transition-colors ${
-                              typedCh
-                                ? 'border-primary/50 bg-primary/10 text-foreground'
-                                : 'border-border bg-background/50 text-transparent'
-                            }`}
-                          >
-                            {typedCh || '·'}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
+                currentQ.answer.length <= 24 ? (
+                  /* Type straight into the letter boxes — space/comma/Enter
+                     jumps to the next word, Hint fills one real slot */
+                  <FillBlankBoxes
+                    key={currentQ.id}
+                    answer={currentQ.answer}
+                    hintUsed={!!hintsUsed[currentQ.id]}
+                    onHint={() => {
+                      setHintsUsed((prev) => ({ ...prev, [currentQ.id]: true }));
+                      toast.info('Hint: one letter filled in for you! (−25% points)', { duration: 3000 });
+                    }}
+                    onSubmit={(value) => handleAnswer(value)}
+                  />
+                ) : (
+                  /* Long answers fall back to a plain field */
                   <div className="flex gap-2 items-center">
                     <Input
                       placeholder="Fill in the blank..."
@@ -3149,7 +3174,6 @@ export function QuizView() {
                           handleAnswer((e.target as HTMLInputElement).value);
                         }
                       }}
-                      className={hintsUsed[currentQ.id] ? 'border-blue-500 focus-visible:ring-blue-500' : ''}
                     />
                     <Button
                       onClick={() => {
@@ -3161,37 +3185,7 @@ export function QuizView() {
                       Submit
                     </Button>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">
-                      {(fillBlankValues[currentQ.id] || '').length} characters
-                    </span>
-                    {!hintsUsed[currentQ.id] && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400"
-                        onClick={() => {
-                          const firstLetter = currentQ.answer[0] || '';
-                          setHintsUsed((prev) => ({ ...prev, [currentQ.id]: true }));
-                          setFillBlankValues((prev) => ({
-                            ...prev,
-                            [currentQ.id]: (prev[currentQ.id] || '') + firstLetter,
-                          }));
-                          toast.info(`Hint: First letter "${firstLetter}" revealed! (−25% points)`, { duration: 3000 });
-                        }}
-                      >
-                        <Lightbulb className="h-3.5 w-3.5 mr-1" />
-                        Hint
-                      </Button>
-                    )}
-                    {hintsUsed[currentQ.id] && (
-                      <span className="text-xs text-blue-500 flex items-center gap-1">
-                        <Lightbulb className="h-3 w-3" />
-                        Hint used (−25%)
-                      </span>
-                    )}
-                  </div>
-                </div>
+                )
               )}
 
               {currentQ.type === 'fill_blank' && answered[currentQ.id] && (
@@ -3439,7 +3433,9 @@ export function QuizView() {
 
         {/* Question Map Dialog */}
         <Dialog open={showQuestionMap} onOpenChange={setShowQuestionMap}>
-          <DialogContent className="max-w-md p-0">
+          {/* min() keeps the dialog inside small viewports — a plain max-w-md
+              overrode the base mobile clamp and overflowed the screen */}
+          <DialogContent className="max-w-[min(28rem,calc(100vw-1.5rem))] p-0">
             <DialogHeader className="px-6 pt-6 pb-3">
               <DialogTitle className="flex items-center gap-2 text-base">
                 <LayoutGrid className="h-4 w-4 text-primary" />
@@ -3470,7 +3466,7 @@ export function QuizView() {
                 </div>
               </div>
               {/* Grid */}
-              <div className="grid grid-cols-5 gap-2 max-h-64 overflow-y-auto">
+              <div className="grid grid-cols-5 gap-2 max-h-[55vh] overflow-y-auto">
                 {questions.map((q, i) => {
                   const isCurrent = i === currentIndex;
                   const isAnswered = answered[q.id];

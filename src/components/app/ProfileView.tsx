@@ -576,7 +576,7 @@ export function ProfileView() {
       {/* ════════════════════════════════════════════
           1. Profile Header
       ════════════════════════════════════════════ */}
-      <motion.div variants={fadeUp} className="glass rounded-2xl overflow-hidden gradient-border card-shadow">
+      <motion.div variants={fadeUp} className="glass rounded-2xl overflow-hidden gradient-border gradient-border-static card-shadow">
         {/* Animated gradient header strip */}
         <div className="h-24 sm:h-28 mesh-gradient relative overflow-hidden">
           <motion.div

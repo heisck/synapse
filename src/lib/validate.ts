@@ -131,12 +131,15 @@ export function validateQuestions(items: unknown[]): ValidationResult {
         return;
       }
     } else if (type === 'fill_blank') {
-      if (!question.includes('___')) {
-        errors.push(`${label}: fill_blank question must contain a "___" blank`);
+      // EXACTLY ONE blank: the letter-box input answers a single term.
+      // Multi-blank questions ("___ , ___ and ___") are a stale format.
+      const blanks = question.match(/_{2,}/g)?.length ?? 0;
+      if (blanks !== 1) {
+        errors.push(`${label}: fill_blank question must contain exactly ONE "___" blank (got ${blanks}) — one missing term per question`);
         return;
       }
-      if (answer.length > 60) {
-        errors.push(`${label}: fill_blank answer must be a short term (got ${answer.length} chars)`);
+      if (answer.length > 24) {
+        errors.push(`${label}: fill_blank answer must be a short single term, max 24 characters (got ${answer.length})`);
         return;
       }
     } else if (type === 'matching') {
@@ -187,6 +190,43 @@ export function validateQuestions(items: unknown[]): ValidationResult {
   });
 
   return { valid, errors };
+}
+
+/**
+ * Client-safe re-check for ALREADY-STORED questions. When the validation
+ * rules evolve (e.g. fill_blank went from "at least one blank" to "exactly
+ * one"), previously cached questions can silently violate the current
+ * contract. Callers sweep their caches through this and DELETE stale items —
+ * the background generator then regenerates them in the new style.
+ */
+export function isRenderableQuestion(q: {
+  type?: string;
+  question?: string;
+  answer?: string;
+  options?: unknown;
+  matchingPairs?: unknown;
+}): boolean {
+  const question = typeof q.question === 'string' ? q.question.trim() : '';
+  const answer = typeof q.answer === 'string' ? q.answer.trim() : '';
+  const type = q.type || 'multiple_choice';
+  if (question.length < 10) return false;
+  if (isMetaLeak(question)) return false;
+
+  if (type === 'multiple_choice') {
+    const options = Array.isArray(q.options) ? q.options.map((o) => String(o ?? '').trim()).filter(Boolean) : [];
+    if (options.length !== 4 || new Set(options.map(normalize)).size !== 4) return false;
+    if (!options.some((o) => normalize(o) === normalize(answer))) return false;
+  } else if (type === 'true_false') {
+    if (!/^(true|false)$/i.test(answer)) return false;
+  } else if (type === 'fill_blank') {
+    const blanks = question.match(/_{2,}/g)?.length ?? 0;
+    if (blanks !== 1) return false;
+    if (!answer || answer.length > 24) return false;
+  } else if (type === 'matching') {
+    const pairs = Array.isArray(q.matchingPairs) ? q.matchingPairs : [];
+    if (pairs.length < 3 || pairs.length > 5) return false;
+  }
+  return true;
 }
 
 /** Validates a single regenerated question object. */

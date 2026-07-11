@@ -184,7 +184,7 @@ function QuickTips() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.3, type: 'spring', stiffness: 200, damping: 25 }}
-      className="glass rounded-xl p-5 space-y-3 card-shadow gradient-border"
+      className="glass rounded-xl p-5 space-y-3 card-shadow gradient-border gradient-border-static"
     >
       <h3 className="text-sm font-semibold flex items-center gap-2">
         <Lightbulb className="h-4 w-4 text-amber-500" />
@@ -815,7 +815,7 @@ export function UploadView() {
       {/* Gradient header */}
       <motion.div
         variants={fadeUp}
-        className="rounded-xl p-6 mesh-gradient gradient-border overflow-hidden"
+        className="rounded-xl p-6 mesh-gradient gradient-border gradient-border-static overflow-hidden"
       >
         <FloatingParticles />
         <div className="relative z-10">
@@ -1014,7 +1014,9 @@ export function UploadView() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="space-y-2 max-h-96 overflow-y-auto scroll-fade-bottom"
+            // Fade only when there's actually something to scroll to — the
+            // mask was washing out a lone uploaded file card
+            className={`space-y-2 max-h-96 overflow-y-auto ${files.length > 4 ? 'scroll-fade-bottom' : ''}`}
           >
             {files.map((f, idx) => {
               const ext = getFileExt(f.file.name);
@@ -1089,7 +1091,7 @@ export function UploadView() {
       {/* Action Buttons */}
       {files.length > 0 && !generatedCount && (
         <motion.div variants={fadeUp} className="flex flex-wrap gap-3">
-          <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+          <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="w-full sm:w-auto [&_button]:w-full sm:[&_button]:w-auto">
             <Button
               onClick={simulateUpload}
               disabled={files.every((f) => f.status === 'done') || files.every((f) => f.status === 'uploading' || f.status === 'processing') || isUploading}
@@ -1101,9 +1103,15 @@ export function UploadView() {
           </motion.div>
           {(extractedSlides.length > 0 || files.some((f) => f.status === 'done')) && (
             <>
-              <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+              {/* ONE generate button: uses your slide selection when you've
+                  narrowed it, otherwise covers everything */}
+              <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="w-full sm:w-auto [&_button]:w-full sm:[&_button]:w-auto">
                 <Button
-                  onClick={() => simulateGenerate(false)}
+                  onClick={() => simulateGenerate(
+                    extractedSlides.length > 0 &&
+                    selectedSlideIds.size > 0 &&
+                    selectedSlideIds.size < extractedSlides.length
+                  )}
                   disabled={!files.some((f) => f.status === 'done') || isGenerating}
                   variant="outline"
                 >
@@ -1112,25 +1120,33 @@ export function UploadView() {
                   ) : (
                     <Sparkles className="h-4 w-4 mr-2" />
                   )}
-                  Generate Questions for All
+                  {extractedSlides.length > 0 && selectedSlideIds.size > 0 && selectedSlideIds.size < extractedSlides.length
+                    ? `Generate Questions (${selectedSlideIds.size} slides)`
+                    : 'Generate Questions'}
                 </Button>
               </motion.div>
-              {extractedSlides.length > 0 && (
-                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
-                  <Button
-                    onClick={() => simulateGenerate(true)}
-                    disabled={selectedSlideIds.size === 0 || isGenerating}
-                    variant="outline"
-                    className="text-emerald-600 border-emerald-300 hover:bg-emerald-50"
-                  >
-                    {isGenerating ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-4 w-4 mr-2" />
-                    )}
-                    Generate for Selected ({selectedSlideIds.size})
-                  </Button>
-                </motion.div>
+              {/* Jump straight in — no need to generate first */}
+              {files.some((f) => f.status === 'done') && (
+                <>
+                  <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="w-full sm:w-auto [&_button]:w-full sm:[&_button]:w-auto">
+                    <Button
+                      onClick={() => {
+                        setActiveSession(`session-${Date.now()}`, activeCourse?.id, activeCourse?.title ?? 'Study Session');
+                        navigate('tutor');
+                      }}
+                      className="glow-emerald transition-shadow duration-300"
+                    >
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      Start Tutor
+                    </Button>
+                  </motion.div>
+                  <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="w-full sm:w-auto [&_button]:w-full sm:[&_button]:w-auto">
+                    <Button variant="outline" onClick={() => navigate('quiz')}>
+                      <ClipboardCheck className="h-4 w-4 mr-2" />
+                      Take Quiz
+                    </Button>
+                  </motion.div>
+                </>
               )}
             </>
           )}
@@ -1238,7 +1254,7 @@ export function UploadView() {
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="glass rounded-xl p-6 text-center space-y-4 card-shadow gradient-border"
+            className="glass rounded-xl p-6 text-center space-y-4 card-shadow gradient-border gradient-border-static"
           >
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-linear-to-br from-emerald-500/15 to-teal-500/15 mx-auto pulse-glow">
               <CheckCircle2 className="h-8 w-8 text-emerald-500" />
@@ -1250,7 +1266,7 @@ export function UploadView() {
               </p>
             </div>
             <div className="flex flex-wrap justify-center gap-3">
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full sm:w-auto [&_button]:w-full sm:[&_button]:w-auto">
                 <Button
                   onClick={() => {
                     setActiveSession(`session-${Date.now()}`, activeCourse?.id, activeCourse?.title ?? 'Study Session');
@@ -1262,7 +1278,7 @@ export function UploadView() {
                   Start Tutor
                 </Button>
               </motion.div>
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full sm:w-auto [&_button]:w-full sm:[&_button]:w-auto">
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -1274,7 +1290,7 @@ export function UploadView() {
                   Take Quiz
                 </Button>
               </motion.div>
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="w-full sm:w-auto [&_button]:w-full sm:[&_button]:w-auto">
                 <Button
                   variant="outline"
                   onClick={() => navigate('course-detail')}

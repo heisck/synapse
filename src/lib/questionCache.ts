@@ -5,6 +5,7 @@
  * generation can resume exactly where it stopped.
  */
 import type { Question } from '@/types';
+import { isRenderableQuestion } from './validate';
 
 export interface CourseQuestionCache {
   courseId: string;
@@ -21,7 +22,18 @@ export function loadQuestionCache(courseId: string): CourseQuestionCache | null 
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(KEY_PREFIX + courseId);
-    return raw ? (JSON.parse(raw) as CourseQuestionCache) : null;
+    const cache = raw ? (JSON.parse(raw) as CourseQuestionCache) : null;
+    if (!cache) return null;
+    // Stale-format sweep: whenever validation rules tighten (e.g. fill_blank
+    // now requires exactly one blank), old cached questions that no longer
+    // pass are DELETED here — the generator refills the pool in the new style.
+    const kept = cache.questions.filter((q) => isRenderableQuestion(q));
+    if (kept.length !== cache.questions.length) {
+      const swept: CourseQuestionCache = { ...cache, questions: kept, updatedAt: Date.now() };
+      saveQuestionCache(swept);
+      return swept;
+    }
+    return cache;
   } catch {
     return null;
   }

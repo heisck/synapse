@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useAppStore, type AppState } from '@/stores/appStore';
-import type { LearnerProfile, MasteryMap, ChatMessage, Course, StudyGoal, StudyNotification, AdaptiveResult } from '@/types';
+import type { LearnerProfile, MasteryMap, ChatMessage, StudyGoal, StudyNotification, AdaptiveResult } from '@/types';
 
 const STORAGE_KEY_PREFIX = 'synapselearn_';
 const KEYS = {
@@ -108,9 +108,13 @@ export function useSessionPersistence(): void {
     if (isRestoredRef.current) return;
     isRestoredRef.current = true;
 
+    // Courses live ONLY in IndexedDB (localLibrary) — the old localStorage
+    // mirror kept resurrecting ghost courses whose slides no longer exist
+    // anywhere (pre-local-first server uploads). Remove the stale mirror.
+    try { localStorage.removeItem(KEYS.courses); } catch { /* ignore */ }
+
     const savedMessages: ChatMessage[] = safeGetItem(KEYS.messages, []);
     const savedProfile = safeGetItem<LearnerProfile | null>(KEYS.learnerProfile, null);
-    const savedCourses: Course[] = safeGetItem(KEYS.courses, []);
     const savedMasteryMap: MasteryMap = safeGetItem(KEYS.masteryMap, {});
     const savedQuizScore = safeGetItem<{ score: number; total: number } | null>(KEYS.quizScore, null);
     const savedOnboarding = safeGetItem<boolean>(KEYS.onboarding, false);
@@ -140,7 +144,6 @@ export function useSessionPersistence(): void {
     const hasData =
       savedMessages.length > 0 ||
       savedProfile !== null ||
-      savedCourses.length > 0 ||
       Object.keys(savedMasteryMap).length > 0 ||
       savedOnboarding ||
       savedDailyChallenge !== null ||
@@ -161,7 +164,6 @@ export function useSessionPersistence(): void {
     const restoredState: Partial<AppState> = {
       ...(savedMessages.length > 0 && { messages: savedMessages }),
       ...(savedProfile && { learnerProfile: savedProfile, onboardingComplete: true }),
-      ...(savedCourses.length > 0 && { courses: savedCourses }),
       ...(Object.keys(savedMasteryMap).length > 0 && { masteryMap: savedMasteryMap }),
       ...(savedQuizScore && { quizScore: savedQuizScore.score, quizTotal: savedQuizScore.total }),
       ...(savedOnboarding && { onboardingComplete: savedOnboarding }),
@@ -191,15 +193,6 @@ export function useSessionPersistence(): void {
       (profile) => {
         if (profile) {
           safeSetItem(KEYS.learnerProfile, JSON.stringify(profile));
-        }
-      },
-    );
-
-    const unsubCourses = store.subscribe(
-      (s) => s.courses,
-      (courses) => {
-        if (courses.length > 0) {
-          safeSetItem(KEYS.courses, JSON.stringify(courses));
         }
       },
     );
@@ -321,7 +314,6 @@ export function useSessionPersistence(): void {
 
     return () => {
       unsubProfile();
-      unsubCourses();
       unsubMastery();
       unsubQuiz();
       unsubOnboarding();

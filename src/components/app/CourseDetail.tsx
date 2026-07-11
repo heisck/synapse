@@ -387,7 +387,7 @@ export function CourseDetail() {
         variants={fadeUp}
         className="rounded-xl overflow-hidden relative"
       >
-        <div className="mesh-gradient gradient-border rounded-xl p-5">
+        <div className="mesh-gradient gradient-border gradient-border-static rounded-xl p-5">
           <div className="relative z-10">
             {/* Breadcrumb navigation */}
             <nav className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3" aria-label="Breadcrumb">

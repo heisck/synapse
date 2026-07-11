@@ -238,13 +238,12 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
                         />
                       </>
                     )}
-                    {/* Active indicator - mobile: full gradient background */}
+                    {/* Active indicator - mobile: full gradient background.
+                        Static (no layoutId): the drawer remounts on every open,
+                        which made the shared-layout pill visibly slide into
+                        place again and again. */}
                     {isActive && isMobile && (
-                      <motion.div
-                        layoutId="mobile-sidebar-active"
-                        className="absolute inset-0 rounded-lg bg-linear-to-r from-primary to-teal-500 opacity-90"
-                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                      />
+                      <div className="absolute inset-0 rounded-lg bg-linear-to-r from-primary to-teal-500 opacity-90" />
                     )}
                     <motion.div
                       className="shrink-0 relative z-10"

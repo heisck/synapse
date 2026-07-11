@@ -1067,8 +1067,41 @@ export function TutorView() {
               )
             })}
           </div>
+          {/* Mode Selector — phones: icon-only so it fits the header */}
+          <div className="flex sm:hidden items-center rounded-lg border border-border bg-background/50 p-0.5">
+            {TUTOR_MODES.map((mode) => {
+              const Icon = mode.icon
+              const isActive = tutorMode === mode.id
+              return (
+                <button
+                  key={mode.id}
+                  onClick={() => setTutorMode(mode.id)}
+                  className={`relative flex items-center justify-center rounded-md p-1.5 transition-colors ${
+                    isActive ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground'
+                  }`}
+                  aria-label={mode.label}
+                  title={mode.desc}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                </button>
+              )
+            })}
+          </div>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Upload prompt lives up here, not inside the chat thread */}
+          {quickTopics.length === 0 && !activeTopic && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 rounded-full text-xs gap-1.5 px-2.5"
+              onClick={() => navigate('upload')}
+              title="Upload slides to get topic suggestions"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Upload slides</span>
+            </Button>
+          )}
           {/* Collapsible Pomodoro Timer */}
           <div className="relative">
             <button
@@ -1495,36 +1528,24 @@ export function TutorView() {
 
           <ScrollArea className="flex-1 min-h-0 p-4 tutor-chat-glass" ref={scrollRef}>
             {/* Quick topic chips from the user's real courses */}
-            {!activeTopic && messages.length <= 1 && (
+            {!activeTopic && messages.length <= 1 && quickTopics.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-4 justify-center">
-                {quickTopics.length > 0 ? (
-                  quickTopics.map((topic) => (
-                    <Button
-                      key={topic}
-                      variant="outline"
-                      size="sm"
-                      className="rounded-full text-xs"
-                      // handleTopicClick calls handleSend, which reads
-                      // textareaRef.current, but only inside this onClick
-                      // callback body — strictly after the click fires, never
-                      // during render. The rule's call-graph analysis can't
-                      // distinguish that from an unsafe render-time ref read.
-                      onClick={() => handleTopicClick(topic)}
-                    >
-                      {topic}
-                    </Button>
-                  ))
-                ) : (
+                {quickTopics.map((topic) => (
                   <Button
+                    key={topic}
                     variant="outline"
                     size="sm"
-                    className="rounded-full text-xs gap-1.5"
-                    onClick={() => navigate('upload')}
+                    className="rounded-full text-xs"
+                    // handleTopicClick calls handleSend, which reads
+                    // textareaRef.current, but only inside this onClick
+                    // callback body — strictly after the click fires, never
+                    // during render. The rule's call-graph analysis can't
+                    // distinguish that from an unsafe render-time ref read.
+                    onClick={() => handleTopicClick(topic)}
                   >
-                    <BookOpen className="w-3.5 h-3.5" />
-                    Upload slides to get topic suggestions
+                    {topic}
                   </Button>
-                )}
+                ))}
               </div>
             )}
 
@@ -1672,6 +1693,29 @@ export function TutorView() {
                           {charCount}/{MAX_INPUT_CHARS}
                         </motion.span>
                       )}
+
+                      {/* Quick actions — three dots beside the mic on phones */}
+                      <div className="md:hidden">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+                              aria-label="Quick actions"
+                            >
+                              <MoreHorizontal className="w-3.5 h-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-52">
+                            {QUICK_ACTIONS.map((action) => (
+                              <DropdownMenuItem key={action.label} onClick={() => handleSend(action.prompt)}>
+                                {action.label}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
 
                       {/* Voice Input (Mic) Button */}
                       <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
@@ -1847,27 +1891,6 @@ export function TutorView() {
                             {action.label}
                           </motion.button>
                         ))}
-                      </div>
-                      <div className="flex md:hidden justify-center">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              className="flex items-center gap-1 px-3 py-1 text-[11px] font-medium rounded-full border border-border/60 bg-background/40 text-muted-foreground hover:text-foreground transition-colors"
-                              aria-label="Quick actions"
-                            >
-                              <MoreHorizontal className="w-3.5 h-3.5" />
-                              Quick actions
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="center" className="w-52">
-                            {QUICK_ACTIONS.map((action) => (
-                              <DropdownMenuItem key={action.label} onClick={() => handleSend(action.prompt)}>
-                                {action.label}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
                       </div>
                     </motion.div>
                   )}
@@ -2091,7 +2114,7 @@ export function TutorView() {
               <div className="px-6 pb-6 space-y-5">
                 {/* Session Stats Grid */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-1 card-shadow">
+                  <div className="rounded-xl glass border border-border/40 gradient-border gradient-border-static p-3 space-y-1 card-shadow">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <Clock className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Duration</span>
@@ -2100,7 +2123,7 @@ export function TutorView() {
                       {formatTimer(sessionStats.duration)}
                     </p>
                   </div>
-                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-1 card-shadow">
+                  <div className="rounded-xl glass border border-border/40 gradient-border gradient-border-static p-3 space-y-1 card-shadow">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <MessageCircle className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Messages</span>
@@ -2109,7 +2132,7 @@ export function TutorView() {
                       {sessionStats.messagesExchanged}
                     </p>
                   </div>
-                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-1 card-shadow">
+                  <div className="rounded-xl glass border border-border/40 gradient-border gradient-border-static p-3 space-y-1 card-shadow">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <BookMarked className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Topics Covered</span>
@@ -2118,7 +2141,7 @@ export function TutorView() {
                       {sessionStats.topicsCovered.length}
                     </p>
                   </div>
-                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-1 card-shadow">
+                  <div className="rounded-xl glass border border-border/40 gradient-border gradient-border-static p-3 space-y-1 card-shadow">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <Target className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Concepts Explored</span>
@@ -2131,7 +2154,7 @@ export function TutorView() {
 
                 {/* Mastery Progress Bar */}
                 {sessionStats.conceptsExplored > 0 && (
-                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-2 card-shadow">
+                  <div className="rounded-xl glass border border-border/40 gradient-border gradient-border-static p-3 space-y-2 card-shadow">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 text-muted-foreground">
                         <Sparkles className="w-3.5 h-3.5" />
@@ -2154,7 +2177,7 @@ export function TutorView() {
 
                 {/* Topics List */}
                 {sessionStats.topicsCovered.length > 0 && (
-                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-2 card-shadow">
+                  <div className="rounded-xl glass border border-border/40 gradient-border gradient-border-static p-3 space-y-2 card-shadow">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <BookOpen className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Topics</span>
@@ -2171,7 +2194,7 @@ export function TutorView() {
 
                 {/* Key Takeaways */}
                 {sessionStats.keyTakeaways.length > 0 && (
-                  <div className="rounded-xl glass border border-border/40 gradient-border p-3 space-y-2 card-shadow">
+                  <div className="rounded-xl glass border border-border/40 gradient-border gradient-border-static p-3 space-y-2 card-shadow">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       <span className="text-xs font-medium">Key Takeaways</span>

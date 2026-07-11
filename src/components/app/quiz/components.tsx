@@ -169,6 +169,185 @@ export function ErrorCorrectionInput({
   );
 }
 
+// ---------- Fill-in-the-blank letter boxes (type directly into the slots) ----------
+// One input per character; typing fills the slot and moves on, so the answer
+// appears in place without the layout bouncing. Space / comma / Enter jumps to
+// the next word; Enter submits once everything is filled. The Hint button
+// fills ONE empty slot with the real character.
+export function FillBlankBoxes({
+  answer,
+  hintUsed,
+  onHint,
+  onSubmit,
+}: {
+  answer: string;
+  hintUsed: boolean;
+  onHint: () => void;
+  onSubmit: (value: string) => void;
+}) {
+  // Positions that are separators (space/comma/hyphen) are rendered as fixed
+  // gaps, not inputs
+  const slots = useMemo(() => answer.split('').map((ch) => ({ ch, isSep: /[\s,\-]/.test(ch) })), [answer]);
+  const [chars, setChars] = useState<string[]>(() => slots.map(() => ''));
+  const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
+
+  // Reset when the question changes
+  useEffect(() => {
+    setChars(slots.map(() => ''));
+  }, [slots]);
+
+  const inputIndexes = useMemo(() => slots.map((s, i) => (s.isSep ? -1 : i)).filter((i) => i >= 0), [slots]);
+  const allFilled = inputIndexes.every((i) => chars[i]);
+
+  const focusIndex = (i: number | undefined) => {
+    if (i === undefined) return;
+    inputRefs.current[i]?.focus();
+  };
+
+  const nextInput = (from: number) => inputIndexes.find((i) => i > from);
+  const prevInput = (from: number) => [...inputIndexes].reverse().find((i) => i < from);
+  /** First input of the NEXT word (past the next separator). */
+  const nextSegmentStart = (from: number) => {
+    let seenSep = false;
+    for (let i = from + 1; i < slots.length; i++) {
+      if (slots[i].isSep) { seenSep = true; continue; }
+      if (seenSep) return i;
+    }
+    return undefined;
+  };
+
+  const buildValue = (cs: string[]) => slots.map((s, i) => (s.isSep ? s.ch : cs[i] || '')).join('');
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      setChars((cs) => {
+        const next = [...cs];
+        if (next[idx]) {
+          next[idx] = '';
+        } else {
+          const p = prevInput(idx);
+          if (p !== undefined) { next[p] = ''; focusIndex(p); }
+        }
+        return next;
+      });
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (allFilled) onSubmit(buildValue(chars));
+      else focusIndex(nextSegmentStart(idx) ?? nextInput(idx));
+      return;
+    }
+    if (e.key === ' ' || e.key === ',') {
+      e.preventDefault();
+      focusIndex(nextSegmentStart(idx) ?? nextInput(idx));
+      return;
+    }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); focusIndex(prevInput(idx)); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); focusIndex(nextInput(idx)); return; }
+    if (e.key.length === 1) {
+      e.preventDefault();
+      const ch = e.key;
+      setChars((cs) => {
+        const next = [...cs];
+        next[idx] = ch;
+        return next;
+      });
+      focusIndex(nextInput(idx));
+    }
+  };
+
+  const handleHint = () => {
+    const empty = inputIndexes.find((i) => !chars[i]);
+    if (empty === undefined) return;
+    setChars((cs) => {
+      const next = [...cs];
+      next[empty] = answer[empty];
+      return next;
+    });
+    focusIndex(nextInput(empty));
+    onHint();
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-x-3 gap-y-2 justify-center py-1">
+        {(() => {
+          // Group consecutive non-separator slots into words so wrapping
+          // happens between words, keeping the layout stable
+          const words: Array<Array<{ i: number }>> = [];
+          let current: Array<{ i: number }> = [];
+          slots.forEach((s, i) => {
+            if (s.isSep) {
+              if (current.length) words.push(current);
+              current = [];
+            } else {
+              current.push({ i });
+            }
+          });
+          if (current.length) words.push(current);
+          return words.map((word, w) => (
+            <div key={w} className="flex gap-1.5">
+              {word.map(({ i }) => (
+                <input
+                  key={i}
+                  ref={(el) => { inputRefs.current[i] = el; }}
+                  value={chars[i] || ''}
+                  onChange={(e) => {
+                    // Mobile IMEs don't always report keys in onKeyDown —
+                    // take the last typed char here as a fallback
+                    const v = e.target.value.slice(-1);
+                    if (!v || /[\s,]/.test(v)) return;
+                    setChars((cs) => {
+                      const next = [...cs];
+                      next[i] = v;
+                      return next;
+                    });
+                    focusIndex(nextInput(i));
+                  }}
+                  onKeyDown={(e) => handleKeyDown(e, i)}
+                  inputMode="text"
+                  autoCapitalize="off"
+                  autoComplete="off"
+                  maxLength={1}
+                  aria-label={`Character ${i + 1}`}
+                  className={`h-9 w-8 rounded-md border text-center text-sm font-semibold uppercase caret-transparent outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary/40 ${
+                    chars[i]
+                      ? 'border-primary/50 bg-primary/10 text-foreground'
+                      : 'border-border bg-background/50'
+                  }`}
+                />
+              ))}
+            </div>
+          ));
+        })()}
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        {!hintUsed ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400"
+            onClick={handleHint}
+          >
+            <Lightbulb className="h-3.5 w-3.5 mr-1" />
+            Hint
+          </Button>
+        ) : (
+          <span className="text-xs text-blue-500 flex items-center gap-1">
+            <Lightbulb className="h-3 w-3" />
+            Hint used (−25%)
+          </span>
+        )}
+        <Button onClick={() => onSubmit(buildValue(chars))} disabled={!allFilled} size="sm" className={allFilled ? 'glow-emerald' : ''}>
+          Submit
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Matching question component (drag-and-drop with SVG connectors) ----------
 export function MatchingInput({
   pairs,
@@ -379,7 +558,7 @@ export function MatchingInput({
                 onClick={() => handleLeftClick(p.left)}
                 onDragStart={(e) => handleDragStart(e as unknown as React.DragEvent, p.left)}
                 onDragEnd={handleDragEnd}
-                className={`rounded-lg border p-3 text-left text-sm font-medium transition-all ${
+                className={`rounded-lg border p-2.5 sm:p-3 text-left text-xs sm:text-sm font-medium transition-all min-w-0 ${
                   isDragging
                     ? 'border-primary/50 bg-primary/5 opacity-50 scale-95'
                     : selectedLeft === p.left
@@ -391,7 +570,7 @@ export function MatchingInput({
               >
                 <div className="flex items-center gap-2">
                   <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
-                  <span className="flex-1">{p.left}</span>
+                  <span className="flex-1 min-w-0 break-words">{p.left}</span>
                   {isMatched && (
                     <motion.span
                       initial={{ opacity: 0, x: 10 }}
@@ -421,7 +600,7 @@ export function MatchingInput({
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, r)}
                 disabled={isUsed}
-                className={`rounded-lg border p-3 text-left text-sm transition-all ${
+                className={`rounded-lg border p-2.5 sm:p-3 text-left text-xs sm:text-sm transition-all min-w-0 ${
                   isDragOver
                     ? 'border-emerald-500/60 bg-emerald-500/10 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-500/20 scale-[1.02]'
                     : isUsed
@@ -433,7 +612,7 @@ export function MatchingInput({
               >
                 <div className="flex items-center gap-2">
                   <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
-                  <span className="flex-1">{r}</span>
+                  <span className="flex-1 min-w-0 break-words">{r}</span>
                 </div>
               </motion.button>
             );

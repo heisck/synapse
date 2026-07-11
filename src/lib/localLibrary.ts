@@ -90,6 +90,11 @@ export async function getLocalSlides(courseId: string): Promise<Slide[]> {
 }
 
 export async function deleteLocalCourse(courseId: string): Promise<void> {
+  // Deleting a course removes every trace of it in this browser
+  try {
+    localStorage.removeItem(`synapse-course-chat-${courseId}`);
+    localStorage.removeItem(`synapse-qcache-${courseId}`);
+  } catch { /* ignore */ }
   await tx(async (db) => {
     const t = db.transaction(['courses', 'slides'], 'readwrite');
     t.objectStore('courses').delete(courseId);

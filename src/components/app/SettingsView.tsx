@@ -22,6 +22,7 @@ import {
   Check,
   X,
   KeyRound,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -220,6 +221,47 @@ export function SettingsView() {
   const handleSaveByo = () => {
     setByoStorage(byo);
     toast.success('Storage settings saved to this browser');
+  };
+
+  // Cloud sync actions (Phase 3): push browser → learner's own DB, pull back,
+  // and optional local wipe once migrated
+  const [syncBusy, setSyncBusy] = useState<false | 'push' | 'pull' | 'clear'>(false);
+  const handleMigrateToCloud = async () => {
+    setSyncBusy('push');
+    try {
+      const { migrateBrowserToCloud } = await import('@/lib/byoSync');
+      const res = await migrateBrowserToCloud();
+      toast.success(`Migrated ${res.courses} course(s), ${res.slides} slide(s) and ${res.kvEntries} data entries to your database`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Migration failed — check your database URL and token');
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+  const handlePullFromCloud = async () => {
+    setSyncBusy('pull');
+    try {
+      const { pullCloudToBrowser } = await import('@/lib/byoSync');
+      const pulled = await pullCloudToBrowser();
+      toast.success(pulled > 0 ? `Pulled ${pulled} course(s) from your database — reload to see them` : 'Your database has no courses yet');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Pull failed — check your database URL and token');
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+  const handleClearBrowser = async () => {
+    if (!window.confirm('Clear ALL SynapseLearn data from this browser (courses, progress, chats, caches)? Your API key and storage credentials are kept. Make sure you migrated to your cloud first.')) return;
+    setSyncBusy('clear');
+    try {
+      const { clearBrowserData } = await import('@/lib/byoSync');
+      await clearBrowserData({ keepCredentials: true });
+      toast.success('Browser data cleared — reloading');
+      setTimeout(() => window.location.reload(), 1200);
+    } catch {
+      toast.error('Could not fully clear browser data');
+      setSyncBusy(false);
+    }
   };
 
   // Compact mode: apply/remove a root class the stylesheet reacts to
@@ -542,6 +584,35 @@ export function SettingsView() {
             />
           </div>
           <Button size="sm" onClick={handleSaveByo}>Save storage settings</Button>
+
+          {/* Sync actions — only meaningful once a database is connected */}
+          {byo.dbUrl && byo.dbAuthToken && (
+            <div className="space-y-2 pt-2 border-t border-border/60">
+              <p className="text-xs text-muted-foreground">
+                Your database is connected. Migrate what&apos;s in this browser to your cloud, pull
+                your cloud data into a new device, or wipe this browser once migrated.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" disabled={syncBusy !== false} onClick={handleMigrateToCloud}>
+                  {syncBusy === 'push' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Database className="h-3.5 w-3.5 mr-1.5" />}
+                  Migrate browser → my cloud
+                </Button>
+                <Button size="sm" variant="outline" disabled={syncBusy !== false} onClick={handlePullFromCloud}>
+                  {syncBusy === 'pull' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Database className="h-3.5 w-3.5 mr-1.5" />}
+                  Pull my cloud → browser
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={syncBusy !== false}
+                  className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                  onClick={handleClearBrowser}
+                >
+                  Clear browser data
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </SectionCard>
 
@@ -565,6 +636,14 @@ export function SettingsView() {
             <SelectItem value="60">60 minutes</SelectItem>
             <SelectItem value="90">90 minutes</SelectItem>
           </SelectWithGlow>
+        </SettingRow>
+        <Separator className="opacity-50" />
+        <SettingRow label="Resume Previous Chat" description="Continue a course's tutor conversation from where you stopped instead of starting fresh">
+          <AnimatedSwitch
+            checked={settings.keepChatHistory}
+            onCheckedChange={(checked) => updateSettings({ keepChatHistory: checked })}
+            ariaLabel="Resume Previous Chat"
+          />
         </SettingRow>
         <Separator className="opacity-50" />
         <SettingRow label="Auto-Break Reminders" description="Get notified to take breaks during long sessions">

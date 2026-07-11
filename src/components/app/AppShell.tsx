@@ -10,6 +10,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useNotifications } from '@/hooks/useNotifications';
+import { toast } from 'sonner';
 import type { StudyNotification, AppView } from '@/types';
 
 const LandingPage = lazy(() =>
@@ -659,7 +660,9 @@ const viewTransitionConfig = { type: 'tween', duration: 0.3, ease: 'easeInOut' }
 
 export function AppShell() {
   const { currentView, navigate } = useAppStore();
+  const onboardingComplete = useAppStore((s) => s.onboardingComplete);
   const compactMode = useAppStore((s) => s.settings.compactMode);
+  const onboardingNudgedRef = useRef(false);
   const isFullViewport = fullViewportViews.includes(currentView);
   const [transitioning, setTransitioning] = useState(false);
   const prevViewRef = useRef(currentView);
@@ -686,6 +689,23 @@ export function AppShell() {
       };
     }
   }, [currentView]);
+
+  // Nudge once per visit: inside the app without a profile (name / learning
+  // style never set) → point to onboarding
+  useEffect(() => {
+    if (
+      onboardingComplete ||
+      onboardingNudgedRef.current ||
+      currentView === 'landing' ||
+      currentView === 'onboarding'
+    ) return;
+    onboardingNudgedRef.current = true;
+    toast('Set up your profile', {
+      description: 'Tell us your name and learning style so the tutor can adapt to you.',
+      duration: 8000,
+      action: { label: 'Set up', onClick: () => navigate('onboarding') },
+    });
+  }, [currentView, onboardingComplete, navigate]);
 
   const handleGoDashboard = () => navigate('dashboard');
 

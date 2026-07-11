@@ -274,7 +274,7 @@ export function NotesView() {
       className="space-y-6 pt-2 lg:pt-4"
     >
       {/* Gradient header */}
-      <motion.div variants={fadeUp} className="rounded-xl p-6 mesh-gradient gradient-border overflow-hidden">
+      <motion.div variants={fadeUp} className="rounded-xl p-6 mesh-gradient gradient-border gradient-border-static overflow-hidden">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -305,7 +305,7 @@ export function NotesView() {
             transition={{ type: 'spring', stiffness: 400, damping: 30, opacity: { duration: 0.2 } }}
             className="overflow-hidden"
           >
-            <div className="glass rounded-xl p-5 space-y-4 glow-emerald gradient-border card-shadow relative glass-blur-strong">
+            <div className="glass rounded-xl p-5 space-y-4 glow-emerald gradient-border gradient-border-static card-shadow relative glass-blur-strong">
               <div className="absolute inset-0 rounded-xl mesh-gradient opacity-30 pointer-events-none" />
               <div className="relative z-10">
                 <div className="flex items-center justify-between">
