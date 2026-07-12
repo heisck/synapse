@@ -2,6 +2,7 @@
 
 import { deleteLocalCourse, isLocalCourse } from '@/lib/localLibrary';
 import { aiFetch } from '@/lib/aiKey';
+import { launchQuiz } from '@/lib/quizLaunch';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
@@ -321,37 +322,12 @@ export function CourseDetail() {
       return;
     }
 
+    // Shared quiz-launch service (D35/D36): bank → stored → generate,
+    // identical behavior to every other quiz entry point
     setIsPreparingQuiz(true);
     try {
-      const existingRes = await fetch(`/api/questions?courseId=${activeCourse.id}`);
-      if (existingRes.ok) {
-        const existingData = await existingRes.json();
-        if (existingData.questions?.length > 0) {
-          setCurrentQuestions(existingData.questions);
-          navigate('quiz');
-          return;
-        }
-      }
-
-      // No questions generated for this course yet — generate them now.
-      // Content rides along for local-first courses not in the shared DB.
-      const genRes = await aiFetch('/api/questions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          courseId: activeCourse.id,
-          content: activeSlides.length > 0 ? activeSlides.map((s) => `## ${s.title}\n${s.content}`).join('\n\n') : undefined,
-        }),
-      });
-      if (!genRes.ok) {
-        const err = await genRes.json().catch(() => ({ error: 'Failed to generate quiz questions.' }));
-        throw new Error(err.error || 'Failed to generate quiz questions.');
-      }
-      const genData = await genRes.json();
-      setCurrentQuestions(genData.questions);
-      navigate('quiz');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to prepare quiz. Please try again.');
+      const result = await launchQuiz({ courseId: activeCourse.id });
+      if (!result.ok) toast.error(result.reason || 'Failed to prepare quiz. Please try again.');
     } finally {
       setIsPreparingQuiz(false);
     }

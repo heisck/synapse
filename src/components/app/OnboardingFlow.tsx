@@ -212,7 +212,7 @@ const slideVariants = {
   }),
 };
 
-function WelcomeStep({ onNext, onQuickStart }: { onNext: () => void; onQuickStart: () => void }) {
+function WelcomeStep({ onNext, onQuickStart, name, onNameChange }: { onNext: () => void; onQuickStart: () => void; name: string; onNameChange: (name: string) => void }) {
   const features = [
     { icon: Brain, text: 'AI-Powered Learning' },
     { icon: Sparkles, text: 'Adaptive Tutoring' },
@@ -270,6 +270,25 @@ function WelcomeStep({ onNext, onQuickStart }: { onNext: () => void; onQuickStar
             <span className="text-sm font-medium whitespace-nowrap">{f.text}</span>
           </motion.div>
         ))}
+      </div>
+
+      {/* Preferred name (B15): used across the app instead of "Student".
+          Stored locally only — never sent to our backend (R1). */}
+      <div className="w-full max-w-sm mx-auto space-y-1.5">
+        <label htmlFor="onboarding-name" className="text-sm font-medium">
+          What should I call you?
+        </label>
+        <input
+          id="onboarding-name"
+          type="text"
+          value={name}
+          onChange={(e) => onNameChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && name.trim()) onNext() }}
+          placeholder="Your name or nickname"
+          maxLength={40}
+          autoComplete="given-name"
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        />
       </div>
 
       <div className="flex flex-col items-center gap-3 pt-2">
@@ -736,6 +755,7 @@ export function OnboardingFlow() {
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [selectedPace, setSelectedPace] = useState<string>('steady');
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [preferredName, setPreferredName] = useState<string>(() => useAppStore.getState().userName || '');
   const [platform] = useState<OnboardingPlatform>(() => getOnboardingPlatform());
 
   // Persist step to localStorage whenever it changes
@@ -769,7 +789,7 @@ export function OnboardingFlow() {
     // Clear persisted step on completion
     localStorage.removeItem(ONBOARDING_STEP_KEY);
     const primaryStyle = selectedStyles[0] ?? 'visual';
-    setUserInfo('Student', 'student@synapselearn.ai');
+    setUserInfo(preferredName.trim() || 'Learner', '');
     setLearnerProfile({
       learningStyle: primaryStyle as 'visual' | 'auditory' | 'reading' | 'kinesthetic',
       pace: selectedPace as 'slow' | 'steady' | 'fast',
@@ -784,12 +804,12 @@ export function OnboardingFlow() {
     setBestTeachingStyle(selectedStyles.join(', '));
     setOnboardingComplete(true);
     navigate('dashboard');
-  }, [selectedStyles, selectedPace, selectedTopics, setUserInfo, setLearnerProfile, setHardSubjects, setBestTeachingStyle, setOnboardingComplete, navigate]);
+  }, [selectedStyles, selectedPace, selectedTopics, preferredName, setUserInfo, setLearnerProfile, setHardSubjects, setBestTeachingStyle, setOnboardingComplete, navigate]);
 
   const handleQuickStart = useCallback(() => {
     // Clear persisted step on completion
     localStorage.removeItem(ONBOARDING_STEP_KEY);
-    setUserInfo('Student', 'student@synapselearn.ai');
+    setUserInfo(preferredName.trim() || 'Learner', '');
     setLearnerProfile({
       learningStyle: 'visual',
       pace: 'steady',
@@ -804,7 +824,7 @@ export function OnboardingFlow() {
     setBestTeachingStyle('visual');
     setOnboardingComplete(true);
     navigate('dashboard');
-  }, [setUserInfo, setLearnerProfile, setHardSubjects, setBestTeachingStyle, setOnboardingComplete, navigate]);
+  }, [preferredName, setUserInfo, setLearnerProfile, setHardSubjects, setBestTeachingStyle, setOnboardingComplete, navigate]);
 
   const handleSkip = useCallback(() => {
     handleFinish();
@@ -848,7 +868,7 @@ export function OnboardingFlow() {
 
             <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-4">
           <AnimatePresence initial={false} custom={direction} mode="wait">
-            {step === 1 && <WelcomeStep key="s1" onNext={goNext} onQuickStart={handleQuickStart} />}
+            {step === 1 && <WelcomeStep key="s1" onNext={goNext} onQuickStart={handleQuickStart} name={preferredName} onNameChange={setPreferredName} />}
             {step === 2 && (
               <LearningStyleStep
                 key="s2"

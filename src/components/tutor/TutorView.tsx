@@ -1,7 +1,11 @@
 'use client'
 
 import { aiFetch } from '@/lib/aiKey';
-import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
+import { readStreamWithWatchdog, StreamStalledError } from '@/lib/streamWatchdog';
+import { cleanResponse } from '@/lib/textQuality';
+import { loadQuestionCache, appendToQuestionCache } from '@/lib/questionCache';
+import type { Question } from '@/types';
+import { useState, useRef, useEffect, useCallback, useMemo, startTransition, type ReactNode } from 'react'
 import { useAppStore, listCourseChats, loadCourseChatMessages, clearCourseChat } from '@/stores/appStore'
 import { isLocalCourse, getLocalSlides } from '@/lib/localLibrary'
 import { Badge } from '@/components/ui/badge'
@@ -262,6 +266,7 @@ export function TutorView() {
     userName,
     setLoading,
     isLoading,
+    chatRequestStatus,
     activePersona,
     moodSettings,
     tutorMode,
@@ -270,7 +275,7 @@ export function TutorView() {
     setActiveSlides,
     setActiveCourse,
     currentSlideIndex,
-    setCurrentSlideIndex,
+    setCurrentSlideIndex: setCurrentSlideIndexRaw,
     activeSlideContent,
     navigate,
     starredMessages,
@@ -286,6 +291,7 @@ export function TutorView() {
     hardSubjects,
     alwaysConfuses,
     bestTeachingStyle,
+    setCurrentQuestions,
   } = useAppStore()
 
   const [input, setInput] = useState('')
@@ -350,6 +356,14 @@ export function TutorView() {
   // Advance suggestion: plain code checks — the orchestrator's future seam.
   // Suggest when the learner has interacted on this slide for a while, or is
   // on a 9/10 hot streak. Declining silences it for this slide.
+  // Slide navigation is non-blocking (B11): the heavy re-render of this view
+  // (slide text, markdown, highlights) runs as a transition, so the tap that
+  // triggered it never freezes — the button stays responsive and the slide
+  // swaps in when ready.
+  const setCurrentSlideIndex = useCallback((index: number) => {
+    startTransition(() => setCurrentSlideIndexRaw(index))
+  }, [setCurrentSlideIndexRaw])
+
   const [advanceDismissed, setAdvanceDismissed] = useState<Set<number>>(new Set())
   const slideEnteredAtRef = useRef(Date.now())
   const msgsAtSlideEnterRef = useRef(0)
@@ -592,13 +606,48 @@ export function TutorView() {
     }
   }, [])
 
-  // On (re)entry with an existing conversation, jump to the last message
+  // On (re)entry with an existing conversation, restore the saved scroll
+  // position for this session (B6) — fall back to the latest exchange.
   useEffect(() => {
-    const el = scrollRef.current?.querySelector('[data-radix-scroll-area-viewport]')
+    const el = scrollRef.current?.querySelector<HTMLElement>('[data-radix-scroll-area-viewport]')
     if (el && useAppStore.getState().messages.length > 1) {
-      queueMicrotask(() => { el.scrollTop = el.scrollHeight })
+      const sid = useAppStore.getState().activeSessionId
+      const saved = sid ? sessionStorage.getItem(`synapse-chat-scroll-${sid}`) : null
+      queueMicrotask(() => {
+        el.scrollTop = saved != null ? Number(saved) : el.scrollHeight
+      })
     }
-    // mount-only: resuming a session should land at the latest exchange
+    // mount-only: resuming a session should land where the user left off
+  }, [])
+
+  // Track whether the user is pinned to the bottom; persist position per
+  // session (B6) and drive the floating scroll-to-bottom button (D19).
+  const [isAtBottom, setIsAtBottom] = useState(true)
+  const isAtBottomRef = useRef(true)
+  useEffect(() => {
+    const viewport = scrollRef.current?.querySelector<HTMLElement>('[data-radix-scroll-area-viewport]')
+    if (!viewport) return
+    let saveTimer: ReturnType<typeof setTimeout> | undefined
+    const onScroll = () => {
+      const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80
+      isAtBottomRef.current = atBottom
+      setIsAtBottom(atBottom)
+      clearTimeout(saveTimer)
+      saveTimer = setTimeout(() => {
+        const sid = useAppStore.getState().activeSessionId
+        if (sid) sessionStorage.setItem(`synapse-chat-scroll-${sid}`, String(viewport.scrollTop))
+      }, 250)
+    }
+    viewport.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      clearTimeout(saveTimer)
+      viewport.removeEventListener('scroll', onScroll)
+    }
+  }, [])
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    const viewport = scrollRef.current?.querySelector<HTMLElement>('[data-radix-scroll-area-viewport]')
+    if (viewport) viewport.scrollTo({ top: viewport.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
   }, [])
 
   // Timer
@@ -624,6 +673,10 @@ export function TutorView() {
       // (user message, typing indicator) just pins to the bottom.
       const last = messages[messages.length - 1]
       requestAnimationFrame(() => {
+        // Respect a deliberate scroll-up (B7): while the user is reading
+        // history, new tokens/messages must not yank the view down. The
+        // floating button is their way back.
+        if (!isAtBottomRef.current && last?.role === 'assistant') return
         if (last?.role === 'assistant' && !isLoading) {
           const el = viewport.querySelector<HTMLElement>(`[data-message-id="${last.id}"]`)
           if (el) {
@@ -646,7 +699,12 @@ export function TutorView() {
   useEffect(() => {
     const t = setTimeout(() => {
       const viewport = scrollRef.current?.querySelector<HTMLElement>('[data-radix-scroll-area-viewport]')
-      if (viewport) viewport.scrollTo({ top: viewport.scrollHeight })
+      if (!viewport) return
+      const sid = useAppStore.getState().activeSessionId
+      const saved = sid ? sessionStorage.getItem(`synapse-chat-scroll-${sid}`) : null
+      // Re-apply the restored position (B6) or pin to bottom, after the page
+      // transition finishes laying out.
+      viewport.scrollTo({ top: saved != null ? Number(saved) : viewport.scrollHeight })
     }, 380)
     return () => clearTimeout(t)
   }, [])
@@ -804,9 +862,43 @@ export function TutorView() {
 
   const speechSupported = useMemo(() => typeof window !== 'undefined' && !!getSpeechRecognition(), [])
 
+  // AI-initiated quiz navigation (A4): when the tutor answers with an
+  // "exam"-mode quiz block, the app switches to the quiz view immediately,
+  // initialized with those questions — no manual navigation. The questions
+  // also join the slide's bank (provenance "tutor") for the shared pool (A7).
+  const maybeStartExam = useCallback((responseText: string) => {
+    const parsed = parseQuizPayload(responseText)
+    if (parsed?.payload.mode !== 'exam') return
+    const courseId = activeCourse?.id
+    const slideId = activeSlides[currentSlideIndex]?.id
+    const converted: Question[] = parsed.payload.questions.map((q) => ({
+      id: crypto.randomUUID(),
+      courseId,
+      slideId,
+      type: 'multiple_choice' as const,
+      question: q.question,
+      options: q.options,
+      answer: q.options[q.answerIndex],
+      explanation: q.explanation,
+      concept: q.concept,
+      difficulty: 'medium' as const,
+      provenance: 'tutor' as const,
+    }))
+    if (converted.length === 0) return
+    if (courseId) {
+      const cache = loadQuestionCache(courseId)
+      appendToQuestionCache(courseId, converted, cache?.sectionsDone ?? 0, cache?.sectionsTotal ?? null)
+    }
+    setCurrentQuestions(converted)
+    toast(`Starting your quiz${parsed.payload.title ? `: ${parsed.payload.title}` : ''}…`)
+    navigate('quiz')
+  }, [activeCourse, activeSlides, currentSlideIndex, setCurrentQuestions, navigate])
+
   const handleSend = useCallback(async (text?: string) => {
     const content = (text || input).trim()
     if (!content) return
+    // Request state machine (B9): one in-flight request, no duplicate sends
+    if (!useAppStore.getState().canSendChat()) return
 
     // Typing "next" / "n" advances the slide without calling the AI
     if (/^(next|n)$/i.test(content) && activeSlides.length > 0) {
@@ -840,6 +932,7 @@ export function TutorView() {
     }
 
     setLoading(true)
+    useAppStore.getState().setChatRequestStatus('sending')
 
     try {
       const history = messages.map((m) => ({ role: m.role, content: m.content }))
@@ -909,29 +1002,49 @@ export function TutorView() {
           content: '',
           createdAt: new Date().toISOString(),
         })
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let acc = ''
+        useAppStore.getState().setChatRequestStatus('streaming')
         let firstChunk = true
-        for (;;) {
-          const { done, value } = await reader.read()
-          if (done) break
-          acc += decoder.decode(value, { stream: true })
-          if (firstChunk && acc.trim()) {
-            // Swap the typing indicator for the live-growing message
-            setLoading(false)
-            firstChunk = false
+        let acc = ''
+        try {
+          acc = await readStreamWithWatchdog(res.body, {
+            onChunk: (accumulated) => {
+              acc = accumulated
+              if (firstChunk && accumulated.trim()) {
+                // Swap the typing indicator for the live-growing message
+                setLoading(false)
+                firstChunk = false
+              }
+              updateMessage(assistantId, accumulated)
+            },
+          })
+        } catch (err) {
+          if (err instanceof StreamStalledError) {
+            // Watchdog fired (B8): keep whatever arrived, tell the user plainly
+            updateMessage(
+              assistantId,
+              acc.trim()
+                ? `${acc.trimEnd()}\n\n*(The response stalled and was cut short — ask me to continue.)*`
+                : "The response timed out before it started. Please try again.",
+            )
+            toast.error(err.message)
+            return
           }
-          updateMessage(assistantId, acc)
+          throw err
         }
-        acc += decoder.decode()
-        updateMessage(
-          assistantId,
-          acc.trim() ? acc : "I'm sorry, I couldn't generate a response. Please try again.",
-        )
+        // Corruption repair + formatting normalization on the final text (B1/B2)
+        const report = cleanResponse(acc)
+        const finalText = report.discard || !report.text.trim()
+          ? "I'm sorry, I couldn't generate a readable response. Please try again."
+          : report.text
+        updateMessage(assistantId, finalText)
+        maybeStartExam(finalText)
       } else {
         const data = await res.json()
-        const responseText = data.response || data.message || data.content || "I'm sorry, I couldn't generate a response. Please try again."
+        const rawText = data.response || data.message || data.content || ''
+        const report = cleanResponse(rawText)
+        const responseText = report.discard || !report.text.trim()
+          ? "I'm sorry, I couldn't generate a response. Please try again."
+          : report.text
 
         addMessage({
           id: crypto.randomUUID(),
@@ -940,6 +1053,7 @@ export function TutorView() {
           content: responseText,
           createdAt: new Date().toISOString(),
         })
+        maybeStartExam(responseText)
       }
 
       const phaseNow = useAppStore.getState().sessionPhase
@@ -957,8 +1071,10 @@ export function TutorView() {
       toast.error('Failed to get a response. Please try again.')
     } finally {
       setLoading(false)
+      // Every exit path lands back on idle — the composer can never lock (B9)
+      useAppStore.getState().setChatRequestStatus('idle')
     }
-  }, [input, activeSessionId, messages, learnerProfile, masteryMap, addMessage, updateMessage, setActiveSession, setLoading, setSessionPhase, activePersona, moodSettings, activeTopic, activeCourse, userName, tips, feedbackItems, settings.responseSpeed, settings.language, hardSubjects, alwaysConfuses, bestTeachingStyle, activeSlides, currentSlideIndex, activeSlideContent])
+  }, [input, activeSessionId, messages, learnerProfile, masteryMap, addMessage, updateMessage, setActiveSession, setLoading, setSessionPhase, activePersona, moodSettings, activeTopic, activeCourse, userName, tips, feedbackItems, settings.responseSpeed, settings.language, hardSubjects, alwaysConfuses, bestTeachingStyle, activeSlides, currentSlideIndex, activeSlideContent, maybeStartExam])
 
   // Revision mode: SessionControls sets the phase to 'review', then this sends
   // a visible revision request through the normal chat path
@@ -1549,7 +1665,12 @@ export function TutorView() {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => setMobileSlidesOpen(false)}
+                  onClick={() => {
+                    // Closing the slide panel returns the app to chat mode so
+                    // the mode selector/nav indicator never lies (B12)
+                    setMobileSlidesOpen(false)
+                    setTutorMode('text')
+                  }}
                   aria-label="Close slides"
                 >
                   <X className="w-4 h-4" />
@@ -1649,7 +1770,7 @@ export function TutorView() {
         </AnimatePresence>
 
         {/* Chat Panel — hidden entirely in slide-only mode on desktop */}
-        <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${!isMobile && tutorMode === 'slide' && activeSlides.length > 0 ? 'hidden' : ''}`}>
+        <div className={`relative flex-1 flex flex-col min-w-0 min-h-0 ${!isMobile && tutorMode === 'slide' && activeSlides.length > 0 ? 'hidden' : ''}`}>
           {/* Mobile hybrid: slides on top, chat below, draggable divider */}
           {isMobile && tutorMode === 'hybrid' && activeSlides.length > 0 && (
             <div className="flex flex-col border-b shrink-0" style={{ height: hybridHeight + 20 }}>
@@ -1894,6 +2015,24 @@ export function TutorView() {
             {isLoading && <TypingIndicator />}
           </ScrollArea>
 
+          {/* Floating scroll-to-bottom (D19): visible whenever the user has
+              scrolled up; one tap returns to the newest message */}
+          <AnimatePresence>
+            {!isAtBottom && messages.length > 1 && (
+              <motion.button
+                key="scroll-bottom"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                onClick={() => scrollToBottom()}
+                className="absolute bottom-28 left-1/2 -translate-x-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background/95 shadow-md backdrop-blur hover:bg-accent transition-colors"
+                aria-label="Scroll to latest message"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </motion.button>
+            )}
+          </AnimatePresence>
+
           {/* Coach cards: code-driven advance suggestion + break proposal */}
           <AnimatePresence>
             {showAdvanceSuggestion && (
@@ -1913,7 +2052,9 @@ export function TutorView() {
           {/* Input Area */}
           <div className="border-t tutor-floating-input">
             <div className="px-3 pb-3 pt-1">
-              <div className="max-w-3xl mx-auto">
+              {/* Full available width minus page gutters (A2) — the textarea
+                  inside flexes and wraps before the action buttons */}
+              <div className="w-full max-w-5xl mx-auto">
                 {/* Gradient border glow wrapper */}
                 <div className="gradient-border rounded-xl">
                   {inputFocused && (
@@ -2115,7 +2256,7 @@ export function TutorView() {
                         size="icon"
                         className={`shrink-0 h-7 w-7 rounded-lg ${input.trim() ? 'pulse-glow' : ''}`}
                         onClick={() => handleSend()}
-                        disabled={!input.trim() || isLoading}
+                        disabled={!input.trim() || isLoading || chatRequestStatus === 'sending' || chatRequestStatus === 'streaming'}
                         aria-label="Send message"
                       >
                         <Send className="w-3.5 h-3.5" />

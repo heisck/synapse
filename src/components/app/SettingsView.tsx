@@ -103,13 +103,17 @@ function SettingRow({
   label,
   description,
   children,
+  stackOnMobile = false,
 }: {
   label: string;
   description?: string;
   children: React.ReactNode;
+  /** Wide controls (button groups): on phones the text takes its own full
+      row and the controls drop underneath instead of squeezing beside it (D1). */
+  stackOnMobile?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 group">
+    <div className={`group ${stackOnMobile ? 'flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4' : 'flex items-center justify-between gap-4'}`}>
       <div className="min-w-0">
         <p className="text-sm lg:text-[15px] font-medium group-hover:text-foreground transition-colors">{label}</p>
         {description && (
@@ -405,7 +409,7 @@ export function SettingsView() {
         gradientTo="to-purple-600"
         index={0}
       >
-        <SettingRow label="Theme" description="Choose your preferred color scheme">
+        <SettingRow label="Theme" description="Choose your preferred color scheme" stackOnMobile>
           <div className="flex gap-1">
             {[
               { value: 'light', icon: Sun, label: 'Light' },

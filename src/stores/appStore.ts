@@ -263,6 +263,14 @@ export interface AppState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   isLoading: boolean;
   setLoading: (loading: boolean) => void;
+
+  // Chat request state machine (UNIFIED-PLAN task 2, req B9). One in-flight
+  // request at a time: send/resend/auto-send gate on canSendChat(). Every
+  // terminal path (done, error, stall-timeout) MUST return this to 'idle' —
+  // the UI can never lock permanently.
+  chatRequestStatus: 'idle' | 'sending' | 'streaming' | 'failed';
+  setChatRequestStatus: (status: 'idle' | 'sending' | 'streaming' | 'failed') => void;
+  canSendChat: () => boolean;
 }
 
 function defaultAchievements(): Achievement[] {
@@ -942,6 +950,13 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get): 
   }),
   isLoading: false,
   setLoading: (loading) => set({ isLoading: loading }),
+
+  chatRequestStatus: 'idle',
+  setChatRequestStatus: (status) => set({ chatRequestStatus: status }),
+  canSendChat: () => {
+    const s = get().chatRequestStatus;
+    return s === 'idle' || s === 'failed';
+  },
 
   // Daily Challenge
   dailyChallenge: {

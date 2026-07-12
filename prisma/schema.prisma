@@ -119,6 +119,62 @@ model Presence {
   createdAt        DateTime @default(now())
 }
 
+// ─── System Intelligence (UNIFIED-PLAN R2/R3) ──────────────────────────────
+// System-level intelligence ONLY — prompt strategies and their effectiveness.
+// Never user conversations, never personal learning content (R1).
+
+// Live strategy entries the prompt composer reads. Written ONLY by the
+// promotion gate (from ValidatedImprovement) or seed scripts — never by models.
+model PromptStrategy {
+  id          String   @id @default(cuid())
+  // Where it applies: "questions", "chat", "flashcards", "notes", "all"
+  scope       String
+  // Slot in the composed prompt: "structure", "formatting", "teaching_style",
+  // "quality_constraints", "difficulty", "language_policy"
+  slot        String
+  name        String   @unique
+  content     String
+  version     Int      @default(1)
+  active      Boolean  @default(true)
+  // Rolling effectiveness counters (system-level only)
+  uses        Int      @default(0)
+  passCount   Int      @default(0)
+  failCount   Int      @default(0)
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  @@index([scope, slot, active])
+}
+
+// Stage 1 (R2): the ONLY table AI output may write to. Suggestions are inert
+// until promoted through the code-gated review path.
+model AiSuggestion {
+  id             String    @id @default(cuid())
+  scope          String
+  slot           String
+  proposal       String
+  rationale      String    @default("")
+  // Evidence: validator names / pass-rate deltas that motivated it
+  evidence       String    @default("")
+  targetStrategy String? // PromptStrategy.name it wants to amend, if any
+  status         String    @default("pending") // pending | approved | rejected
+  reviewedAt     DateTime?
+  reviewNote     String    @default("")
+  createdAt      DateTime  @default(now())
+  @@index([status, scope])
+}
+
+// Stage 2 (R2): audit trail of suggestions that passed validation + explicit
+// approval. Promotion into PromptStrategy happens from here, by code only.
+model ValidatedImprovement {
+  id           String   @id @default(cuid())
+  suggestionId String   @unique
+  scope        String
+  slot         String
+  content      String
+  appliedTo    String // PromptStrategy.name created/updated
+  appliedAt    DateTime @default(now())
+}
+
 model LearnerProfile {
   id                String   @id @default(cuid())
   learningStyle     String   @default("reading")

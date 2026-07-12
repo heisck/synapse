@@ -639,7 +639,10 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
       transition={{ type: 'spring', stiffness: 300, damping: 24 }}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}
     >
-      <div className={`flex items-end gap-2 max-w-[85%] sm:max-w-[80%] min-w-0 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      {/* Responsive widths (A3/B3): user messages stay bubble-width everywhere;
+          AI responses span nearly the whole screen on phones and a generous
+          column on desktop instead of a narrow invisible container */}
+      <div className={`flex items-end gap-2 min-w-0 ${isUser ? 'flex-row-reverse max-w-[85%] sm:max-w-[80%]' : 'flex-row max-w-[96%] sm:max-w-[88%]'}`}>
         {!isUser && (
           <motion.div
             initial={{ scale: 0, opacity: 0 }}
@@ -661,10 +664,13 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
             transition={{ type: 'spring', stiffness: 350, damping: 26, delay: 0.05 }}
             onClick={showCursor ? completeTypewriter : undefined}
             onDoubleClick={isUser && onRecall ? () => onRecall(message.content) : undefined}
-            className={`relative px-4 py-2.5 text-sm leading-relaxed overflow-hidden min-w-0 max-w-full break-words [overflow-wrap:anywhere] ${
+            className={`relative py-2.5 text-sm leading-relaxed overflow-hidden min-w-0 max-w-full break-words [overflow-wrap:anywhere] ${
               isUser
-                ? 'bg-emerald-600 text-white rounded-2xl rounded-br-md chat-bubble-user'
-                : 'tutor-ai-bubble glass-card-shine rounded-2xl rounded-bl-md'
+                ? 'px-4 bg-emerald-600 text-white rounded-2xl rounded-br-md chat-bubble-user'
+                // tutor-ai-bubble keeps its inner pre/table scroll rules on all
+                // sizes; globals.css strips the bubble chrome below sm so AI
+                // text flows nearly full-width like a document on phones (A3)
+                : 'px-1 sm:px-4 tutor-ai-bubble glass-card-shine rounded-none sm:rounded-2xl sm:rounded-bl-md'
             } ${showCursor ? 'cursor-pointer' : ''}`}
           >
             {/* Pulsing emerald gradient left border for user messages */}
@@ -768,18 +774,10 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
             </div>
           )}
 
-          {/* Hover actions + reactions collapse together in ONE container —
-              two separately-animated collapses made the bubble jump twice
-              when the pointer left the message */}
+          {/* AI-response actions are ALWAYS visible (D18) — no hover gate on
+              any device. Kept in one container so nothing animates/jumps. */}
           {isAssistant && !isStreaming && (
-            <div
-              className="overflow-hidden transition-all duration-200 ease-out"
-              style={{
-                opacity: isHovered ? 1 : 0,
-                maxHeight: isHovered ? 88 : 0,
-                marginTop: isHovered ? 0 : -4,
-              }}
-            >
+            <div>
               <MessageActions
                 message={message}
                 onRegenerate={handleRegenerate}

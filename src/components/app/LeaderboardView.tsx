@@ -185,7 +185,7 @@ function ShareStatsModal({ open, onClose }: { open: boolean; onClose: () => void
     ctx.fillText('SynapseLearn', 56, 96);
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.font = '26px system-ui, -apple-system, sans-serif';
-    ctx.fillText(`${userBuddy.name || 'Student'} — study stats`, 56, 140);
+    ctx.fillText(`${userBuddy.name || 'Learner'} — study stats`, 56, 140);
 
     const cols = 3;
     const cellW = (W - 112) / cols;
@@ -256,7 +256,7 @@ function ShareStatsModal({ open, onClose }: { open: boolean; onClose: () => void
               <div className="relative z-10 space-y-4">
                 <div>
                   <p className="text-lg font-bold text-emerald-300">SynapseLearn</p>
-                  <p className="text-xs text-emerald-100/70">{userBuddy.name || 'Student'} — study stats</p>
+                  <p className="text-xs text-emerald-100/70">{userBuddy.name || 'Learner'} — study stats</p>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   {shareStats.map((stat) => (

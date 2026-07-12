@@ -184,8 +184,9 @@ function QuickTips() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.3, type: 'spring', stiffness: 200, damping: 25 }}
-      className="glass rounded-xl p-5 space-y-3 card-shadow gradient-border gradient-border-static"
+      className="space-y-3 px-1"
     >
+      {/* No bordered container (D17) — tips flow with the page */}
       <h3 className="text-sm font-semibold flex items-center gap-2">
         <Lightbulb className="h-4 w-4 text-amber-500" />
         Quick Tips
@@ -853,7 +854,7 @@ export function UploadView() {
                         }}
                         className={`category-chip w-full justify-center ${config?.chipClass || 'category-chip-other'} ${isActive ? 'active' : ''}`}
                       >
-                        <CatIcon className="h-3.5 w-3.5" />
+                        <CatIcon className="h-3.5 w-3.5 shrink-0" />
                         <span>{cat}</span>
                         <AnimatePresence>
                           {isActive && (

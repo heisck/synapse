@@ -92,6 +92,9 @@ export interface Question {
   concept?: string;
   matchingPairs?: Array<{ left: string; right: string }>;
   errorText?: string;
+  /** How this question entered the bank (A8 provenance): background worker,
+      tutor chat, exam-mode fill, or an explicit user request. */
+  provenance?: 'background' | 'tutor' | 'exam' | 'ondemand';
 }
 
 export interface UserTip {

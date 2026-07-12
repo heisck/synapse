@@ -15,7 +15,9 @@ export interface QuizPayloadQuestion {
 }
 
 export interface QuizPayload {
-  mode: 'quiz' | 'flashcards'
+  /** 'exam' = AI-initiated full quiz session (A4): the app leaves the chat
+      and opens the quiz view initialized with these questions. */
+  mode: 'quiz' | 'flashcards' | 'exam'
   title?: string
   questions: QuizPayloadQuestion[]
 }
@@ -44,7 +46,9 @@ export function parseQuizPayload(content: string): { payload: QuizPayload; befor
     return {
       payload: {
         // Fence tag doubles as the mode when the JSON omits it
-        mode: parsed.mode === 'flashcards' || (!parsed.mode && fenceTag.startsWith('flashcard')) ? 'flashcards' : 'quiz',
+        mode: parsed.mode === 'exam'
+          ? 'exam'
+          : parsed.mode === 'flashcards' || (!parsed.mode && fenceTag.startsWith('flashcard')) ? 'flashcards' : 'quiz',
         title: typeof parsed.title === 'string' ? parsed.title : undefined,
         questions: valid,
       },

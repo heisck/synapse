@@ -87,6 +87,52 @@ export function appendToQuestionCache(
   return cache;
 }
 
+// ─── Per-slide bank + used-status (UNIFIED-PLAN task 18, req A8/A7) ─────────
+// The answered-ids store is the bank's "used" flag: shared by quiz practice,
+// exam mode, and the tutor so all modes draw unused questions first and stay
+// synchronized. Lives client-side per rule R1.
+
+const ANSWERED_KEY = 'synapse-answered-questions';
+
+export function loadAnsweredIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(ANSWERED_KEY);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function markQuestionAnswered(id: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const current = loadAnsweredIds();
+    current.add(id);
+    localStorage.setItem(ANSWERED_KEY, JSON.stringify([...current].slice(-2000)));
+  } catch {
+    // storage unavailable — repeat-avoidance just won't persist
+  }
+}
+
+/**
+ * The question bank for one slide: unused first (retrieve-before-generate),
+ * used afterwards for repeat practice. Questions without a slideId are only
+ * returned when no slideId filter is given.
+ */
+export function getSlideBank(
+  courseId: string,
+  slideId?: string,
+): { unused: Question[]; used: Question[] } {
+  const all = loadQuestionCache(courseId)?.questions ?? [];
+  const pool = slideId ? all.filter((q) => q.slideId === slideId) : all;
+  const answered = loadAnsweredIds();
+  const unused: Question[] = [];
+  const used: Question[] = [];
+  for (const q of pool) (answered.has(q.id) ? used : unused).push(q);
+  return { unused, used };
+}
+
 /** Learner-configured question-type mix, used for generation and pool filter. */
 const TYPES_KEY = 'synapse-question-types';
 export const ALL_QUESTION_TYPES = ['multiple_choice', 'true_false', 'fill_blank', 'matching'] as const;

@@ -24,7 +24,6 @@ import {
   PanelLeftOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -147,7 +146,7 @@ function GlassNavTooltip({ children, label, shortcut }: { children: React.ReactN
 }
 
 function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => void; isMobile?: boolean }) {
-  const { currentView, navigate, userName, recentViews, notes, courses, completedCourses, dailyChallenge, notifications, setSidebarCollapsed } = useAppStore();
+  const { currentView, navigate, userName, userEmail, recentViews, notes, courses, completedCourses, dailyChallenge, notifications, setSidebarCollapsed } = useAppStore();
   const [studyStreak] = useState(() => getStudyStreak());
   const [notifCenterOpen, setNotifCenterOpen] = useState(false);
   const countdown = useDailyChallengeCountdown();
@@ -347,40 +346,27 @@ function SidebarContent({ onNavigate, isMobile = false }: { onNavigate?: () => v
       <div className="px-3 py-3">
         <div className="rounded-xl bg-background/40 dark:bg-background/20 border border-border/30 p-3">
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-                  {userName ? userName.slice(0, 2).toUpperCase() : 'SL'}
-                </AvatarFallback>
-              </Avatar>
-              {/* Animated online status indicator */}
-              <motion.span
-                className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-background"
-                animate={{
-                  boxShadow: [
-                    '0 0 0 0 rgba(16, 185, 129, 0.4)',
-                    '0 0 0 4px rgba(16, 185, 129, 0)',
-                  ],
-                }}
-                transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
-              />
-            </div>
+            {/* Clean identity row (D2): no generic avatar, no "Student" label —
+                display name, plan and streak on a single row */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
-                <p className="text-sm font-medium truncate">{userName || 'Student'}</p>
+                <p className="text-sm font-medium truncate">{userName || 'Set up your profile'}</p>
+                <span className="text-[10px] font-medium text-muted-foreground border border-border/60 rounded-full px-1.5 py-px shrink-0">Free</span>
                 {studyStreak > 0 && (
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                    className="flex items-center gap-0.5 shrink-0"
                   >
                     <Flame className="h-3.5 w-3.5 text-orange-500" />
+                    <span className="text-[10px] text-orange-500 font-medium tabular-nums">{studyStreak}</span>
                   </motion.div>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                {studyStreak > 0 ? `${studyStreak} day streak` : 'Free Plan'}
-              </p>
+              {userEmail && (
+                <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
+              )}
             </div>
             <div className="flex items-center gap-1">
               {/* Notification Center Bell */}

@@ -1949,6 +1949,24 @@ select:focus-visible {
 .tutor-ai-bubble pre code {
   white-space: pre;
 }
+/* Phone layout (A3): below sm the AI response drops its bubble chrome and
+   reads like a document spanning almost the full screen width. The overflow
+   rules above still apply. sm+ keeps the glass bubble. */
+@media (max-width: 639px) {
+  .tutor-ai-bubble {
+    background: transparent;
+    border: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+  .dark .tutor-ai-bubble,
+  :is(.dark *) .tutor-ai-bubble {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+}
 
 /* Tutor floating input container */
 .tutor-floating-input {

@@ -486,7 +486,7 @@ export function ProfileView() {
     // User name
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.font = '15px system-ui, -apple-system, sans-serif';
-    ctx.fillText(userName || 'Student', width / 2, 74);
+    ctx.fillText(userName || 'Learner', width / 2, 74);
 
     // Divider
     ctx.strokeStyle = 'rgba(255,255,255,0.2)';
@@ -616,7 +616,7 @@ export function ProfileView() {
             <div className="flex-1 min-w-0 space-y-1.5 pt-2">
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl sm:text-3xl font-bold gradient-text truncate">
-                  {userName || 'Student'}
+                  {userName || 'Learner'}
                 </h1>
                 <ThemeToggle />
               </div>
@@ -1460,10 +1460,11 @@ export function ProfileView() {
 
                 <Separator />
 
-                {/* ── 7d. Share Stats ── */}
-                <div className="flex items-center justify-between">
+                {/* ── 7d. Share Stats ── text on its own row on phones, buttons
+                    underneath — never squeezed side by side (D5) */}
+                <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-muted-foreground">Share your learning progress with others</p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
                       <Button
                         variant="outline"

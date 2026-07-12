@@ -88,7 +88,7 @@ import { InteractiveFlashcard } from './quiz/InteractiveFlashcard';
 import { ExamMode } from './quiz/ExamMode';
 import { useBackgroundGeneration } from '@/hooks/useBackgroundGeneration';
 import { GraduationCap, Cpu } from 'lucide-react';
-import { appendToQuestionCache, loadQuestionCache, getPreferredTypes, setPreferredTypes, ALL_QUESTION_TYPES } from '@/lib/questionCache';
+import { appendToQuestionCache, loadQuestionCache, getPreferredTypes, setPreferredTypes, ALL_QUESTION_TYPES, loadAnsweredIds, markQuestionAnswered } from '@/lib/questionCache';
 import { isRenderableQuestion } from '@/lib/validate';
 import { getLocalCourseContent, isLocalCourse } from '@/lib/localLibrary';
 
@@ -100,27 +100,10 @@ const TYPE_CHIP_LABELS: Record<string, string> = {
 };
 
 // ---------- Main QuizView ----------
-const ANSWERED_EVER_KEY = 'synapse-answered-questions';
-
-function loadAnsweredEver(): Set<string> {
-  if (typeof window === 'undefined') return new Set();
-  try {
-    const raw = localStorage.getItem(ANSWERED_EVER_KEY);
-    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function persistAnsweredEver(id: string): void {
-  try {
-    const current = loadAnsweredEver();
-    current.add(id);
-    localStorage.setItem(ANSWERED_EVER_KEY, JSON.stringify([...current].slice(-2000)));
-  } catch {
-    // storage unavailable — repeat-avoidance just won't persist
-  }
-}
+// Answered-ids ("used" status) now live in questionCache so quiz, exam and
+// tutor share one bank state (task 18 / A7)
+const loadAnsweredEver = loadAnsweredIds;
+const persistAnsweredEver = markQuestionAnswered;
 
 export function QuizView() {
   const { navigate, currentQuestions, activeCourse, updateMastery, adaptiveResults, addAdaptiveResult, masteryMap, courses, setCurrentQuestions, setActiveCourse } = useAppStore();

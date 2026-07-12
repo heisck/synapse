@@ -121,7 +121,8 @@ export function useBackgroundGeneration(courseId: string | null, options?: { for
           };
           const cacheNow = appendToQuestionCache(
             courseId,
-            data.questions ?? [],
+            // Bank provenance (A8): these entered via the background worker
+            (data.questions ?? []).map((q) => ({ ...q, provenance: q.provenance ?? 'background' as const })),
             data.sectionsDone,
             data.sectionsTotal,
           );

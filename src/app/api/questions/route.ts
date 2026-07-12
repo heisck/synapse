@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LLM, authFromRequest, llmErrorResponse, type LLMAuth } from '@/lib/ai';
 import { validateQuestions, GENERATABLE_TYPES, type ValidatedQuestion } from '@/lib/validate';
+import { composeStrategyBlock, activeStrategyIds, recordStrategyOutcome } from '@/lib/strategy';
 import { db } from '@/lib/db';
 import type { Question } from '@prisma/client';
 
@@ -89,6 +90,11 @@ async function generateQuestions(
       ? `MANDATORY MIX: include AT LEAST ONE question of EACH allowed type (${types.join(', ')}) — a batch with only multiple_choice is invalid.`
       : `Every question must be type "${types[0]}".`;
 
+  // Strategy Injection (R3): accumulated system knowledge rides along with
+  // every generation request — structure, quality constraints, language policy
+  const strategyBlock = await composeStrategyBlock('questions');
+  const strategyIds = await activeStrategyIds('questions');
+
   const basePrompt = (intro: string) => `${intro}
 
 Content:
@@ -99,6 +105,7 @@ ${content.slice(0, 3000)}
 Generate 6-10 questions. ${mixNote}
 Allowed formats:
 ${typeSpecs}
+${strategyBlock}
 
 Respond ONLY with a valid JSON array of question objects, no other text.`;
 
@@ -154,6 +161,9 @@ Respond ONLY with a valid JSON array of question objects, no other text.`;
     }
 
     const { valid, errors } = validateQuestions(parsed);
+    // Outcome metrics (task 17): per-attempt pass/fail feeds strategy stats;
+    // repeated failure patterns auto-file suggestions (stage 1, R2)
+    void recordStrategyOutcome(strategyIds, errors.length === 0, errors.slice(0, 5).join('; ') || undefined);
     // Accumulate across attempts, deduping against what we already have
     const have = new Set(collected.map((q) => q.question.toLowerCase()));
     for (const q of valid) {

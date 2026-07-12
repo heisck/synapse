@@ -2,6 +2,7 @@
 
 import { deleteLocalCourse, isLocalCourse } from '@/lib/localLibrary';
 import { aiFetch } from '@/lib/aiKey';
+import { launchQuiz } from '@/lib/quizLaunch';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
@@ -1815,7 +1816,16 @@ export function Dashboard() {
         ? `You scored ${storeDailyChallenge.todayResults?.score || 0} points today.`
         : 'Take five timed questions and keep your streak moving.',
       icon: Target,
-      onClick: () => navigate('quiz'),
+      // Shared quiz-launch (D35): jump straight into a running quiz — bank
+      // first, generation only if needed; clear toast when there's no material
+      onClick: () => {
+        void launchQuiz().then((r) => {
+          if (!r.ok) {
+            if (r.reason) toast.info(r.reason);
+            navigate('quiz');
+          }
+        });
+      },
     },
     {
       label: 'Generate Plan',
