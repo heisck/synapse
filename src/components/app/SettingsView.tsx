@@ -53,7 +53,7 @@ import { useTheme } from 'next-themes';
 import { exportProfileCode, importProfileCode, resetAllData } from '@/lib/transfer';
 import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
 import { getByoStorage, setByoStorage } from '@/lib/byoStorage';
-import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, speak } from '@/lib/voice/tts';
+import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice } from '@/lib/voice/tts';
 import { Volume2 } from 'lucide-react';
 
 /** Personas must match the tutor's PersonaSelector so the default applies. */
@@ -206,6 +206,38 @@ function VoiceSettings() {
   const [voice, setVoice] = useState(() => getSelectedVoice());
   const [previewing, setPreviewing] = useState(false);
 
+  // Voice Lab (custom voice via style-vector blending)
+  const [customVoice, setCustomVoice] = useState(() => getCustomVoice());
+  const [blendA, setBlendA] = useState(() => getCustomVoice()?.voiceA ?? 'af_heart');
+  const [blendB, setBlendB] = useState(() => getCustomVoice()?.voiceB ?? 'bm_george');
+  const [blendRatio, setBlendRatio] = useState(() => getCustomVoice()?.ratio ?? 0.5);
+  const [blendName, setBlendName] = useState(() => getCustomVoice()?.name ?? 'My Voice');
+  const [savingBlend, setSavingBlend] = useState(false);
+
+  const handleSaveBlend = async () => {
+    setSavingBlend(true);
+    const ok = await saveCustomVoiceBlend({ name: blendName.trim(), voiceA: blendA, voiceB: blendB, ratio: blendRatio });
+    setSavingBlend(false);
+    if (ok) {
+      setCustomVoice(getCustomVoice());
+      setSelectedVoice('custom');
+      setVoice('custom');
+      toast.success(`Voice "${blendName.trim()}" created — refresh the page for it to fully apply`);
+    } else {
+      toast.error('Could not create the voice — check your connection and try again');
+    }
+  };
+
+  const handleDeleteBlend = async () => {
+    await deleteCustomVoice();
+    setCustomVoice(null);
+    if (voice === 'custom') {
+      setSelectedVoice('af_heart');
+      setVoice('af_heart');
+    }
+    toast('Custom voice deleted');
+  };
+
   const handleDownload = async () => {
     setDownloading(true);
     setProgress(0);
@@ -272,12 +304,13 @@ function VoiceSettings() {
         </div>
       )}
       <Separator className="opacity-50" />
-      <SettingRow label="Voice" description="Used when reading slides and answers aloud">
+      <SettingRow label="Voice" description="Used when reading slides, voice mode, and answers aloud">
         <div className="flex items-center gap-2">
           <SelectWithGlow value={voice} onValueChange={handleVoiceChange}>
             {KOKORO_VOICES.map((v) => (
               <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
             ))}
+            {customVoice && <SelectItem value="custom">★ {customVoice.name} (custom)</SelectItem>}
           </SelectWithGlow>
           <Button variant="outline" size="sm" onClick={handlePreview} disabled={previewing} aria-label="Preview voice">
             {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
@@ -285,11 +318,69 @@ function VoiceSettings() {
         </div>
       </SettingRow>
       <Separator className="opacity-50" />
+
+      {/* Voice Lab: design a custom voice by blending two built-in style
+          vectors — the practical "voice cloning" for a fully-local stack */}
       <SettingRow
-        label="Cloned voices"
-        description="Bring-your-own cloned voice support is planned — downloaded voices above work today"
+        label="Voice Lab — create your own voice"
+        description="Blend two voices into a new one. It runs 100% locally, like everything else here."
+        stackOnMobile
       >
-        <span className="text-xs text-muted-foreground rounded-full border border-border/60 px-2.5 py-1">Coming soon</span>
+        <div className="flex flex-col gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-2">
+            <SelectWithGlow value={blendA} onValueChange={setBlendA}>
+              {KOKORO_VOICES.map((v) => (
+                <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+              ))}
+            </SelectWithGlow>
+            <span className="text-xs text-muted-foreground">+</span>
+            <SelectWithGlow value={blendB} onValueChange={setBlendB}>
+              {KOKORO_VOICES.map((v) => (
+                <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+              ))}
+            </SelectWithGlow>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(blendRatio * 100)}
+              onChange={(e) => setBlendRatio(Number(e.target.value) / 100)}
+              aria-label="Blend ratio"
+              className="flex-1 accent-emerald-500"
+            />
+            <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">{Math.round(blendRatio * 100)}%A</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Input
+              value={blendName}
+              onChange={(e) => setBlendName(e.target.value)}
+              placeholder="Voice name"
+              className="h-8 text-xs flex-1"
+            />
+            <Button size="sm" onClick={handleSaveBlend} disabled={savingBlend || !blendName.trim()}>
+              {savingBlend ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create'}
+            </Button>
+            {customVoice && (
+              <Button size="sm" variant="outline" onClick={handleDeleteBlend} aria-label="Delete custom voice">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+          {customVoice && (
+            <p className="text-[11px] text-muted-foreground">
+              Current: <span className="font-medium">★ {customVoice.name}</span> ({Math.round(customVoice.ratio * 100)}% {KOKORO_VOICES.find((v) => v.id === customVoice.voiceA)?.label} + {100 - Math.round(customVoice.ratio * 100)}% {KOKORO_VOICES.find((v) => v.id === customVoice.voiceB)?.label}). A new blend applies fully after a page refresh.
+            </p>
+          )}
+        </div>
+      </SettingRow>
+      <Separator className="opacity-50" />
+      <SettingRow
+        label="Clone from a recording"
+        description="True sample-based cloning needs a heavier model (e.g. OpenVoice/F5-TTS) than a browser can run — the Voice Lab blend above is the local-first equivalent"
+      >
+        <span className="text-xs text-muted-foreground rounded-full border border-border/60 px-2.5 py-1">Not in-browser yet</span>
       </SettingRow>
     </>
   );

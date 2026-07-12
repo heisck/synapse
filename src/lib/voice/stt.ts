@@ -36,6 +36,31 @@ async function loadWhisper(): Promise<Transcriber | null> {
   return whisperPromise;
 }
 
+/** Preload Whisper (voice mode calls this on open so turn 1 is fast). */
+export function warmUpWhisper(): void {
+  void loadWhisper();
+}
+
+/**
+ * Transcribe a raw 16 kHz mono Float32 clip (what the VAD hands us in voice
+ * mode). Returns '' when Whisper is unavailable or the clip is silent.
+ */
+export async function transcribeAudio(audio: Float32Array): Promise<string> {
+  if (audio.length < 1600) return ''; // < 0.1s — noise
+  const transcriber = await loadWhisper();
+  if (!transcriber) return '';
+  try {
+    const { text } = await transcriber(audio);
+    // Whisper hallucinates fillers on near-silence — drop known artifacts
+    const cleaned = text.trim();
+    if (/^[\s.!?,-]*$/.test(cleaned)) return '';
+    if (/^\[\s*(silence|music|noise|blank_audio)\s*\]$/i.test(cleaned)) return '';
+    return cleaned;
+  } catch {
+    return '';
+  }
+}
+
 export function whisperSupported(): boolean {
   return typeof window !== 'undefined' && typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
 }

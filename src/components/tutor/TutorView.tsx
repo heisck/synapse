@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   PanelRightOpen,
+  AudioLines,
   PanelRightClose,
   Send,
   Lightbulb,
@@ -137,6 +138,7 @@ import { Label } from '@/components/ui/label'
 import type { ChatMessage } from '@/types'
 import { buildAppSnapshot, snapshotSummary } from '@/lib/orchestrator/context'
 import { launchQuiz } from '@/lib/quizLaunch'
+import { VoiceMode } from './VoiceMode'
 
 // ---------- Pomodoro Timer ----------
 const POMODORO_MODES = [
@@ -308,6 +310,8 @@ export function TutorView() {
   const whisperRecRef = useRef<WhisperRecording | null>(null)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
+  // Voice conversation mode (hands-free loop with barge-in)
+  const [voiceModeOpen, setVoiceModeOpen] = useState(false)
 
   // Resizable right panel (owner request): drag its left edge to grow/shrink
   // the Practice/session/persona panel; the chosen width persists.
@@ -1942,6 +1946,19 @@ export function TutorView() {
             <Clock className="w-3 h-3 text-emerald-500" />
             <span className="font-mono font-medium tabular-nums">{formatTimer(timerSeconds)}</span>
           </div>
+          {/* Voice conversation mode — talk, get spoken answers, interrupt */}
+          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setVoiceModeOpen(true)}
+              className="gradient-border rounded-lg"
+              aria-label="Start voice conversation"
+              title="Voice mode — talk with the tutor"
+            >
+              <AudioLines className="w-4 h-4" />
+            </Button>
+          </motion.div>
           <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
             <Button
               variant="ghost"
@@ -3156,6 +3173,11 @@ export function TutorView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Voice conversation mode — full-screen overlay, barge-in supported */}
+      <AnimatePresence>
+        {voiceModeOpen && <VoiceMode onClose={() => setVoiceModeOpen(false)} />}
+      </AnimatePresence>
     </div>
   )
 }

@@ -245,6 +245,7 @@ export async function POST(request: NextRequest) {
       struggleSignal,
       lastQuizResult,
       orchestratorDecision,
+      voiceMode,
     } = body;
 
     const userMessage = sanitize(message || '');
@@ -438,6 +439,17 @@ export async function POST(request: NextRequest) {
     };
     if (typeof orchestratorDecision === 'string' && DECISION_GUIDANCE[orchestratorDecision]) {
       systemPrompt = `${systemPrompt}\n\n${DECISION_GUIDANCE[orchestratorDecision]}`;
+    }
+
+    // Voice conversation mode (voice-mode feature): the reply is SPOKEN by a
+    // TTS engine, sentence by sentence, and the learner can interrupt at any
+    // moment — write for the ear, not the eye.
+    if (voiceMode === true) {
+      systemPrompt = `${systemPrompt}\n\n[VOICE MODE — your reply will be spoken aloud]:
+- 1-3 short sentences per turn. Conversational, natural, warm.
+- ABSOLUTELY NO markdown, bullet points, headers, code blocks, tables, emoji, or quiz JSON — plain speakable sentences only.
+- Spell things the way they are said ("H T M L", "twenty five percent").
+- End most turns with a short question or invitation so the conversation keeps flowing.`;
     }
 
     // Standing behavior rules (brevity + interactive quiz protocol)

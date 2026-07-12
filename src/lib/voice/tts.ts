@@ -26,6 +26,10 @@ export interface SpeakOptions {
 
 type KokoroTTSInstance = {
   generate: (text: string, opts: { voice: string; speed?: number }) => Promise<{ toBlob: () => Blob }>;
+  stream: (
+    splitter: unknown,
+    opts?: { voice?: string; speed?: number },
+  ) => AsyncGenerator<{ text: string; audio: { toBlob: () => Blob } }>;
 };
 
 /** Voices bundled with Kokoro-82M — id → friendly label. */
@@ -42,11 +46,91 @@ export const KOKORO_VOICES: Array<{ id: string; label: string }> = [
 
 const VOICE_KEY = 'synapse-tts-voice';
 const DOWNLOADED_KEY = 'synapse-tts-downloaded';
+const CUSTOM_VOICE_KEY = 'synapse-custom-voice';
+
+// ─── Custom voice via style-vector blending (Voice Lab) ─────────────────────
+// Kokoro voices are 510×256 float32 style vectors served as .bin files and
+// looked up through the browser Cache API ('kokoro-voices'). A custom voice
+// is a weighted blend of two built-in vectors, written into the cache under
+// a donor slot id (am_santa — the lowest-graded voice, not in our picker),
+// so kokoro-js loads OUR vector when asked for that id. No fork needed.
+const CUSTOM_VOICE_SLOT = 'am_santa';
+const VOICE_BIN_URL = (id: string) =>
+  `https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/${id}.bin`;
+
+export interface CustomVoiceMeta {
+  name: string;
+  voiceA: string;
+  voiceB: string;
+  /** 0..1 — weight of voiceA (voiceB gets 1-ratio). */
+  ratio: number;
+}
+
+export function getCustomVoice(): CustomVoiceMeta | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(CUSTOM_VOICE_KEY);
+    return raw ? (JSON.parse(raw) as CustomVoiceMeta) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Blends two built-in voices into the custom slot. Fetches both style
+ * vectors, mixes element-wise, and plants the result in the Cache API entry
+ * kokoro-js reads for the slot id. Takes effect for sessions where the slot
+ * hasn't been spoken yet (kokoro memoizes per session — a reload always picks
+ * the new blend up).
+ */
+export async function saveCustomVoiceBlend(meta: CustomVoiceMeta): Promise<boolean> {
+  if (typeof window === 'undefined' || !('caches' in window)) return false;
+  try {
+    const ratio = Math.max(0, Math.min(1, meta.ratio));
+    const [binA, binB] = await Promise.all(
+      [meta.voiceA, meta.voiceB].map(async (id) => {
+        const res = await fetch(VOICE_BIN_URL(id));
+        if (!res.ok) throw new Error(`voice ${id} fetch failed`);
+        return new Float32Array(await res.arrayBuffer());
+      }),
+    );
+    const blended = new Float32Array(binA.length);
+    for (let i = 0; i < blended.length; i++) {
+      blended[i] = binA[i] * ratio + (binB[i] ?? 0) * (1 - ratio);
+    }
+    const cache = await caches.open('kokoro-voices');
+    await cache.put(
+      VOICE_BIN_URL(CUSTOM_VOICE_SLOT),
+      new Response(blended.buffer as ArrayBuffer, { headers: { 'Content-Type': 'application/octet-stream' } }),
+    );
+    localStorage.setItem(CUSTOM_VOICE_KEY, JSON.stringify({ ...meta, ratio }));
+    return true;
+  } catch (err) {
+    console.warn('[tts] custom voice blend failed:', err);
+    return false;
+  }
+}
+
+export async function deleteCustomVoice(): Promise<void> {
+  try {
+    localStorage.removeItem(CUSTOM_VOICE_KEY);
+    if ('caches' in window) {
+      const cache = await caches.open('kokoro-voices');
+      await cache.delete(VOICE_BIN_URL(CUSTOM_VOICE_SLOT));
+    }
+  } catch { /* best-effort */ }
+}
+
+/** Maps the persisted selection ('custom' included) to a kokoro voice id. */
+export function resolveVoiceId(selected: string): string {
+  return selected === 'custom' && getCustomVoice() ? CUSTOM_VOICE_SLOT : selected;
+}
 
 export function getSelectedVoice(): string {
   if (typeof window === 'undefined') return 'af_heart';
   try {
     const v = localStorage.getItem(VOICE_KEY);
+    if (v === 'custom' && getCustomVoice()) return 'custom';
     return v && KOKORO_VOICES.some((k) => k.id === v) ? v : 'af_heart';
   } catch {
     return 'af_heart';
@@ -136,6 +220,14 @@ export function warmUpTTS(): void {
 }
 
 /**
+ * Direct engine access for voice mode: sentence-streamed synthesis via
+ * kokoro's TextSplitterStream. Null when the model can't load.
+ */
+export async function getKokoro(): Promise<KokoroTTSInstance | null> {
+  return loadKokoro();
+}
+
+/**
  * Voice download from Settings (task 71): progress in whole percent, resolves
  * true when the model is ready. Safe to call repeatedly — the download is
  * shared with any in-flight warm-up.
@@ -174,7 +266,7 @@ export async function speak(text: string, options: SpeakOptions = {}): Promise<'
   if (kokoro) {
     try {
       const audio = await kokoro.generate(clean.slice(0, 2000), {
-        voice: options.voice ?? getSelectedVoice(),
+        voice: resolveVoiceId(options.voice ?? getSelectedVoice()),
         speed: options.speed ?? 1,
       });
       const url = URL.createObjectURL(audio.toBlob());
