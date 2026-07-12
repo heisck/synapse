@@ -52,7 +52,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useAppStore } from '@/stores/appStore';
 import { toast } from 'sonner';
-import { saveLocalCourse } from '@/lib/localLibrary';
+import { saveLocalCourse, saveLocalDoc } from '@/lib/localLibrary';
 import type { Question } from '@/types';
 
 type FileStatus = 'pending' | 'uploading' | 'processing' | 'done' | 'error';
@@ -79,7 +79,7 @@ const ACCEPTED_TYPES = [
 ];
 
 // Must match the server's ALLOWED_EXTENSIONS in /api/upload
-const ACCEPTED_EXTENSIONS = ['.pdf', '.pptx', '.docx', '.odp', '.odt', '.txt', '.md', '.csv', '.rtf', '.html'];
+const ACCEPTED_EXTENSIONS = ['.pdf', '.pptx', '.docx', '.odp', '.odt', '.txt', '.md', '.csv', '.rtf', '.html', '.epub', '.png', '.jpg', '.jpeg', '.webp'];
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
 
 export const COURSE_CATEGORIES = [
@@ -402,7 +402,9 @@ async function fetchWithRetry(url: string, body: FormData): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
     try {
-      const res = await fetch(url, { method: 'POST', body, signal: controller.signal });
+      // aiFetch attaches the learner's OpenRouter key: image/scan uploads are
+      // transcribed server-side by a vision model (task 28) and need it
+      const res = await aiFetch(url, { method: 'POST', body, signal: controller.signal });
       clearTimeout(timeout);
       return res;
     } catch (err) {
@@ -600,6 +602,12 @@ export function UploadView() {
 
         const data = await res.json();
         courseId = data.courseId || courseId;
+
+        // Structured document (tasks 25/26/27): classified pages + block index
+        // from the normalizer — saved to the browser's own library only (R1)
+        if (data.structuredDoc && data.courseId) {
+          void saveLocalDoc({ courseId: data.courseId, structuredDoc: data.structuredDoc });
+        }
 
         // Extract slides from response
         if (data.slides && Array.isArray(data.slides)) {

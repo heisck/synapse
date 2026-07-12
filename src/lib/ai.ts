@@ -54,6 +54,22 @@ const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
+// Free vision models for image understanding / OCR / diagram description
+// (UNIFIED-PLAN task 23, C7; pinned choices: Qwen-VL → LLaVA → InternVL).
+// Availability changes upstream, so this is a rotation like OPENROUTER_MODELS.
+const OPENROUTER_VISION_MODELS = (
+  process.env.OPENROUTER_VISION_MODELS ||
+  [
+    'qwen/qwen2.5-vl-72b-instruct:free',
+    'qwen/qwen-2.5-vl-7b-instruct:free',
+    'internvl/internvl3-14b:free',
+    'liuhaotian/llava-yi-34b:free',
+  ].join(',')
+)
+  .split(',')
+  .map((m) => m.trim())
+  .filter(Boolean);
+
 const POLLINATIONS_URL = 'https://text.pollinations.ai/openai';
 const POLLINATIONS_MODEL = process.env.POLLINATIONS_MODEL || 'openai';
 
@@ -342,7 +358,74 @@ ISSUE: <one short sentence on what's wrong and what should be addressed instead>
   }
 }
 
+/** One image for a vision request, as a data: URL (base64). */
+export interface VisionImage {
+  dataUrl: string;
+}
+
+async function visionViaOpenRouterModel(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  images: VisionImage[],
+): Promise<string> {
+  const res = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: openRouterHeaders(apiKey),
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            ...images.map((img) => ({ type: 'image_url', image_url: { url: img.dataUrl } })),
+          ],
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 2048,
+    }),
+  });
+  if (res.status === 429) {
+    await res.text().catch(() => {});
+    throw new RateLimitedError();
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`OpenRouter vision request failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) throw new Error('Vision model returned no content');
+  return content;
+}
+
 export const LLM = {
+  /**
+   * Vision: image understanding via the free vision-model rotation (C7).
+   * Used for image/scan uploads (OCR), diagram description, and formula →
+   * LaTeX extraction. Returns null when no model could answer — callers must
+   * degrade gracefully (B5), never block on this.
+   */
+  async vision({ prompt, images, auth }: { prompt: string; images: VisionImage[]; auth?: LLMAuth }): Promise<string | null> {
+    const apiKey = auth?.apiKey?.trim();
+    if (!apiKey || images.length === 0) return null;
+    const now = Date.now();
+    const available = OPENROUTER_VISION_MODELS.filter(
+      (m) => now >= (modelDownUntil.get(cooldownKey(apiKey, m)) || 0),
+    );
+    for (const model of available) {
+      try {
+        return await visionViaOpenRouterModel(apiKey, model, prompt, images);
+      } catch (err) {
+        modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + MODEL_COOLDOWN_MS);
+        console.warn(`[LLM.vision] model ${model} failed (cooling down):`, err);
+      }
+    }
+    return null;
+  },
+
   /**
    * Provider order: Hermes agent (when configured for this deployment) →
    * the learner's own OpenRouter key (rotating free models) → Pollinations

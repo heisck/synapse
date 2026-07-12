@@ -135,7 +135,7 @@ export function getSlideBank(
 
 /** Learner-configured question-type mix, used for generation and pool filter. */
 const TYPES_KEY = 'synapse-question-types';
-export const ALL_QUESTION_TYPES = ['multiple_choice', 'true_false', 'fill_blank', 'matching'] as const;
+export const ALL_QUESTION_TYPES = ['multiple_choice', 'true_false', 'fill_blank', 'matching', 'short_answer'] as const;
 
 export function getPreferredTypes(): string[] {
   if (typeof window === 'undefined') return [...ALL_QUESTION_TYPES];

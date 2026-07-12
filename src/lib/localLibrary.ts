@@ -11,7 +11,7 @@
 import type { Course, Slide } from '@/types';
 
 const DB_NAME = 'synapse-library';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2 adds the 'docs' store (structured documents + ALUs)
 
 export function isLocalCourse(courseId: string): boolean {
   return courseId.startsWith('local-');
@@ -28,6 +28,11 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('slides')) {
         const slides = db.createObjectStore('slides', { keyPath: 'id' });
         slides.createIndex('courseId', 'courseId', { unique: false });
+      }
+      // Index store (task 27, C9/R1): structured documents + ALUs, keyed by
+      // courseId. The learner's index NEVER goes to the shared DB.
+      if (!db.objectStoreNames.contains('docs')) {
+        db.createObjectStore('docs', { keyPath: 'courseId' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -96,8 +101,9 @@ export async function deleteLocalCourse(courseId: string): Promise<void> {
     localStorage.removeItem(`synapse-qcache-${courseId}`);
   } catch { /* ignore */ }
   await tx(async (db) => {
-    const t = db.transaction(['courses', 'slides'], 'readwrite');
+    const t = db.transaction(['courses', 'slides', 'docs'], 'readwrite');
     t.objectStore('courses').delete(courseId);
+    t.objectStore('docs').delete(courseId);
     const idx = t.objectStore('slides').index('courseId');
     const keysReq = idx.getAllKeys(courseId);
     keysReq.onsuccess = () => {
@@ -114,4 +120,44 @@ export async function deleteLocalCourse(courseId: string): Promise<void> {
 export async function getLocalCourseContent(courseId: string): Promise<string> {
   const slides = await getLocalSlides(courseId);
   return slides.map((s) => `## ${s.title}\n${s.content}`).join('\n\n');
+}
+
+// ─── Structured document + ALU store (tasks 27/30, C9/C10, rule R1) ─────────
+
+export interface LocalDocRecord {
+  courseId: string;
+  structuredDoc?: unknown; // StructuredDocument from lib/document/normalizer
+  alus?: unknown[]; // AtomicLearningUnit[] from lib/document/alu
+  updatedAt: string;
+}
+
+export async function saveLocalDoc(record: Omit<LocalDocRecord, 'updatedAt'>): Promise<void> {
+  try {
+    await tx(async (db) => {
+      const t = db.transaction('docs', 'readwrite');
+      const existing = await requestToPromise(t.objectStore('docs').get(record.courseId)).catch(() => null);
+      t.objectStore('docs').put({
+        ...(existing as LocalDocRecord | null ?? {}),
+        ...record,
+        updatedAt: new Date().toISOString(),
+      });
+      return new Promise<void>((resolve, reject) => {
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+      });
+    });
+  } catch (err) {
+    console.warn('[localLibrary] saveLocalDoc failed:', err);
+  }
+}
+
+export async function getLocalDoc(courseId: string): Promise<LocalDocRecord | null> {
+  try {
+    return await tx(async (db) => {
+      const req = db.transaction('docs').objectStore('docs').get(courseId);
+      return ((await requestToPromise(req)) as LocalDocRecord) ?? null;
+    });
+  } catch {
+    return null;
+  }
 }

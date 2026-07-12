@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { LLM, authFromRequest, type LLMAuth } from '@/lib/ai';
+import { normalizeDocument } from '@/lib/document/normalizer';
 import type { Slide } from '@prisma/client';
 
-const ALLOWED_EXTENSIONS = ['.pdf', '.pptx', '.docx', '.odp', '.odt', '.txt', '.md', '.markdown', '.csv', '.rtf', '.html', '.htm'];
+const ALLOWED_EXTENSIONS = ['.pdf', '.pptx', '.docx', '.odp', '.odt', '.txt', '.md', '.markdown', '.csv', '.rtf', '.html', '.htm', '.epub', '.png', '.jpg', '.jpeg', '.webp'];
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
 const LEGACY_EXTENSIONS = ['.ppt', '.doc'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -169,6 +172,78 @@ function extractHtmlText(buffer: ArrayBuffer): string {
   ).trim();
 }
 
+/** EPUB: ZIP of XHTML chapters — read the OPF spine order, one slide per chapter. */
+async function extractEpubSlides(buffer: ArrayBuffer, filename: string): Promise<ParsedSlide[]> {
+  const JSZip = (await import('jszip')).default;
+  const zip = await JSZip.loadAsync(buffer);
+
+  // container.xml → OPF path → manifest + spine
+  const container = await zip.files['META-INF/container.xml']?.async('text');
+  const opfPath = container?.match(/full-path="([^"]+)"/)?.[1];
+  const opf = opfPath ? await zip.files[opfPath]?.async('text') : undefined;
+  const baseDir = opfPath?.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
+
+  let chapterPaths: string[] = [];
+  if (opf) {
+    const manifest = new Map(
+      Array.from(opf.matchAll(/<item[^>]*id="([^"]+)"[^>]*href="([^"]+)"[^>]*\/>/g)).map((m) => [m[1], m[2]]),
+    );
+    chapterPaths = Array.from(opf.matchAll(/<itemref[^>]*idref="([^"]+)"/g))
+      .map((m) => manifest.get(m[1]))
+      .filter((href): href is string => !!href && /\.x?html?$/i.test(href))
+      .map((href) => baseDir + href);
+  }
+  if (chapterPaths.length === 0) {
+    chapterPaths = Object.keys(zip.files).filter((n) => /\.x?html?$/i.test(n)).sort();
+  }
+
+  const slides: ParsedSlide[] = [];
+  for (const path of chapterPaths) {
+    const html = await zip.files[path]?.async('text');
+    if (!html) continue;
+    const text = extractHtmlText(new TextEncoder().encode(html).buffer as ArrayBuffer);
+    if (!text.trim()) continue;
+    const titleMatch = html.match(/<(?:h1|h2|title)[^>]*>([\s\S]*?)<\/(?:h1|h2|title)>/i);
+    const title = titleMatch ? decodeXmlEntities(titleMatch[1].replace(/<[^>]+>/g, '')).trim() : '';
+    // Long chapters read better re-chunked
+    if (text.length > 4000) {
+      slides.push(...splitIntoSlides(text, filename).map((s, i) => (i === 0 && title ? { ...s, title } : s)));
+    } else {
+      slides.push({ title: title || text.split('\n')[0].slice(0, 80), content: text });
+    }
+  }
+  return slides;
+}
+
+/**
+ * Images / scans (task 28, C5/C6): no selectable text exists, so the vision
+ * rotation transcribes the page — text first, then a plain description of any
+ * diagrams/figures, and formulas as LaTeX (task 29 hook). Runs only for image
+ * uploads (the "orchestrator decides OCR is needed" case) and needs the
+ * learner's own key.
+ */
+async function extractImageSlides(
+  buffer: ArrayBuffer,
+  filename: string,
+  mime: string,
+  auth: LLMAuth,
+): Promise<{ slides: ParsedSlide[]; error?: string }> {
+  if (!auth.apiKey) {
+    return { slides: [], error: 'Reading images needs your OpenRouter API key (Settings → AI Access) so a vision model can transcribe them.' };
+  }
+  const dataUrl = `data:${mime};base64,${Buffer.from(buffer).toString('base64')}`;
+  const text = await LLM.vision({
+    prompt:
+      'Transcribe this study material image for a learner. Output, in order: (1) ALL readable text, preserving headings and bullet structure; (2) for each diagram/chart/figure, one short paragraph starting "Diagram:" describing what it shows and what it means; (3) any mathematical formulas as LaTeX on their own lines. Output only the transcription, no commentary.',
+    images: [{ dataUrl }],
+    auth,
+  });
+  if (!text || !text.trim()) {
+    return { slides: [], error: 'The vision model could not read this image. Try a clearer scan or a text-based export.' };
+  }
+  return { slides: splitIntoSlides(text, filename) };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -210,7 +285,13 @@ export async function POST(request: NextRequest) {
     // Extract real content per format — no fake placeholder slides, ever
     let slides: ParsedSlide[] = [];
     try {
-      switch (ext) {
+      if (IMAGE_EXTENSIONS.includes(ext)) {
+        const result = await extractImageSlides(buffer, filename, file.type || 'image/png', authFromRequest(request));
+        if (result.error) {
+          return NextResponse.json({ error: result.error }, { status: 422 });
+        }
+        slides = result.slides;
+      } else switch (ext) {
         case '.pdf':
           slides = await extractPdfSlides(buffer, filename);
           break;
@@ -230,6 +311,9 @@ export async function POST(request: NextRequest) {
         case '.html':
         case '.htm':
           slides = splitIntoSlides(extractHtmlText(buffer), filename);
+          break;
+        case '.epub':
+          slides = await extractEpubSlides(buffer, filename);
           break;
         default: // .txt, .md, .markdown, .csv
           slides = splitIntoSlides(new TextDecoder().decode(buffer), filename);
@@ -272,6 +356,9 @@ export async function POST(request: NextRequest) {
         order: i + 1,
         createdAt: now,
       }));
+      // Structured document (tasks 25/26): classified pages, stable block IDs,
+      // compact sequence. Returned to the browser, stored ONLY user-side (R1).
+      const structuredDoc = normalizeDocument(slides, filename);
       return NextResponse.json({
         success: true,
         local: true,
@@ -279,6 +366,7 @@ export async function POST(request: NextRequest) {
         course: localCourse,
         slideCount: localSlides.length,
         slides: localSlides,
+        structuredDoc,
       });
     }
 

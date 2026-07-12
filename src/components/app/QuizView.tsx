@@ -97,6 +97,7 @@ const TYPE_CHIP_LABELS: Record<string, string> = {
   true_false: 'True/False',
   fill_blank: 'Typing',
   matching: 'Matching',
+  short_answer: 'Practical',
 };
 
 // ---------- Main QuizView ----------
@@ -157,6 +158,9 @@ export function QuizView() {
   // Course picker in the empty state: reuse existing questions for a course,
   // or generate them from its slides — never force a re-upload
   const [preparingCourseId, setPreparingCourseId] = useState<string | null>(null);
+  // Course browser (D12): search + subject filter for the card grid
+  const [browserQuery, setBrowserQuery] = useState('');
+  const [browserSubject, setBrowserSubject] = useState('all');
   const handlePracticeCourse = useCallback(async (course: (typeof courses)[number]) => {
     setPreparingCourseId(course.id);
     try {
@@ -1085,52 +1089,108 @@ export function QuizView() {
 
   const difficultyTotal = difficultyCounts.easy + difficultyCounts.medium + difficultyCounts.hard;
 
-  // ---------- Empty State ----------
+  // ---------- Empty State: course browser (D12) ----------
+  // Card-based course selection like the Courses page — searchable, filtered
+  // by subject, quiz opens only after a course is picked.
   if (studyMode !== 'daily' && studyMode !== 'review' && questions.length === 0 && flashcardQuestions.length === 0) {
+    const subjects = [...new Set(courses.map((c) => c.subject).filter(Boolean))] as string[];
+    const browserCourses = courses.filter((c) => {
+      if (browserSubject !== 'all' && c.subject !== browserSubject) return false;
+      const q = browserQuery.trim().toLowerCase();
+      return !q || c.title.toLowerCase().includes(q) || (c.description ?? '').toLowerCase().includes(q);
+    });
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col items-center justify-center min-h-[70vh] gap-6"
+        className="mx-auto w-full max-w-3xl space-y-5 py-8 px-4"
       >
-        <div className="glass rounded-2xl p-8 text-center space-y-4 max-w-md w-full">
-          <BookOpen className="h-16 w-16 text-primary/30 mx-auto" />
-          <h2 className="text-xl font-bold">{courses.length > 0 ? 'Pick a course to practice' : 'No questions available'}</h2>
+        <div className="text-center space-y-2">
+          <BookOpen className="h-12 w-12 text-primary/30 mx-auto" />
+          <h2 className="text-xl font-bold">{courses.length > 0 ? 'Choose a course to practice' : 'No questions available'}</h2>
           <p className="text-muted-foreground text-sm">
             {courses.length > 0
-              ? 'Generate a quiz straight from one of your courses — no need to upload the slides again.'
+              ? 'Your quiz is generated straight from the course you pick — no re-upload needed.'
               : 'Upload some study materials to start practicing.'}
           </p>
-          {courses.length > 0 && (
-            <div className="space-y-2 text-left max-h-64 overflow-y-auto pr-1">
-              {courses.map((course) => (
-                <button
-                  key={course.id}
-                  onClick={() => handlePracticeCourse(course)}
-                  disabled={preparingCourseId !== null}
-                  className="w-full flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 text-sm hover:border-primary/40 hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:pointer-events-none"
-                >
-                  <BookOpen className="h-4 w-4 text-primary shrink-0" />
-                  <span className="flex-1 truncate font-medium">{course.title}</span>
-                  {preparingCourseId === course.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
-                  ) : (
-                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                  )}
-                </button>
-              ))}
+        </div>
+
+        {courses.length > 0 && (
+          <>
+            {(courses.length > 3 || subjects.length > 1) && (
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Input
+                  placeholder="Search courses..."
+                  value={browserQuery}
+                  onChange={(e) => setBrowserQuery(e.target.value)}
+                  className="h-9 text-sm flex-1"
+                />
+                {subjects.length > 1 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {['all', ...subjects].map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setBrowserSubject(s)}
+                        className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                          browserSubject === s
+                            ? 'bg-primary text-primary-foreground'
+                            : 'border border-border text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {s === 'all' ? 'All subjects' : s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {browserCourses.map((course) => {
+                const bankCount = loadQuestionCache(course.id)?.questions.length ?? 0;
+                return (
+                  <button
+                    key={course.id}
+                    onClick={() => handlePracticeCourse(course)}
+                    disabled={preparingCourseId !== null}
+                    className="group flex flex-col gap-2 rounded-xl border border-border/60 bg-background/60 p-4 text-left hover:border-primary/40 hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 shrink-0">
+                        <BookOpen className="h-4.5 w-4.5 text-primary" />
+                      </div>
+                      {preparingCourseId === course.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                      ) : (
+                        <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                      )}
+                    </div>
+                    <p className="font-semibold text-sm leading-snug line-clamp-2">{course.title}</p>
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-auto">
+                      {course.subject && <span className="rounded-full border border-border/60 px-1.5 py-px">{course.subject}</span>}
+                      <span>{bankCount > 0 ? `${bankCount} questions ready` : 'Generates on start'}</span>
+                    </div>
+                  </button>
+                );
+              })}
+              {browserCourses.length === 0 && (
+                <p className="col-span-full text-center text-sm text-muted-foreground py-6">
+                  No courses match &quot;{browserQuery}&quot;
+                </p>
+              )}
             </div>
-          )}
-          <div className="flex justify-center gap-3">
-            <Button variant={courses.length > 0 ? 'outline' : 'default'} onClick={() => navigate('upload')}>
-              <BookOpen className="h-4 w-4 mr-2" />
-              Upload Slides
-            </Button>
-            <Button variant="outline" onClick={() => navigate('dashboard')}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Dashboard
-            </Button>
-          </div>
+          </>
+        )}
+
+        <div className="flex justify-center gap-3">
+          <Button variant={courses.length > 0 ? 'outline' : 'default'} onClick={() => navigate('upload')}>
+            <BookOpen className="h-4 w-4 mr-2" />
+            Upload Slides
+          </Button>
+          <Button variant="outline" onClick={() => navigate('dashboard')}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Dashboard
+          </Button>
         </div>
       </motion.div>
     );

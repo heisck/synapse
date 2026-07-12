@@ -17,7 +17,7 @@ export interface ValidatedQuestion {
   difficulty: 'easy' | 'medium' | 'hard';
 }
 
-export const GENERATABLE_TYPES = ['multiple_choice', 'true_false', 'fill_blank', 'matching'] as const;
+export const GENERATABLE_TYPES = ['multiple_choice', 'true_false', 'fill_blank', 'matching', 'short_answer'] as const;
 
 export interface ValidationResult {
   valid: ValidatedQuestion[];
@@ -99,7 +99,7 @@ export function validateQuestions(items: unknown[]): ValidationResult {
       return;
     }
 
-    const ALLOWED_TYPES = new Set([...GENERATABLE_TYPES, 'short_answer', 'error_correction']);
+    const ALLOWED_TYPES = new Set([...GENERATABLE_TYPES, 'error_correction']);
     if (!ALLOWED_TYPES.has(type as (typeof GENERATABLE_TYPES)[number])) {
       errors.push(`${label}: unknown type "${type}" — use one of ${[...ALLOWED_TYPES].join(', ')}`);
       return;
@@ -140,6 +140,17 @@ export function validateQuestions(items: unknown[]): ValidationResult {
       }
       if (answer.length > 24) {
         errors.push(`${label}: fill_blank answer must be a short single term, max 24 characters (got ${answer.length})`);
+        return;
+      }
+    } else if (type === 'short_answer') {
+      // Typed free answer, graded fuzzily client-side: keep the expected
+      // answer short enough that typo-tolerant matching stays meaningful
+      if (answer.length > 80) {
+        errors.push(`${label}: short_answer answer must be a brief phrase, max 80 characters (got ${answer.length})`);
+        return;
+      }
+      if (question.length < 20) {
+        errors.push(`${label}: short_answer question too thin — ask something that needs a real (practical/scenario) answer`);
         return;
       }
     } else if (type === 'matching') {
@@ -225,6 +236,8 @@ export function isRenderableQuestion(q: {
   } else if (type === 'matching') {
     const pairs = Array.isArray(q.matchingPairs) ? q.matchingPairs : [];
     if (pairs.length < 3 || pairs.length > 5) return false;
+  } else if (type === 'short_answer') {
+    if (!answer || answer.length > 80) return false;
   }
   return true;
 }

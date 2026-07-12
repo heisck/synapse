@@ -82,6 +82,8 @@ async function generateQuestions(
       `- "fill_blank": { "question": a sentence with the key term replaced by "___", "type": "fill_blank", "answer": the missing term (short), "explanation", "concept", "difficulty" }`,
     wants('matching') &&
       `- "matching": { "question": e.g. "Match each term to its definition", "type": "matching", "matchingPairs": [3-5 objects {"left": term, "right": its match}], "answer": "", "explanation", "concept", "difficulty" }`,
+    wants('short_answer') &&
+      `- "short_answer": { "question": a practical/scenario question ("How would you...", "What happens when...", "Give the term for...") whose answer is a brief phrase, "type": "short_answer", "answer": the expected phrase (max 80 chars), "explanation", "concept", "difficulty" } — prefer applied, real-world framing over pure recall`,
   ]
     .filter(Boolean)
     .join('\n');
