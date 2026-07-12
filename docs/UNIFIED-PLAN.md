@@ -228,3 +228,36 @@ Priorities: **P0** = broken/blocking today, **P1** = foundation for later phases
 **Standing reminders:** every shared-DB schema change runs `db:push` + `db:push:prod`; quiz-emptiness class of bugs is guarded by validate.ts — extend it for every new generated type; the project must stay safe to open-source (R1 is non-negotiable).
 
 **Pinned model choices (owner decision 2026-07-11):** all free/open models. Orchestrator/reasoning role: DeepSeek-R1 (free tier). Teaching role: openai/gpt-oss-120b:free. Fast helper: gpt-oss-20b-class free model. Vision/image extraction (task 23, 31): Qwen-VL → LLaVA → InternVL, router picks best available free one. TTS: Kokoro (primary) → Piper → Coqui, after browser SpeechSynthesis stepping stone. STT: Whisper, after browser SpeechRecognition stepping stone. The role router (task 33) encodes these as default role assignments, still overridable by availability probing.
+
+---
+
+# PART IV — OWNER CHANGE REQUESTS 2026-07-12 (tasks 57–78)
+
+Source: Rebecca's consolidated change-request list (22 items). Numbering is CR *n* → task *56+n* — this matches the task-number comments already present in code (`task 57` in appStore/questionIntent/TutorView, `task 62` in answerCheck, `task 63` in localLibrary, `task 70` in TutorView). Per standing protocol these run in batches of ~10 with tsc+eslint+vitest validation between batches; bug-class items outrank the rest within their batch. All quiz/tutor state is user-side per R1; orchestrator state additions are client-held blobs per D28.
+
+| # | Task (CR) | Description | Pri | Size |
+|---|---|---|---|---|
+| 57 | Tutor-driven quiz flow (CR1) | Tutor asks question count → redirects to Quiz page; quiz from current atomic unit ONLY; results shown; auto-return to originating tutor session; tutor bubble available during quiz; orchestrator knows tutor-initiated-quiz state (slide, questions, answers, mistakes, session); on finish tutor gets score/misses and offers review / re-explain / another quiz. | P1 | **major** |
+| 58 | Manual quiz progression (CR2) | No auto-advance in Quiz Mode: show correctness + explanation, user presses Next. Flashcards KEEP auto-advance. | P1 | minor |
+| 59 | Quiz black-screen fix (CR3) | Tutor-generated quiz renders immediately; never requires leave-and-return. | P1 | minor |
+| 60 | Quiz results responsive grid (CR4) | Result buttons in two-column grid on small screens; no overflow/cut-off. | P1 | minor |
+| 61 | AI assistant inside quiz (CR5) | Bubble always available; smooth animation + onboarding-style overlay; answers about current question with follow-up context; orchestrator knows slide + active question + query. | P1 | **major** |
+| 62 | Semantic written-answer evaluation (CR6) | Typed answers judged by meaning, not exact match; key-ideas-present = correct; missing ideas explained. | P1 | minor |
+| 63 | Meaningful-content question filter (CR7) | No questions from lecturer names, grading policy, admin/intro pages, decorations, metadata; only educational content. | P1 | minor |
+| 64 | Tutor slide awareness (CR8) | Tutor always knows current atomic unit, current slide, total units; "Which slide are we on?" always correct. | P1 | minor |
+| 65 | ALU cleaning & merge on ingest (CR9) | Auto-strip grading/requirements/welcome/admin/lecturer/intro pages; merge title page + following explanation into one atomic unit; teaching starts at first meaningful concept. | P1 | **major** |
+| 66 | Tutor navigation (CR10) | Selecting a slide opens the tutor teaching that unit; "Next / Next slide / Continue" advances unit + updates context + explains immediately; no Explain button. | P1 | minor |
+| 67 | Tutor context management (CR11) | Context updates on every unit change; "Explain this" = current unit; future-slide questions answered briefly + "covered later", no drift. | P1 | minor |
+| 68 | Exact-count quiz generation (CR12) | Ask how many questions; generate exactly N, never more. | P1 | minor |
+| 69 | Per-ALU background banks w/ priority interrupt (CR13) | 20–30 q/unit, ~200–250/course; bank-first serving; if short: pause background gen → finish requested unit → deliver → resume where stopped; never interferes with live quiz. | P1 | **major** |
+| 70 | Unique quiz sessions (CR14) | Sessions tracked; completed stay completed; new quizzes get fresh sets; answered questions not reused unless explicit review. | P1 | minor |
+| 71 | TTS voice manager in Settings (CR15) | Voice downloads in Settings: progress, ready state, selection, optional cloned voices; downloaded voices start instantly. | P2 | minor |
+| 72 | Matching questions polish (CR16) | Post-submit correct/incorrect indication; aligned columns, consistent spacing, taller cards centred; remove redundant "matched" labels. | P2 | minor |
+| 73 | Streak reward tiers + answer SFX (CR17) | Unique reward cards/animations/sounds per milestone (5, 10, higher); satisfying correct-answer sounds. | P2 | minor |
+| 74 | Persistent focus session (CR18) | Focus session survives leave-and-return; focus state maintained app-wide (D7/D8 overlap). | P1 | minor |
+| 75 | Remove hardcoded data (CR19) | Live updates for spaced repetition, active sessions, streaks, XP, weekly XP, achievements, leaderboard, courses completed, level, stats. | P1 | **major** |
+| 76 | Progress tracking fix (CR20) | XP increases after learning activity; achievements unlock; course counts/levels/leaderboard update from real activity. | P1 | minor |
+| 77 | Quiz entry behaviour (CR21) | Quiz page never auto-starts: choose course → choose quiz → background-prepared → load on selection. | P1 | minor |
+| 78 | Orchestrator as system authority (CR22) | Orchestrator tracks course/unit/tutor-session/quiz-session/progress/mistakes/navigation/background-gen state; coordinates components; tutor does NOT control app logic; deterministic code governs critical behaviour; hallucination containment. | P1 | **major** |
+
+**Part IV counts:** 22 tasks · 6 major / 16 minor. Batch order: **A (quiz core)** 58, 59, 60, 62, 63, 68, 72 → **B (tutor↔quiz loop)** 57, 61, 70, 77 → **C (ALU + navigation + orchestrator)** 64, 65, 66, 67, 69, 78 → **D (experience/stats)** 71, 73, 74, 75, 76.

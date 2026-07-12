@@ -241,6 +241,14 @@ export async function POST(request: NextRequest) {
     }
     const sectionsDone = sectionOffset + sections.length;
 
+    // Exact-count generation (task 68): when the caller asked for N questions
+    // ("give me 5"), never return more than N — the learner gets exactly what
+    // they asked for.
+    const requestedCount = Math.floor(Number(body.count));
+    if (Number.isFinite(requestedCount) && requestedCount > 0 && questions.length > requestedCount) {
+      questions.length = requestedCount;
+    }
+
     if (questions.length === 0 && sectionsDone >= allSections.length) {
       return NextResponse.json(
         { error: 'Failed to generate questions. Please try with different content.' },

@@ -271,6 +271,25 @@ export interface AppState {
   chatRequestStatus: 'idle' | 'sending' | 'streaming' | 'failed';
   setChatRequestStatus: (status: 'idle' | 'sending' | 'streaming' | 'failed') => void;
   canSendChat: () => boolean;
+
+  // Tutor-initiated quiz session (task 57): set when the tutor launches a
+  // quiz so the quiz page can offer "Return to Tutor" and the tutor can
+  // debrief the results. Cleared after the debrief.
+  tutorQuizContext: {
+    sessionId: string;
+    courseId: string;
+    slideId?: string;
+    slideIndex: number;
+    /** Filled in by the quiz results screen for the tutor debrief. */
+    result?: { correct: number; total: number; missedConcepts: string[] };
+  } | null;
+  setTutorQuizContext: (ctx: AppState['tutorQuizContext']) => void;
+
+  // Tutor navigation (task 66): selecting a slide anywhere in the app (or
+  // saying "next") queues an immediate explanation of that unit — TutorView
+  // consumes and clears it once the slide index has caught up.
+  pendingSlideExplain: number | null;
+  setPendingSlideExplain: (index: number | null) => void;
 }
 
 function defaultAchievements(): Achievement[] {
@@ -953,6 +972,10 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get): 
 
   chatRequestStatus: 'idle',
   setChatRequestStatus: (status) => set({ chatRequestStatus: status }),
+  tutorQuizContext: null,
+  setTutorQuizContext: (ctx) => set({ tutorQuizContext: ctx }),
+  pendingSlideExplain: null,
+  setPendingSlideExplain: (index) => set({ pendingSlideExplain: index }),
   canSendChat: () => {
     const s = get().chatRequestStatus;
     return s === 'idle' || s === 'failed';

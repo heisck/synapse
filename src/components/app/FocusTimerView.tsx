@@ -39,6 +39,16 @@ const FOCUS_QUOTES = [
 ];
 
 const STORAGE_KEY = 'synapse-focus-sessions';
+const ACTIVE_SESSION_KEY = 'synapse-focus-session';
+
+/** The in-flight timer, persisted so it survives navigation and reloads. */
+interface ActiveFocusSession {
+  startedAt: number;        // epoch ms (shifted forward on resume)
+  durationSec: number;
+  mode: TimerMode;
+  pausedAt: number | null;  // epoch ms while paused, null while running
+  completedRecorded?: boolean; // guards against double-recording on restore
+}
 
 const MODE_DURATIONS: Record<string, number> = {
   focus: 25 * 60,
@@ -71,6 +81,41 @@ function loadSessions(): FocusSession[] {
 
 function saveSessions(sessions: FocusSession[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+}
+
+function loadActiveSession(): ActiveFocusSession | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ActiveFocusSession;
+    if (typeof parsed.startedAt !== 'number' || typeof parsed.durationSec !== 'number') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveActiveSession(session: ActiveFocusSession) {
+  try {
+    localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(session));
+  } catch {
+    // storage full or unavailable
+  }
+}
+
+function clearActiveSession() {
+  try {
+    localStorage.removeItem(ACTIVE_SESSION_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/** Remaining seconds computed purely from timestamps (pause-aware). */
+function getRemainingSeconds(session: ActiveFocusSession, now = Date.now()): number {
+  const reference = session.pausedAt ?? now;
+  return session.durationSec - (reference - session.startedAt) / 1000;
 }
 
 function getTodayStats() {
@@ -116,12 +161,24 @@ function getDayNameFull(dateStr: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function FocusTimerView() {
+  // Restore a persisted in-flight session (survives navigation and reloads).
+  // Lazy state initializers: read exactly once on mount, render-safe.
+  const [restored] = useState<ActiveFocusSession | null>(() => loadActiveSession());
+  const [restoredRemaining] = useState(() => (restored ? getRemainingSeconds(restored) : 0));
+  const hasLiveRestore = Boolean(restored && restoredRemaining > 0);
+
   // Timer state — focus duration comes from the user's settings
-  const [mode, setMode] = useState<TimerMode>('focus');
-  const [customMinutes, setCustomMinutes] = useState(10);
-  const [totalSeconds, setTotalSeconds] = useState(() => (useAppStore.getState().settings.defaultSessionDuration || 25) * 60);
-  const [remainingSeconds, setRemainingSeconds] = useState(() => (useAppStore.getState().settings.defaultSessionDuration || 25) * 60);
-  const [isRunning, setIsRunning] = useState(false);
+  const [mode, setMode] = useState<TimerMode>(() => (hasLiveRestore ? restored!.mode : 'focus'));
+  const [customMinutes, setCustomMinutes] = useState(() =>
+    hasLiveRestore && restored!.mode === 'custom' ? Math.max(1, Math.round(restored!.durationSec / 60)) : 10
+  );
+  const [totalSeconds, setTotalSeconds] = useState(() =>
+    hasLiveRestore ? restored!.durationSec : (useAppStore.getState().settings.defaultSessionDuration || 25) * 60
+  );
+  const [remainingSeconds, setRemainingSeconds] = useState(() =>
+    hasLiveRestore ? Math.max(0, Math.ceil(restoredRemaining)) : (useAppStore.getState().settings.defaultSessionDuration || 25) * 60
+  );
+  const [isRunning, setIsRunning] = useState(() => Boolean(hasLiveRestore && restored!.pausedAt === null));
   const [sessionCount, setSessionCount] = useState(1);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [stats, setStats] = useState(() => getTodayStats());
@@ -150,12 +207,54 @@ export function FocusTimerView() {
   }, [stats]);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTimestampRef = useRef<number>(0);
-  const initialRemainingRef = useRef<number>(0);
+
+  // Mirror of the persisted session so the 1s tick doesn't hit localStorage
+  const activeSessionRef = useRef<ActiveFocusSession | null>(hasLiveRestore ? restored! : null);
+  const persistActiveSession = useCallback((session: ActiveFocusSession) => {
+    activeSessionRef.current = session;
+    saveActiveSession(session);
+  }, []);
+  const clearPersistedSession = useCallback(() => {
+    activeSessionRef.current = null;
+    clearActiveSession();
+  }, []);
+
+  // One-time restore side effect: a session that elapsed while the user was
+  // away is recorded exactly once (completedRecorded guard), then cleared.
+  useEffect(() => {
+    const active = activeSessionRef.current ?? loadActiveSession();
+    if (!active) return;
+    if (getRemainingSeconds(active) > 0) return;
+    const alreadyRecorded = Boolean(active.completedRecorded);
+    persistActiveSession({ ...active, completedRecorded: true });
+    if (!alreadyRecorded && active.mode === 'focus') {
+      const sessions = loadSessions();
+      sessions.push({
+        date: getTodayStr(),
+        duration: active.durationSec,
+        completedAt: Date.now(),
+      });
+      saveSessions(sessions);
+       
+      setStats(getTodayStats());
+      addStudySession({
+        id: crypto.randomUUID(),
+        date: new Date().toISOString().split('T')[0],
+        duration: Math.round(active.durationSec / 60),
+        topic: 'Focus Session',
+        messagesCount: 0,
+        masteryGained: 0,
+      });
+      checkAchievements();
+      toast.success('Your focus session finished while you were away — it has been recorded!', { duration: 6000 });
+    }
+    clearPersistedSession();
+  }, [addStudySession, checkAchievements, persistActiveSession, clearPersistedSession]);
 
   // switchMode must be declared before handleTimerComplete (which calls it)
   const switchMode = useCallback((newMode: TimerMode) => {
     setIsRunning(false);
+    clearPersistedSession();
     setMode(newMode);
 
     if (newMode === 'custom') {
@@ -167,32 +266,40 @@ export function FocusTimerView() {
       setTotalSeconds(dur);
       setRemainingSeconds(dur);
     }
-  }, [customMinutes, modeDurations]);
+  }, [customMinutes, modeDurations, clearPersistedSession]);
 
   // handleTimerComplete must be declared before the useEffect that calls it
   const handleTimerComplete = useCallback(() => {
-    if (mode === 'focus') {
-      // Record session to localStorage (existing behavior)
-      const sessions = loadSessions();
-      sessions.push({
-        date: getTodayStr(),
-        duration: totalSeconds,
-        completedAt: Date.now(),
-      });
-      saveSessions(sessions);
-      setStats(getTodayStats());
+    // Only completion (or Finish/Cancel) clears the persisted record; the
+    // completedRecorded flag prevents recording the same session twice.
+    const active = activeSessionRef.current ?? loadActiveSession();
+    const alreadyRecorded = Boolean(active?.completedRecorded);
+    clearPersistedSession();
 
-      // Sync to app store
-      const focusDurationMinutes = Math.round(totalSeconds / 60);
-      addStudySession({
-        id: crypto.randomUUID(),
-        date: new Date().toISOString().split('T')[0],
-        duration: focusDurationMinutes,
-        topic: 'Focus Session',
-        messagesCount: 0,
-        masteryGained: 0,
-      });
-      checkAchievements();
+    if (mode === 'focus') {
+      if (!alreadyRecorded) {
+        // Record session to localStorage (existing behavior)
+        const sessions = loadSessions();
+        sessions.push({
+          date: getTodayStr(),
+          duration: totalSeconds,
+          completedAt: Date.now(),
+        });
+        saveSessions(sessions);
+        setStats(getTodayStats());
+
+        // Sync to app store
+        const focusDurationMinutes = Math.round(totalSeconds / 60);
+        addStudySession({
+          id: crypto.randomUUID(),
+          date: new Date().toISOString().split('T')[0],
+          duration: focusDurationMinutes,
+          topic: 'Focus Session',
+          messagesCount: 0,
+          masteryGained: 0,
+        });
+        checkAchievements();
+      }
       setShowGoToTutor(true);
 
       // Next quote
@@ -223,7 +330,7 @@ export function FocusTimerView() {
         duration: 6000,
       });
     }
-  }, [mode, totalSeconds, sessionCount, switchMode, addStudySession, checkAchievements]);
+  }, [mode, totalSeconds, sessionCount, switchMode, addStudySession, checkAchievements, clearPersistedSession]);
 
   // Keep a ref to handleTimerComplete so the timer tick can call it
   const handleTimerCompleteRef = useRef(handleTimerComplete);
@@ -235,7 +342,10 @@ export function FocusTimerView() {
     if (isRunning) {
       intervalRef.current = setInterval(() => {
         setRemainingSeconds((prev) => {
-          if (prev <= 1) {
+          // Timestamp-based: stays accurate across tab sleep and reloads
+          const active = activeSessionRef.current;
+          const next = active ? Math.max(0, Math.ceil(getRemainingSeconds(active))) : prev - 1;
+          if (next <= 0) {
             clearInterval(intervalRef.current!);
             intervalRef.current = null;
             setIsRunning(false);
@@ -243,7 +353,7 @@ export function FocusTimerView() {
             setTimeout(() => handleTimerCompleteRef.current(), 0);
             return 0;
           }
-          return prev - 1;
+          return next;
         });
       }, 1000);
     } else {
@@ -263,27 +373,36 @@ export function FocusTimerView() {
   const handleStartPause = () => {
     if (isRunning) {
       setIsRunning(false);
+      // Persist the pause point; leaving the page keeps the session alive
+      const active = activeSessionRef.current ?? loadActiveSession();
+      if (active && active.pausedAt === null) {
+        persistActiveSession({ ...active, pausedAt: Date.now() });
+      }
     } else {
+      let nextTotal = totalSeconds;
+      let nextRemaining = remainingSeconds;
       if (remainingSeconds <= 0) {
         // Reset if timer ended
-        if (mode === 'custom') {
-          const dur = customMinutes * 60;
-          setTotalSeconds(dur);
-          setRemainingSeconds(dur);
-        } else {
-          const dur = modeDurations[mode];
-          setTotalSeconds(dur);
-          setRemainingSeconds(dur);
-        }
+        nextTotal = mode === 'custom' ? customMinutes * 60 : modeDurations[mode];
+        nextRemaining = nextTotal;
+        setTotalSeconds(nextTotal);
+        setRemainingSeconds(nextTotal);
       }
-      startTimestampRef.current = Date.now();
-      initialRemainingRef.current = remainingSeconds;
+      // Back-dating startedAt by the already-elapsed time makes fresh starts
+      // and resumes the same write (resume effectively shifts startedAt).
+      persistActiveSession({
+        startedAt: Date.now() - (nextTotal - nextRemaining) * 1000,
+        durationSec: nextTotal,
+        mode,
+        pausedAt: null,
+      });
       setIsRunning(true);
     }
   };
 
   const handleReset = () => {
     setIsRunning(false);
+    clearPersistedSession();
     if (mode === 'custom') {
       const dur = customMinutes * 60;
       setTotalSeconds(dur);

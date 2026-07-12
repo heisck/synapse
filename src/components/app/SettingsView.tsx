@@ -200,13 +200,8 @@ export function SettingsView() {
   const [importCode, setImportCode] = useState('');
   const [copied, setCopied] = useState(false);
   // The learner's own OpenRouter key — browser-only, never in our DB
-  const [orKey, setOrKey] = useState('');
-  const [orKeySaved, setOrKeySaved] = useState(false);
-  useEffect(() => {
-    const existing = getOpenRouterKey();
-    setOrKey(existing);
-    setOrKeySaved(!!existing);
-  }, []);
+  const [orKey, setOrKey] = useState(() => getOpenRouterKey());
+  const [orKeySaved, setOrKeySaved] = useState(() => !!getOpenRouterKey());
   const handleSaveOrKey = () => {
     const trimmed = orKey.trim();
     if (trimmed && !/^sk-or-/.test(trimmed)) {
@@ -218,10 +213,7 @@ export function SettingsView() {
     toast.success(trimmed ? 'API key saved to this browser' : 'API key removed');
   };
   // Bring-your-own storage (Cloudinary + database) — browser-only, like the key
-  const [byo, setByo] = useState({ dbUrl: '', dbAuthToken: '', cloudinaryUrl: '' });
-  useEffect(() => {
-    setByo(getByoStorage());
-  }, []);
+  const [byo, setByo] = useState(() => getByoStorage());
   const handleSaveByo = () => {
     setByoStorage(byo);
     toast.success('Storage settings saved to this browser');

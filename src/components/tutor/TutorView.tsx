@@ -372,6 +372,37 @@ export function TutorView() {
   // Orchestrator continuity blob (task 51/D28): lives client-side only (R1)
   const orchestratorStateRef = useRef<unknown>(null)
 
+  // Pending "how many questions?" ask (task 57): set when the learner asked
+  // for a quiz without a count — the next number answers it
+  const pendingQuizAskRef = useRef<{ slideNumber: number | null } | null>(null)
+
+  // Quiz debrief (task 57): when a tutor-launched quiz finished, its results
+  // land in tutorQuizContext.result — greet the learner with the outcome and
+  // offer review / re-explanation / another round, then clear the context.
+  const tutorQuizResult = useAppStore((s) => s.tutorQuizContext)
+  useEffect(() => {
+    const ctx = tutorQuizResult
+    if (!ctx?.result || !activeSessionId) return
+    const { correct, total, missedConcepts } = ctx.result
+    const pct = total > 0 ? Math.round((correct / total) * 100) : 0
+    const missed = missedConcepts.filter(Boolean).slice(0, 4)
+    addMessage({
+      id: crypto.randomUUID(),
+      sessionId: activeSessionId,
+      role: 'assistant',
+      content:
+        `Welcome back! You scored **${correct}/${total} (${pct}%)** on that quiz.` +
+        (missed.length > 0
+          ? `\n\nThe concepts that tripped you up: ${missed.map((c) => `**${c}**`).join(', ')}.\n\nWant me to re-explain any of them, review the questions you missed, or set up another quiz?`
+          : pct === 100
+            ? "\n\nPerfect score — this slide is yours. Say **next** when you're ready to move on."
+            : '\n\nWant to review the ones you missed, or try another round?'),
+      createdAt: new Date().toISOString(),
+    })
+    useAppStore.getState().setTutorQuizContext(null)
+     
+  }, [tutorQuizResult, activeSessionId])
+
   // Learning boundary (B16): the furthest slide the learner has reached in
   // this course — the tutor must not teach past it unless explicitly asked.
   // The LAST-viewed index is saved too, so a resumed session reopens on the
@@ -416,6 +447,16 @@ export function TutorView() {
     return new Set(structuredDoc.compact.map((id) => Number(id.split('_')[1]) - 1))
   }, [structuredDoc])
 
+  // Atomic teaching units by default (task 65): once the normalizer's compact
+  // sequence exists, teaching walks it automatically — admin/title/lecturer
+  // pages are cleaned out unless the learner toggles back to Original.
+  // Adjust-during-render pattern (runs once per course).
+  const [autoCompactedFor, setAutoCompactedFor] = useState<string | null>(null)
+  if (compactSet && activeCourse?.id && autoCompactedFor !== activeCourse.id) {
+    setAutoCompactedFor(activeCourse.id)
+    setSlideViewMode('compact')
+  }
+
   // Slide navigation is non-blocking (B11): the heavy re-render of this view
   // (slide text, markdown, highlights) runs as a transition, so the tap that
   // triggered it never freezes — the button stays responsive and the slide
@@ -436,6 +477,23 @@ export function TutorView() {
     }
     startTransition(() => setCurrentSlideIndexRaw(target))
   }, [setCurrentSlideIndexRaw, slideViewMode, compactSet])
+
+  // First meaningful concept (task 65): a fresh course (no saved position)
+  // opens on the first teaching page, not the deck's title/admin page.
+  const firstConceptAppliedRef = useRef<string | null>(null)
+  useEffect(() => {
+    const courseId = activeCourse?.id
+    if (!courseId || !compactSet || activeSlides.length === 0) return
+    if (firstConceptAppliedRef.current === courseId) return
+    firstConceptAppliedRef.current = courseId
+    let saved = 0
+    try { saved = Number(localStorage.getItem(`synapse-lastslide-${courseId}`) ?? 0) } catch { /* storage unavailable */ }
+    const idx = useAppStore.getState().currentSlideIndex
+    if (saved === 0 && idx === 0 && !compactSet.has(0)) {
+      const first = Math.min(...compactSet)
+      if (Number.isFinite(first)) setCurrentSlideIndexRaw(first)
+    }
+  }, [activeCourse?.id, compactSet, activeSlides.length, setCurrentSlideIndexRaw])
 
   // Pomodoro state
   const [pomodoroExpanded, setPomodoroExpanded] = useState(false)
@@ -984,12 +1042,19 @@ export function TutorView() {
     // Request state machine (B9): one in-flight request, no duplicate sends
     if (!useAppStore.getState().canSendChat()) return
 
-    // Typing "next" / "n" advances the slide without calling the AI
-    if (/^(next|n)$/i.test(content) && activeSlides.length > 0) {
+    // Tutor navigation (task 66): "next" / "next slide" / "continue" advances
+    // to the next atomic teaching unit without calling the AI, updates the
+    // tutor context, and begins explaining the new unit immediately.
+    if (/^(next( slide)?|continue|n)$/i.test(content) && activeSlides.length > 0) {
       setInput('')
-      if (currentSlideIndex < activeSlides.length - 1) {
-        setCurrentSlideIndex(currentSlideIndex + 1)
-        toast(`Slide ${currentSlideIndex + 2}/${activeSlides.length}: ${activeSlides[currentSlideIndex + 1]?.title ?? ''}`)
+      let nxt = currentSlideIndex + 1
+      if (slideViewMode === 'compact' && compactSet) {
+        while (nxt < activeSlides.length && !compactSet.has(nxt)) nxt++
+      }
+      if (nxt < activeSlides.length) {
+        setCurrentSlideIndex(nxt)
+        toast(`Slide ${nxt + 1}/${activeSlides.length}: ${activeSlides[nxt]?.title ?? ''}`)
+        useAppStore.getState().setPendingSlideExplain(nxt)
       } else {
         toast('Already on the last slide')
       }
@@ -1020,21 +1085,61 @@ export function TutorView() {
     // first, background top-up for the shortfall — never by asking the LLM
     // to write quiz JSON. The LLM is only involved when the bank is empty,
     // and even then through the validated /api/questions path.
-    const questionIntent = parseQuestionIntent(content)
+    let questionIntent = parseQuestionIntent(content)
+    // Pending "how many?" (task 57): the previous turn was a quiz request
+    // without a count — a bare number (or "N questions") now answers it.
+    if (!questionIntent && pendingQuizAskRef.current) {
+      const numMatch = content.match(/\b(\d{1,3})\b/)
+      if (numMatch) {
+        questionIntent = {
+          count: Math.min(Math.max(parseInt(numMatch[1], 10), 1), 50),
+          explicitCount: true,
+          slideNumber: pendingQuizAskRef.current.slideNumber,
+          flashcards: false,
+          review: false,
+        }
+      }
+      pendingQuizAskRef.current = null
+    }
+    if (questionIntent && activeCourse && !questionIntent.explicitCount) {
+      // Controlled generation (task 12/57): ask before generating anything
+      pendingQuizAskRef.current = { slideNumber: questionIntent.slideNumber }
+      addMessage({
+        id: crypto.randomUUID(),
+        sessionId,
+        role: 'assistant',
+        content: `Happy to quiz you${questionIntent.slideNumber ? ` on slide ${questionIntent.slideNumber}` : ' on this slide'}! How many questions do you want? (e.g. 5, 10, 20)`,
+        createdAt: new Date().toISOString(),
+      })
+      return
+    }
     if (questionIntent && activeCourse) {
       const slideIdx = questionIntent.slideNumber != null && questionIntent.slideNumber >= 1 && questionIntent.slideNumber <= activeSlides.length
         ? questionIntent.slideNumber - 1
         : currentSlideIndex
       const slide = activeSlides[slideIdx]
       const slideLabel = slide ? `slide ${slideIdx + 1}` : 'your course'
-      // Slide-grounded bank first, whole-course unused pool as fallback
+      // Slide-grounded bank first, whole-course unused pool as fallback.
+      // Answered questions are NEVER reused (task 70) unless the learner
+      // explicitly asked for a review — shortfalls generate fresh ones.
       const slideBank = slide ? getSlideBank(activeCourse.id, slide.id) : { unused: [], used: [] }
       const courseBank = getSlideBank(activeCourse.id)
-      const pool = [...slideBank.unused, ...slideBank.used.filter((q) => !slideBank.unused.includes(q))]
+      const pool = questionIntent.review
+        ? [...slideBank.unused, ...slideBank.used]
+        : slideBank.unused
       const fallback = courseBank.unused.filter((q) => !pool.includes(q))
       const available = [...pool, ...fallback]
       const wanted = questionIntent.count
       const have = available.slice(0, wanted)
+
+      // Tutor-initiated session (task 57): the quiz page offers "Return to
+      // Tutor" and the results come back here for a debrief
+      const markTutorQuiz = () => useAppStore.getState().setTutorQuizContext({
+        sessionId,
+        courseId: activeCourse.id,
+        slideId: slide?.id,
+        slideIndex: slideIdx,
+      })
 
       const sessionMsg = (text: string) => addMessage({
         id: crypto.randomUUID(),
@@ -1055,6 +1160,7 @@ export function TutorView() {
         if (topUp > 0 && slide) {
           void requestSlideQuestions(activeCourse.id, slide.id, slide.content ?? '', topUp)
         }
+        markTutorQuiz()
         navigate('quiz')
         return
       }
@@ -1069,6 +1175,7 @@ export function TutorView() {
       if (ready.length > 0) {
         setCurrentQuestions(ready)
         updateMessage(genId, `Ready — ${ready.length} questions for ${slideLabel}. Opening the quiz…`)
+        markTutorQuiz()
         navigate('quiz')
       } else {
         updateMessage(genId, 'I couldn\'t generate questions right now — check your OpenRouter key in Settings, or try again in a moment.')
@@ -1150,6 +1257,14 @@ export function TutorView() {
                   courseTitle: activeCourse?.title,
                   index: currentSlideIndex + 1,
                   total: activeSlides.length,
+                  // Atomic teaching unit position (task 64): "which slide are
+                  // we on?" answers with both slide and unit numbering
+                  unit: compactSet
+                    ? {
+                        index: [...compactSet].filter((i) => i <= currentSlideIndex).length,
+                        total: compactSet.size,
+                      }
+                    : undefined,
                   title: activeSlides[currentSlideIndex]?.title,
                   // Slide purpose from the normalizer (A10) + learning boundary (B16)
                   kind: structuredDoc?.pages[currentSlideIndex]?.kind,
@@ -1255,13 +1370,29 @@ export function TutorView() {
       // Every exit path lands back on idle — the composer can never lock (B9)
       useAppStore.getState().setChatRequestStatus('idle')
     }
-  }, [input, activeSessionId, messages, learnerProfile, masteryMap, addMessage, updateMessage, setActiveSession, setLoading, setSessionPhase, activePersona, moodSettings, activeTopic, activeCourse, userName, tips, feedbackItems, settings.responseSpeed, settings.language, hardSubjects, alwaysConfuses, bestTeachingStyle, activeSlides, currentSlideIndex, activeSlideContent, maybeStartExam, structuredDoc])
+  }, [input, activeSessionId, messages, learnerProfile, masteryMap, addMessage, updateMessage, setActiveSession, setLoading, setSessionPhase, activePersona, moodSettings, activeTopic, activeCourse, userName, tips, feedbackItems, settings.responseSpeed, settings.language, hardSubjects, alwaysConfuses, bestTeachingStyle, activeSlides, currentSlideIndex, activeSlideContent, maybeStartExam, structuredDoc, slideViewMode, compactSet, setCurrentSlideIndex])
 
   // Revision mode: SessionControls sets the phase to 'review', then this sends
   // a visible revision request through the normal chat path
   const handleRevisionRequest = useCallback(() => {
     handleSend("Let's revise what we've covered so far")
   }, [handleSend])
+
+  // Tutor navigation (task 66): a queued "teach this unit" request — set by
+  // the slide list in CourseDetail or by "next"/"continue" above — fires as
+  // soon as the slide index has caught up, so the explanation always grounds
+  // in the unit the learner just moved to. handleSend goes through a ref to
+  // keep this effect from re-firing on every render.
+  const handleSendRef = useRef(handleSend)
+  useEffect(() => { handleSendRef.current = handleSend }, [handleSend])
+  const pendingSlideExplain = useAppStore((s) => s.pendingSlideExplain)
+  useEffect(() => {
+    if (pendingSlideExplain == null || activeSlides.length === 0) return
+    if (currentSlideIndex !== pendingSlideExplain) return
+    if (!useAppStore.getState().canSendChat()) return
+    useAppStore.getState().setPendingSlideExplain(null)
+    handleSendRef.current('Teach me this slide.')
+  }, [pendingSlideExplain, currentSlideIndex, activeSlides.length])
 
   // Record the session as a real StudySession (feeds heatmaps, streaks, achievements)
   const recordStudySession = useCallback(() => {

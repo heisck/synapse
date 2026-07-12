@@ -88,11 +88,14 @@ export function ExamMode({ courseId, courseTitle, initialPool, onExit }: ExamMod
   const startedAtRef = useRef(0);
   const finishedRef = useRef(false);
 
-  // Refresh the pool from cache whenever the background generator adds cards
+  // Refresh the pool from cache whenever the background generator adds cards.
+  // Genuine external-source sync (localStorage cache keyed by gen.cachedCount),
+  // not derivable during render.
   useEffect(() => {
     if (!courseId) return;
     const cache = loadQuestionCache(courseId);
     if (cache && cache.questions.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- external cache sync
       setPool((prev) => {
         const seen = new Set(prev.map((q) => q.question.toLowerCase()));
         const merged = [...prev];

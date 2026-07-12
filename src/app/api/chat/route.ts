@@ -357,6 +357,7 @@ export async function POST(request: NextRequest) {
       const sc = slideContext as {
         index?: number;
         total?: number;
+        unit?: { index?: number; total?: number };
         title?: string;
         content?: string;
         courseTitle?: string;
@@ -368,6 +369,14 @@ export async function POST(request: NextRequest) {
       if (sc.courseTitle) parts.push(`Course: "${sanitize(String(sc.courseTitle)).slice(0, 120)}".`);
       if (sc.title || sc.index) {
         parts.push(`The learner is currently viewing slide ${sc.index ?? '?'}${sc.total ? ` of ${sc.total}` : ''}${sc.title ? `: "${sanitize(String(sc.title)).slice(0, 150)}"` : ''}.`);
+      }
+      // Atomic-unit awareness (task 64): the tutor always knows its position
+      // in the teaching sequence and answers "which slide are we on?" exactly
+      if (sc.unit?.index && sc.unit?.total) {
+        parts.push(`This is atomic teaching unit ${sc.unit.index} of ${sc.unit.total} (admin/title pages excluded).`);
+      }
+      if (sc.index) {
+        parts.push(`If asked which slide or unit you are on, answer precisely: slide ${sc.index}${sc.total ? ` of ${sc.total}` : ''}${sc.unit?.index ? `, teaching unit ${sc.unit.index} of ${sc.unit.total}` : ''}.`);
       }
       // Slide purpose awareness (A10/A12): non-teaching pages get a light touch
       const PURPOSE_GUIDANCE: Record<string, string> = {

@@ -86,6 +86,8 @@ import {
 } from './quiz/components';
 import { InteractiveFlashcard } from './quiz/InteractiveFlashcard';
 import { ExamMode } from './quiz/ExamMode';
+import { QuizAssistant } from './quiz/QuizAssistant';
+import { playCorrect, playIncorrect, playMilestone } from '@/lib/sfx';
 import { useBackgroundGeneration } from '@/hooks/useBackgroundGeneration';
 import { GraduationCap, Cpu } from 'lucide-react';
 import { appendToQuestionCache, loadQuestionCache, getPreferredTypes, setPreferredTypes, ALL_QUESTION_TYPES, loadAnsweredIds, markQuestionAnswered } from '@/lib/questionCache';
@@ -100,6 +102,19 @@ const TYPE_CHIP_LABELS: Record<string, string> = {
   short_answer: 'Practical',
 };
 
+// In-session streak milestones: each gets a unique celebration card + sound
+const STREAK_MILESTONES: Record<number, { emoji: string; label: string; gradient?: string; style?: React.CSSProperties; level: number }> = {
+  5: { emoji: '🔥', label: 'On a roll!', gradient: 'from-emerald-500 to-teal-500', level: 1 },
+  10: { emoji: '⚡', label: 'Unstoppable!', gradient: 'from-violet-500 to-purple-600', level: 2 },
+  25: { emoji: '👑', label: 'Legend!', gradient: 'from-amber-400 via-orange-500 to-amber-500', level: 3 },
+  50: {
+    emoji: '🏆',
+    label: 'Untouchable!',
+    style: { backgroundImage: 'linear-gradient(135deg, #ef4444, #f59e0b, #10b981, #06b6d4, #8b5cf6)' },
+    level: 4,
+  },
+};
+
 // ---------- Main QuizView ----------
 // Answered-ids ("used" status) now live in questionCache so quiz, exam and
 // tutor share one bank state (task 18 / A7)
@@ -108,6 +123,9 @@ const persistAnsweredEver = markQuestionAnswered;
 
 export function QuizView() {
   const { navigate, currentQuestions, activeCourse, updateMastery, adaptiveResults, addAdaptiveResult, masteryMap, courses, setCurrentQuestions, setActiveCourse } = useAppStore();
+  // Set when the tutor launched this quiz — the results screen offers a
+  // one-tap way back into that tutoring session
+  const tutorQuizContext = useAppStore((s) => s.tutorQuizContext);
 
   const [selectedCourse, setSelectedCourse] = useState<string>('all');
   const bgCourseId = selectedCourse !== 'all' ? selectedCourse : activeCourse?.id ?? null;
@@ -269,6 +287,8 @@ export function QuizView() {
   const [controlsOpen, setControlsOpen] = useState(false);
   const [courseChipQuery, setCourseChipQuery] = useState('');
   const [showBonusPopup, setShowBonusPopup] = useState(false);
+  // Streak milestone celebration (5/10/25/50) — auto-dismissed
+  const [milestoneStreak, setMilestoneStreak] = useState<number | null>(null);
   const [hintsUsed, setHintsUsed] = useState<Record<string, boolean>>({});
   const [fillBlankValues, setFillBlankValues] = useState<Record<string, string>>({});
   const [fillBlankGrades, setFillBlankGrades] = useState<Record<string, FillBlankGrade>>({});
@@ -871,8 +891,18 @@ export function QuizView() {
     setFillBlankGrades({});
   };
 
-  const currentQ = questions[currentIndex];
-  const progress = questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0;
+  // Black-screen guard: a quiz launched from elsewhere (e.g. the tutor swaps
+  // currentQuestions then navigates here) can leave a stale index pointing
+  // past the new pool — clamp it so the quiz renders immediately.
+  // Adjust-during-render pattern: React re-renders synchronously before paint.
+  if (questions.length > 0 && currentIndex >= questions.length) {
+    setCurrentIndex(0);
+    setShowExplanation(false);
+  }
+
+  // Defensive: never render an empty page while the clamp effect catches up
+  const currentQ = questions[currentIndex] ?? questions[0];
+  const progress = questions.length > 0 ? ((Math.min(currentIndex, questions.length - 1) + 1) / questions.length) * 100 : 0;
 
   // Compute wrong answers for error analysis
   const wrongAnswers = useMemo(() => {
@@ -943,16 +973,9 @@ export function QuizView() {
       }
 
       if (isCorrect(currentQ, answer)) {
-        // Correct → show the confetti/explanation briefly, then move on by
-        // itself. A wrong answer stays put so the learner reads the why.
-        const idxNow = currentIndex;
-        setTimeout(() => {
-          setCurrentIndex((i) => {
-            if (i !== idxNow || i >= questions.length - 1) return i;
-            setShowExplanation(false);
-            return i + 1;
-          });
-        }, 1400);
+        // No auto-advance: the learner reviews the explanation and presses
+        // Next themselves, right or wrong.
+        playCorrect();
         setShowConfetti(true);
         setTimeout(() => setShowConfetti(false), 1500);
         const newStreak = streak + 1;
@@ -966,7 +989,13 @@ export function QuizView() {
         if (newStreak > 0 && newStreak % 3 === 0 && newStreak % 5 !== 0) {
           toast.success(`🔥 Hot streak! ${newStreak} in a row!`);
         }
-        if (newStreak > 0 && newStreak % 5 === 0) {
+        if (STREAK_MILESTONES[newStreak]) {
+          // Big milestone (5/10/25/50): unique celebration card + arpeggio
+          // replaces the generic every-5 bonus popup
+          setMilestoneStreak(newStreak);
+          playMilestone(STREAK_MILESTONES[newStreak].level);
+          setTimeout(() => setMilestoneStreak((m) => (m === newStreak ? null : m)), 2500);
+        } else if (newStreak > 0 && newStreak % 5 === 0) {
           toast.success(`🔥🔥 AMAZING! ${newStreak} in a row! Bonus points earned!`, {
             description: `Score multiplier: ${getScoreMultiplier(newStreak)}x`,
             duration: 4000,
@@ -975,6 +1004,7 @@ export function QuizView() {
           setTimeout(() => setShowBonusPopup(false), 2500);
         }
       } else {
+        playIncorrect();
         setStreak(0);
       }
 
@@ -990,7 +1020,7 @@ export function QuizView() {
         saveAdaptiveResults([...adaptiveResults, result].slice(-200));
       }
     },
-    [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted, adaptiveOn, studyMode, adaptiveResults, addAdaptiveResult, hintsUsed, currentIndex, questions.length],
+    [answered, answers, currentQ, isCorrect, streak, bestStreak, timerStarted, adaptiveOn, studyMode, adaptiveResults, addAdaptiveResult, hintsUsed],
   );
 
   // Review mode answer handler
@@ -1088,6 +1118,49 @@ export function QuizView() {
   const strokeDashoffset = circumference * (1 - scorePercent);
 
   const difficultyTotal = difficultyCounts.easy + difficultyCounts.medium + difficultyCounts.hard;
+
+  // Results-screen mount: append one session record (last 100 kept) so other
+  // surfaces can show quiz history. Per-question "answered ever" flags are
+  // already persisted at answer time via persistAnsweredEver.
+  const sessionLoggedRef = useRef(false);
+  useEffect(() => {
+    if (!showResults) {
+      sessionLoggedRef.current = false;
+      return;
+    }
+    if (sessionLoggedRef.current) return;
+    sessionLoggedRef.current = true;
+    try {
+      const raw = localStorage.getItem('synapse-quiz-sessions');
+      const sessions = raw ? (JSON.parse(raw) as unknown[]) : [];
+      sessions.push({
+        id: crypto.randomUUID(),
+        courseId: bgCourseId ?? 'all',
+        questionIds: questions.map((q) => q.id),
+        correct: score,
+        total: questions.length,
+        completedAt: new Date().toISOString(),
+      });
+      localStorage.setItem('synapse-quiz-sessions', JSON.stringify(sessions.slice(-100)));
+    } catch { /* quota */ }
+  }, [showResults, bgCourseId, questions, score]);
+
+  // Tutor-launched quizzes: publish the outcome into the store once so the
+  // tutor can debrief when the learner returns. The tutor clears the context.
+  useEffect(() => {
+    if (!showResults || !tutorQuizContext || tutorQuizContext.result) return;
+    const missedConcepts = [
+      ...new Set(
+        questions
+          .filter((q) => answered[q.id] && !isCorrect(q, answers[q.id] || '') && q.concept)
+          .map((q) => q.concept as string),
+      ),
+    ];
+    useAppStore.getState().setTutorQuizContext({
+      ...tutorQuizContext,
+      result: { correct: score, total: questions.length, missedConcepts },
+    });
+  }, [showResults, tutorQuizContext, questions, answered, answers, isCorrect, score]);
 
   // ---------- Empty State: course browser (D12) ----------
   // Card-based course selection like the Courses page — searchable, filtered
@@ -1348,8 +1421,14 @@ export function QuizView() {
             </div>
           </div>
 
-          {/* Stacks full-width on phones so buttons never overflow the card */}
-          <div className="flex flex-col sm:flex-row sm:flex-wrap justify-center gap-2 sm:gap-3 [&_button]:w-full sm:[&_button]:w-auto [&>div]:w-full sm:[&>div]:w-auto">
+          {/* 2-col grid on phones so buttons never overflow or get cut off */}
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-center sm:gap-3 [&_button]:w-full sm:[&_button]:w-auto [&>div]:w-full sm:[&>div]:w-auto">
+            {tutorQuizContext && (
+              <Button onClick={() => navigate('tutor')} className="glow-emerald">
+                <Brain className="h-4 w-4 mr-2" />
+                Return to Tutor
+              </Button>
+            )}
             <Button
               onClick={handleMoreQuestions}
               disabled={loadingMore}
@@ -1438,6 +1517,8 @@ export function QuizView() {
           loading={weaknessReportLoading}
           onStartReview={handleStartReviewFromReport}
         />
+
+        <QuizAssistant />
       </motion.div>
     );
   }

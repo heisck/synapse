@@ -1,4 +1,8 @@
 {
+  "css.lint.unknownAtRules": "ignore",
+  "css.lint.vendorPrefix": "ignore",
+  "tailwindCSS.lint.cssConflict": "ignore",
+  "tailwindCSS.lint.suggestCanonicalClasses": "ignore",
   "cSpell.words": [
     "vercel",
     "synapse",

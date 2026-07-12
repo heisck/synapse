@@ -15,9 +15,14 @@
  */
 export interface QuestionIntent {
   count: number;
+  /** True when the learner named a number ("20 questions") — otherwise the
+      tutor asks how many before launching (task 57/12). */
+  explicitCount: boolean;
   /** 1-based slide number if the message names one. */
   slideNumber: number | null;
   flashcards: boolean;
+  /** Learner asked to REVIEW — previously answered questions may be reused. */
+  review: boolean;
 }
 
 export function parseQuestionIntent(message: string): QuestionIntent | null {
@@ -38,8 +43,10 @@ export function parseQuestionIntent(message: string): QuestionIntent | null {
   const count = explicitCount ? Math.min(Math.max(parseInt(explicitCount[1], 10), 1), 50) : 10;
   return {
     count,
+    explicitCount: explicitCount !== null,
     slideNumber: slideMatch ? parseInt(slideMatch[1], 10) : null,
     flashcards: /flashcards?|cards\b/.test(m) && !/questions?/.test(m),
+    review: /\breview\b|\bagain\b|\bretry\b/.test(m),
   };
 }
 

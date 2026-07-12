@@ -122,6 +122,25 @@ export async function getLocalCourseContent(courseId: string): Promise<string> {
   return slides.map((s) => `## ${s.title}\n${s.content}`).join('\n\n');
 }
 
+/**
+ * Teaching content ONLY (task 63): slides whose page classified as learning
+ * material. Admin pages — grading policy, lecturer info, welcome/references —
+ * never reach the question generator, so no more "who is the lecturer?"
+ * questions. Falls back to everything when no structured doc exists yet.
+ */
+export async function getLocalTeachingContent(courseId: string): Promise<string> {
+  const [slides, doc] = await Promise.all([getLocalSlides(courseId), getLocalDoc(courseId)]);
+  const sdoc = doc?.structuredDoc as { pages?: Array<{ kind: string }> } | undefined;
+  const teaching = sdoc?.pages?.length === slides.length
+    ? slides.filter((_, i) => {
+        const kind = sdoc.pages![i]?.kind;
+        return kind === 'learning' || kind === 'objectives' || kind === 'summary';
+      })
+    : slides;
+  const pool = teaching.length > 0 ? teaching : slides;
+  return pool.map((s) => `## ${s.title}\n${s.content}`).join('\n\n');
+}
+
 // ─── Structured document + ALU store (tasks 27/30, C9/C10, rule R1) ─────────
 
 export interface LocalDocRecord {

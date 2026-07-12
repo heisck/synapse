@@ -20,12 +20,16 @@
 
 import { useAppStore } from '@/stores/appStore';
 import { aiFetch, getOpenRouterKey } from '@/lib/aiKey';
-import { appendToQuestionCache, loadQuestionCache, getPreferredTypes, isBackgroundGenerationEnabled } from '@/lib/questionCache';
-import { isLocalCourse, getLocalCourseContent, getLocalSlides } from '@/lib/localLibrary';
+import { appendToQuestionCache, loadQuestionCache, getPreferredTypes, isBackgroundGenerationEnabled, getSlideBank } from '@/lib/questionCache';
+import { isLocalCourse, getLocalCourseContent, getLocalSlides, getLocalDoc } from '@/lib/localLibrary';
 import type { Question } from '@/types';
 
 const REQUEST_TIMEOUT_MS = 90_000;
-const COURSE_CAP = 500;
+// Per-ALU banks (task 69): ~20-30 questions per teaching unit, ~200-250 per
+// course. The unit target scales down for very large decks so the course
+// total stays near the cap.
+const COURSE_CAP = 250;
+const UNIT_TARGET_MAX = 30;
 const IDLE_RECHECK_MS = 30_000;
 const PAUSE_POLL_MS = 1_500;
 
@@ -46,6 +50,15 @@ const courseCooldown = new Map<string, number>();
 function aiAnswering(): boolean {
   const s = useAppStore.getState().chatRequestStatus;
   return s === 'sending' || s === 'streaming';
+}
+
+/**
+ * Quiz non-interference (task 69): background walking never competes with a
+ * live quiz for the model/key — only the priority lane (which serves the quiz
+ * itself) runs while the learner is on the quiz page.
+ */
+function learnerInQuiz(): boolean {
+  return useAppStore.getState().currentView === 'quiz';
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -112,12 +125,56 @@ async function servePriority(req: PriorityRequest): Promise<void> {
 async function generateForCourse(courseId: string): Promise<boolean> {
   const cache = loadQuestionCache(courseId);
   if ((cache?.questions.length ?? 0) >= COURSE_CAP) return true;
-  if (cache?.sectionsTotal != null && (cache.sectionsDone ?? 0) >= cache.sectionsTotal) return true;
 
   await waitWhileAnswering();
   // Yield to any tutor priority request first
   while (priorityQueue.length > 0) await servePriority(priorityQueue.shift()!);
 
+  // Per-ALU walk (task 69): local courses bank questions unit by unit — the
+  // first teaching slide below its target gets topped up, tagged with its
+  // slideId so the bank stays slide-grounded. Admin/title/lecturer pages are
+  // skipped via the normalizer's classification (task 63).
+  if (isLocalCourse(courseId)) {
+    const [slides, doc] = await Promise.all([getLocalSlides(courseId), getLocalDoc(courseId)]);
+    if (slides.length > 0) {
+      const kinds = (doc?.structuredDoc as { pages?: Array<{ kind: string }> } | undefined)?.pages;
+      const teaching = kinds?.length === slides.length
+        ? slides.filter((_, i) => ['learning', 'objectives', 'summary'].includes(kinds[i]?.kind ?? 'learning'))
+        : slides;
+      const units = teaching.length > 0 ? teaching : slides;
+      // 20-30 per unit for typical decks; very large decks spread the course
+      // cap across all units (coverage beats depth) — never below 5.
+      const unitTarget = Math.max(5, Math.min(UNIT_TARGET_MAX, Math.floor(COURSE_CAP / units.length)));
+      const nextUnit = units.find((s) => {
+        const bank = getSlideBank(courseId, s.id);
+        return bank.unused.length + bank.used.length < unitTarget;
+      });
+      if (!nextUnit) return true; // every unit at target — course banked
+      const bank = getSlideBank(courseId, nextUnit.id);
+      const need = Math.min(unitTarget - (bank.unused.length + bank.used.length), 10);
+      const data = await fetchQuestions({
+        courseId,
+        slideId: nextUnit.id,
+        content: `## ${nextUnit.title}\n${nextUnit.content}`,
+        types: getPreferredTypes(),
+        count: Math.max(need, 1),
+      });
+      if (!data) {
+        courseCooldown.set(courseId, Date.now() + 5 * 60_000);
+        return false;
+      }
+      const tagged = (data.questions ?? []).map((q) => ({
+        ...q,
+        slideId: q.slideId ?? nextUnit.id,
+        provenance: q.provenance ?? ('background' as const),
+      }));
+      const updated = appendToQuestionCache(courseId, tagged, cache?.sectionsDone ?? 0, cache?.sectionsTotal ?? null);
+      return updated.questions.length >= COURSE_CAP;
+    }
+  }
+
+  // Non-local (shared-DB) courses keep the section walk
+  if (cache?.sectionsTotal != null && (cache.sectionsDone ?? 0) >= cache.sectionsTotal) return true;
   const data = await fetchQuestions({
     courseId,
     sectionOffset: cache?.sectionsDone ?? 0,
@@ -142,6 +199,13 @@ async function mainLoop(): Promise<void> {
     }
     // Priority lane always wins
     while (priorityQueue.length > 0) await servePriority(priorityQueue.shift()!);
+
+    // Never interfere with a live quiz (task 69): background walking waits
+    // until the learner leaves the quiz page; priority requests still run.
+    if (learnerInQuiz()) {
+      await sleep(PAUSE_POLL_MS);
+      continue;
+    }
 
     const state = useAppStore.getState();
     const now = Date.now();

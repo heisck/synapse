@@ -191,18 +191,21 @@ export function FillBlankBoxes({
   const [chars, setChars] = useState<string[]>(() => slots.map(() => ''));
   const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
-  // Reset when the question changes
-  useEffect(() => {
+  // Reset when the question changes — adjust-state-during-render pattern
+  // (https://react.dev/learn/you-might-not-need-an-effect)
+  const [prevAnswer, setPrevAnswer] = useState(answer);
+  if (prevAnswer !== answer) {
+    setPrevAnswer(answer);
     setChars(slots.map(() => ''));
-  }, [slots]);
+  }
 
   const inputIndexes = useMemo(() => slots.map((s, i) => (s.isSep ? -1 : i)).filter((i) => i >= 0), [slots]);
   const allFilled = inputIndexes.every((i) => chars[i]);
 
-  const focusIndex = (i: number | undefined) => {
+  const focusIndex = useCallback((i: number | undefined) => {
     if (i === undefined) return;
     inputRefs.current[i]?.focus();
-  };
+  }, []);
 
   const nextInput = (from: number) => inputIndexes.find((i) => i > from);
   const prevInput = (from: number) => [...inputIndexes].reverse().find((i) => i < from);
@@ -304,6 +307,7 @@ export function FillBlankBoxes({
                       next[i] = v;
                       return next;
                     });
+                    // eslint-disable-next-line react-hooks/refs -- onChange event handler (inside a render IIFE, so the rule can't tell); ref is read on user input, not during render
                     focusIndex(nextInput(i));
                   }}
                   onKeyDown={(e) => handleKeyDown(e, i)}
@@ -349,12 +353,16 @@ export function FillBlankBoxes({
 }
 
 // ---------- Matching question component (drag-and-drop with SVG connectors) ----------
+// When `submittedAnswer` is provided the component renders a graded review of
+// the submitted pairings instead of the interactive matcher.
 export function MatchingInput({
   pairs,
   onAnswer,
+  submittedAnswer,
 }: {
   pairs: Array<{ left: string; right: string }>;
   onAnswer: (answer: string) => void;
+  submittedAnswer?: string;
 }) {
   const shuffledRight = useMemo(() => {
     const arr = [...pairs.map((p) => p.right)];
@@ -508,12 +516,76 @@ export function MatchingInput({
   const allMatched = pairs.every((p) => matches[p.left]);
   const usedRights = new Set(Object.values(matches));
 
+  // Graded review after submission: parse the "left-right, left-right" answer
+  // string and mark every pair. The chosen right is recovered by testing each
+  // known right value against the submitted set.
+  if (submittedAnswer !== undefined) {
+    const submittedSet = new Set(
+      submittedAnswer.split(',').map((p) => p.trim().toLowerCase()).filter(Boolean),
+    );
+    const rights = pairs.map((p) => p.right);
+    return (
+      <div className="space-y-2">
+        {pairs.map((p) => {
+          const pairCorrect = submittedSet.has(`${p.left}-${p.right}`.toLowerCase());
+          const chosen = pairCorrect
+            ? p.right
+            : rights.find((r) => submittedSet.has(`${p.left}-${r}`.toLowerCase()));
+          return (
+            <motion.div
+              key={p.left}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="grid grid-cols-2 gap-3 items-stretch"
+            >
+              <div
+                className={`flex items-center rounded-lg border p-2.5 sm:p-3 text-xs sm:text-sm font-medium min-w-0 ${
+                  pairCorrect ? 'border-emerald-500/60 bg-emerald-500/5' : 'border-red-500/60 bg-red-500/5'
+                }`}
+              >
+                <span className="break-words min-w-0">{p.left}</span>
+              </div>
+              <div
+                className={`flex items-center gap-2 rounded-lg border p-2.5 sm:p-3 text-xs sm:text-sm min-w-0 ${
+                  pairCorrect ? 'border-emerald-500/60 bg-emerald-500/5' : 'border-red-500/60 bg-red-500/5'
+                }`}
+              >
+                {pairCorrect ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                )}
+                <div className="min-w-0 flex-1 my-auto">
+                  <span
+                    className={`break-words ${
+                      pairCorrect
+                        ? 'text-emerald-700 dark:text-emerald-400'
+                        : 'text-red-700 dark:text-red-400 line-through decoration-red-400/50'
+                    }`}
+                  >
+                    {chosen ?? '—'}
+                  </span>
+                  {!pairCorrect && (
+                    <div className="text-[11px] text-muted-foreground mt-0.5 break-words">
+                      Correct:{' '}
+                      <span className="font-medium text-emerald-600 dark:text-emerald-400">{p.right}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         Drag left items to their match on the right, or click to select. Click a connected left item to remove it.
       </p>
-      <div ref={containerRef} className="relative grid grid-cols-2 gap-4">
+      <div ref={containerRef} className="relative grid grid-cols-2 gap-x-4 gap-y-2">
         {/* SVG Connector Overlay */}
         <svg className="absolute inset-0 pointer-events-none z-10" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
           <defs>
@@ -544,84 +616,70 @@ export function MatchingInput({
           </AnimatePresence>
         </svg>
 
-        {/* Left column */}
-        <div className="flex flex-col gap-2">
-          {pairs.map((p) => {
-            const isMatched = !!matches[p.left];
-            const isDragging = dragItem === p.left;
-            return (
-              <motion.button
-                key={p.left}
-                data-left-idx={leftIdxMap[p.left]}
-                draggable={!isMatched}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => handleLeftClick(p.left)}
-                onDragStart={(e) => handleDragStart(e as unknown as React.DragEvent, p.left)}
-                onDragEnd={handleDragEnd}
-                className={`rounded-lg border p-2.5 sm:p-3 text-left text-xs sm:text-sm font-medium transition-all min-w-0 ${
-                  isDragging
-                    ? 'border-primary/50 bg-primary/5 opacity-50 scale-95'
-                    : selectedLeft === p.left
-                      ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary/30 shadow-sm shadow-primary/10'
-                      : isMatched
-                        ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 shadow-sm shadow-emerald-500/5'
-                        : 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-grab active:cursor-grabbing'
-                }`}
-              >
-                {/* Matched value sits on its own line — squeezing it next to
-                    the term collapsed the column and broke words letter-by-letter */}
-                <div className="flex items-start gap-2">
-                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <span className="break-words">{p.left}</span>
-                    {isMatched && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 2 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="text-[11px] opacity-70 truncate text-emerald-600 dark:text-emerald-400"
-                      >
-                        → {matches[p.left]}
-                      </motion.div>
-                    )}
-                  </div>
-                </div>
-              </motion.button>
-            );
-          })}
-        </div>
+        {/* Left column — explicit grid rows keep each row the same height as
+            its right-column neighbour, with content vertically centered */}
+        {pairs.map((p, i) => {
+          const isMatched = !!matches[p.left];
+          const isDragging = dragItem === p.left;
+          return (
+            <motion.button
+              key={p.left}
+              data-left-idx={leftIdxMap[p.left]}
+              draggable={!isMatched}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => handleLeftClick(p.left)}
+              onDragStart={(e) => handleDragStart(e as unknown as React.DragEvent, p.left)}
+              onDragEnd={handleDragEnd}
+              style={{ gridRow: i + 1 }}
+              className={`col-start-1 h-full rounded-lg border p-2.5 sm:p-3 text-left text-xs sm:text-sm font-medium transition-all min-w-0 ${
+                isDragging
+                  ? 'border-primary/50 bg-primary/5 opacity-50 scale-95'
+                  : selectedLeft === p.left
+                    ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary/30 shadow-sm shadow-primary/10'
+                    : isMatched
+                      ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 shadow-sm shadow-emerald-500/5'
+                      : 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-grab active:cursor-grabbing'
+              }`}
+            >
+              <div className="flex h-full items-center gap-2">
+                <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                <span className="flex-1 min-w-0 break-words my-auto">{p.left}</span>
+              </div>
+            </motion.button>
+          );
+        })}
         {/* Right column */}
-        <div className="flex flex-col gap-2">
-          {shuffledRight.map((r) => {
-            const isUsed = usedRights.has(r);
-            const isDragOver = dragOverTarget === r && !isUsed;
-            return (
-              <motion.button
-                key={r}
-                data-right-idx={rightIdxMap[r]}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => !isUsed && handleRightClick(r)}
-                onDragOver={(e) => handleDragOver(e, r)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, r)}
-                disabled={isUsed}
-                className={`rounded-lg border p-2.5 sm:p-3 text-left text-xs sm:text-sm transition-all min-w-0 ${
-                  isDragOver
-                    ? 'border-emerald-500/60 bg-emerald-500/10 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-500/20 scale-[1.02]'
-                    : isUsed
-                      ? 'border-border bg-muted/50 text-muted-foreground line-through opacity-50'
-                      : selectedLeft
-                        ? 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-pointer hover:shadow-sm hover:shadow-primary/5'
-                        : 'border-border opacity-60'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
-                  <span className="flex-1 min-w-0 break-words">{r}</span>
-                </div>
-              </motion.button>
-            );
-          })}
-        </div>
+        {shuffledRight.map((r, i) => {
+          const isUsed = usedRights.has(r);
+          const isDragOver = dragOverTarget === r && !isUsed;
+          return (
+            <motion.button
+              key={r}
+              data-right-idx={rightIdxMap[r]}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => !isUsed && handleRightClick(r)}
+              onDragOver={(e) => handleDragOver(e, r)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, r)}
+              disabled={isUsed}
+              style={{ gridRow: i + 1 }}
+              className={`col-start-2 h-full rounded-lg border p-2.5 sm:p-3 text-left text-xs sm:text-sm transition-all min-w-0 ${
+                isDragOver
+                  ? 'border-emerald-500/60 bg-emerald-500/10 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-500/20 scale-[1.02]'
+                  : isUsed
+                    ? 'border-border bg-muted/50 text-muted-foreground opacity-50'
+                    : selectedLeft
+                      ? 'border-border hover:border-primary/30 hover:bg-primary/5 cursor-pointer hover:shadow-sm hover:shadow-primary/5'
+                      : 'border-border opacity-60'
+              }`}
+            >
+              <div className="flex h-full items-center gap-2">
+                <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                <span className="flex-1 min-w-0 break-words my-auto">{r}</span>
+              </div>
+            </motion.button>
+          );
+        })}
       </div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -634,7 +692,7 @@ export function MatchingInput({
             />
           </div>
           <span className="text-xs text-muted-foreground">
-            {Object.keys(matches).length}/{pairs.length} matched
+            {Object.keys(matches).length}/{pairs.length}
           </span>
         </div>
         <motion.div

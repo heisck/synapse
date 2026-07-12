@@ -1,4 +1,34 @@
 import type { Question } from '@/types';
+import { aiFetch } from '@/lib/aiKey';
+
+/**
+ * Semantic written-answer evaluation (task 62): grades typed answers by
+ * MEANING via /api/answer-eval when fuzzy matching says "wrong". Returns
+ * {correct, feedback} — feedback names the missing idea when incorrect.
+ * Fails safe: network/model problems yield correct=false with gentle
+ * feedback, never a hang (12s timeout).
+ */
+export async function semanticEvaluate(
+  question: string,
+  expected: string,
+  learnerAnswer: string,
+): Promise<{ correct: boolean; feedback: string }> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12_000);
+    const res = await aiFetch('/api/answer-eval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, expected, answer: learnerAnswer }),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
+    if (!res.ok) return { correct: false, feedback: '' };
+    const data = await res.json();
+    return { correct: data.correct === true, feedback: typeof data.feedback === 'string' ? data.feedback : '' };
+  } catch {
+    return { correct: false, feedback: '' };
+  }
+}
 
 /** Levenshtein edit distance (mirrors the implementation used in QuizView). */
 export function levenshtein(a: string, b: string): number {

@@ -297,6 +297,18 @@ export function CourseDetail() {
     setCurrentSlideIndex(index);
   };
 
+  // Tutor navigation (task 66): picking a slide from the list opens the tutor
+  // teaching that unit immediately — no extra Explain button.
+  const handleSlideTeach = (index: number) => {
+    handleSlideSelect(index);
+    const s = useAppStore.getState();
+    if (!s.activeSessionId || s.activeCourseId !== activeCourse?.id) {
+      setActiveSession(`session-${Date.now()}`, activeCourse?.id, activeCourse?.title ?? 'Study Session');
+    }
+    s.setPendingSlideExplain(index);
+    navigate('tutor');
+  };
+
   const handlePrev = () => {
     if (currentSlideIndex > 0) {
       setSlideDirection(-1);
@@ -743,8 +755,8 @@ export function CourseDetail() {
                       variants={{ initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } } }}
                       whileHover={{ x: 2 }}
                       whileTap={{ scale: 0.98 }}
-                      onClick={() => handleSlideSelect(i)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSlideSelect(i); }}
+                      onClick={() => handleSlideTeach(i)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSlideTeach(i); }}
                       className={`group/slide flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm whitespace-nowrap lg:whitespace-normal transition-all min-w-40 lg:min-w-0 cursor-pointer ${
                         i === currentSlideIndex
                           ? 'bg-linear-to-r from-primary/10 to-secondary/5 text-primary font-medium shadow-sm border border-primary/10'

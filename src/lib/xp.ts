@@ -1,4 +1,5 @@
 import type { StudySession, AdaptiveResult } from '@/types';
+import { useAppStore } from '@/stores/appStore';
 
 /** XP → Level calculator (1-50). Each level requires progressively more XP. */
 export function xpToLevel(totalXP: number): number {
@@ -43,6 +44,31 @@ export function computeUserStats(input: {
     .reduce((sum, s) => sum + s.duration * 10, 0);
 
   return { totalXP, weeklyXP, level: xpToLevel(totalXP), quizAccuracy };
+}
+
+/**
+ * Records a finished quiz through the existing XP mechanism. XP itself is
+ * derived (computeUserStats) from adaptiveResults — which QuizView already
+ * records per answer — so this closes the remaining gap: quizScore/quizTotal
+ * (feeding the Perfect Score / Quick Learner achievements and the profile's
+ * quiz-accuracy stats) were never set on completion, and achievements were
+ * never re-checked. QuizView should call this once when a quiz finishes.
+ */
+export function awardQuizXp(correct: number, total: number): void {
+  if (typeof window === 'undefined' || total <= 0) return;
+  const { setQuizScore, checkAchievements } = useAppStore.getState();
+  setQuizScore(correct, total);
+  checkAchievements();
+}
+
+/**
+ * Mastery levels are written on two scales by different flows (1-5 from the
+ * quiz/card views, 0-100 from the tutor's inline quiz cards). Normalize any
+ * stored level to a 0-100 percentage for display and thresholds.
+ */
+export function masteryLevelToPct(level: number): number {
+  if (!Number.isFinite(level) || level <= 0) return 0;
+  return Math.round(Math.min(100, level <= 5 ? level * 20 : level));
 }
 
 /** Reads the current study streak persisted by addStudySession. */
