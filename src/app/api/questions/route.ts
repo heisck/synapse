@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LLM, authFromRequest, llmErrorResponse, type LLMAuth } from '@/lib/ai';
 import { validateQuestions, GENERATABLE_TYPES, type ValidatedQuestion } from '@/lib/validate';
-import { composeStrategyBlock, activeStrategyIds, recordStrategyOutcome } from '@/lib/strategy';
+import { composeStrategyBlock, activeStrategyIds, recordStrategyOutcome, refineFailureIntoSuggestion } from '@/lib/strategy';
 import { db } from '@/lib/db';
 import type { Question } from '@prisma/client';
 
@@ -175,6 +175,11 @@ Respond ONLY with a valid JSON array of question objects, no other text.`;
     lastErrors = errors.length > 0 ? errors : ['too few valid questions — generate more'];
   }
 
+  // All retries exhausted (D29): hand the failure pattern to the reasoning
+  // model to propose a prompt refinement — off the critical path
+  if (collected.length === 0 && lastErrors.length > 0) {
+    void refineFailureIntoSuggestion(auth, 'questions', lastErrors);
+  }
   return collected;
 }
 

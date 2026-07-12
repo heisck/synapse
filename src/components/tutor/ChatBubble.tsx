@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Brain, Copy, Check, RefreshCw, RotateCcw, Volume2, VolumeX, Loader2, Star, BookMarked } from 'lucide-react'
+import { Brain, Copy, Check, RefreshCw, RotateCcw, Volume2, VolumeX, Loader2, Star, BookMarked, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -14,6 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useAppStore } from '@/stores/appStore'
+import { speak, stopSpeaking } from '@/lib/voice/tts'
 import { InteractiveQuizCard, parseQuizPayload } from './InteractiveQuizCard'
 import type { ChatMessage } from '@/types'
 
@@ -25,10 +26,10 @@ const REACTIONS = [
   { emoji: '🤔', label: 'Thought-provoking' },
 ]
 
-// Browser-native speech synthesis (Web Speech API) — free, no server round trip,
-// no external API/config dependency, and pairs with the browser's native
-// SpeechRecognition already used for voice input.
+// Speech (task 49): Kokoro in-browser TTS with SpeechSynthesis fallback —
+// both engines stop through the same call so playback never overlaps.
 export function stopAllTTS() {
+  stopSpeaking()
   if (typeof window !== 'undefined' && window.speechSynthesis) {
     window.speechSynthesis.cancel()
   }
@@ -559,7 +560,10 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
     }
   }, [message.id])
 
-  const handleTTS = useCallback(() => {
+  // Read aloud (task 49): Kokoro-82M in the browser — natural open-source
+  // voice — with SpeechSynthesis as automatic fallback. Kokoro synthesizes
+  // before playback starts, so a brief loading state covers generation.
+  const handleTTS = useCallback(async () => {
     // If currently playing this message, stop it
     if (isTTSPlaying && playingMessageIdRef.current === message.id) {
       stopAllTTS()
@@ -568,11 +572,7 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
       return
     }
 
-    if (typeof window === 'undefined' || !window.speechSynthesis) {
-      return
-    }
-
-    // Stop any other utterance first
+    // Stop any other playback first
     stopAllTTS()
     playingMessageIdRef.current = null
 
@@ -582,21 +582,25 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
       .replace(/[`*_#>~]/g, '')
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
 
-    const utterance = new SpeechSynthesisUtterance(plainText)
     playingMessageIdRef.current = message.id
-    setIsTTSPlaying(true)
-
-    utterance.onend = () => {
-      setIsTTSPlaying(false)
-      playingMessageIdRef.current = null
+    setIsTTSLoading(true)
+    try {
+      const engine = await speak(plainText, {
+        onEnd: () => {
+          if (playingMessageIdRef.current === message.id) {
+            setIsTTSPlaying(false)
+            playingMessageIdRef.current = null
+          }
+        },
+      })
+      if (engine === 'none') {
+        playingMessageIdRef.current = null
+      } else {
+        setIsTTSPlaying(true)
+      }
+    } finally {
+      setIsTTSLoading(false)
     }
-
-    utterance.onerror = () => {
-      setIsTTSPlaying(false)
-      playingMessageIdRef.current = null
-    }
-
-    window.speechSynthesis.speak(utterance)
   }, [message.content, message.id, isTTSPlaying])
 
   const handleRegenerate = useCallback(() => {
@@ -626,10 +630,16 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
 
   // A quiz/flashcards fence that hasn't finished streaming (or failed to
   // parse) must never leak raw JSON into the chat — cut it off and show a
-  // preparing hint until the block completes and parses into a card
-  const partialFenceIdx = isAssistant && !quizData ? renderContent.search(/```(?:quiz|flashcards?)\b/) : -1
+  // preparing hint while it's still growing. Once the message is final, an
+  // unparseable fence becomes a clear retry message — NEVER a stuck spinner.
+  const partialFenceIdx = isAssistant && !quizData ? renderContent.search(/```(?:quiz|flashcards?|json)\b/) : -1
   const visibleContent = partialFenceIdx >= 0 ? renderContent.slice(0, partialFenceIdx).trim() : renderContent
-  const preparingCards = partialFenceIdx >= 0
+  // A fence with no closing ``` is still streaming in; stream-end cleanup
+  // (watchdog + cleanResponse) always closes fences, so a CLOSED fence that
+  // still didn't parse into quizData is genuinely broken output.
+  const fenceClosed = partialFenceIdx >= 0 && /```(?:quiz|flashcards?|json)\b[\s\S]*```/.test(renderContent)
+  const fenceStillGrowing = partialFenceIdx >= 0 && !fenceClosed
+  const fenceBroken = partialFenceIdx >= 0 && fenceClosed
 
   return (
     <motion.div
@@ -719,10 +729,16 @@ export function ChatBubble({ message, isStreaming = false, onRegenerate, onSaveA
             ) : (
               <>
                 {visibleContent && <MarkdownContent content={visibleContent} />}
-                {preparingCards && (
+                {fenceStillGrowing && (
                   <span className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     Preparing your cards…
+                  </span>
+                )}
+                {fenceBroken && (
+                  <span className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 mt-1">
+                    <XCircle className="h-3 w-3" />
+                    The cards didn&apos;t come out right — ask me to try again, or use the Quiz page for a full set.
                   </span>
                 )}
                 <BlinkingCursor visible={showCursor} />

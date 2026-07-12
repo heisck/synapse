@@ -76,6 +76,21 @@ const DEFAULT_STRATEGIES: Array<{ scope: StrategyScope; slot: StrategySlot; name
   },
 ];
 
+let seedAttempted = false;
+async function seedDefaultsIntoDb(): Promise<void> {
+  if (seedAttempted) return;
+  seedAttempted = true;
+  try {
+    for (const d of DEFAULT_STRATEGIES) {
+      const existing = await db.promptStrategy.findUnique({ where: { name: d.name } });
+      if (!existing) await db.promptStrategy.create({ data: d });
+    }
+    cache.clear();
+  } catch (err) {
+    console.warn('[strategy] default seeding failed (non-fatal):', err);
+  }
+}
+
 // ─── Composer (tasks 14/15) ──────────────────────────────────────────────────
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -90,6 +105,12 @@ async function loadActive(scope: StrategyScope): Promise<StrategyRow[]> {
       where: { active: true, scope: { in: [scope, 'all'] } },
       orderBy: [{ slot: 'asc' }, { version: 'desc' }],
     });
+    if (rows.length === 0) {
+      // First run (task 38): seed the built-in defaults — language policy,
+      // formatting, question structure — into the live tables so effectiveness
+      // counters start accumulating. Idempotent via the unique name key.
+      void seedDefaultsIntoDb();
+    }
     const picked = rows.length > 0
       ? rows
       : DEFAULT_STRATEGIES
@@ -192,6 +213,46 @@ export async function fileSuggestion(input: SuggestionInput): Promise<void> {
     });
   } catch (err) {
     console.warn('[strategy] fileSuggestion failed (non-fatal):', err);
+  }
+}
+
+/**
+ * Prompt Improvement Pipeline completion (task 36, D29): when a generation
+ * scope exhausts all retries, the reasoning role analyzes the failure pattern
+ * and proposes ONE refined constraint — filed as a stage-1 suggestion, never
+ * applied directly. Fire-and-forget: callers must not await this on the
+ * user's critical path.
+ */
+export async function refineFailureIntoSuggestion(
+  auth: { apiKey?: string },
+  scope: StrategyScope,
+  errors: string[],
+): Promise<void> {
+  if (errors.length === 0) return;
+  try {
+    const { LLM } = await import('@/lib/ai');
+    const result = await LLM.chatAs('reason', {
+      messages: [
+        {
+          role: 'system',
+          content: `A generation task of type "${scope}" failed validation on every retry. The validator errors were:\n${errors.slice(0, 10).map((e) => `- ${e}`).join('\n')}\n\nPropose ONE concrete instruction (30-300 chars) that, added to the generation prompt, would prevent this failure class. It must be a direct instruction to the generator, not commentary. Respond with only the instruction text.`,
+        },
+        { role: 'user', content: 'Propose the instruction now.' },
+      ],
+      auth,
+    });
+    const proposal = result?.choices?.[0]?.message?.content?.trim();
+    if (proposal && proposal.length >= 30 && proposal.length <= 500) {
+      await fileSuggestion({
+        scope,
+        slot: 'quality_constraints',
+        proposal,
+        rationale: 'Refined by the reasoning model from an exhausted-retries failure (D29).',
+        evidence: errors.slice(0, 10).join('; ').slice(0, 2000),
+      });
+    }
+  } catch (err) {
+    console.warn('[strategy] refineFailureIntoSuggestion failed (non-fatal):', err);
   }
 }
 

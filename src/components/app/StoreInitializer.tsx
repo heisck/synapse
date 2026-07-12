@@ -6,7 +6,9 @@ import { Trophy } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { useSessionPersistence } from '@/hooks/useSessionPersistence';
 import { usePresence } from '@/hooks/usePresence';
-import { listLocalCourses } from '@/lib/localLibrary';
+import { listLocalCourses, getLocalDoc, getLocalSlides, saveLocalDoc } from '@/lib/localLibrary';
+import { normalizeDocument } from '@/lib/document/normalizer';
+import { ensureRunning } from '@/lib/backgroundGenService';
 
 export function StoreInitializer() {
   const { setCourses, courses, achievements } = useAppStore();
@@ -69,10 +71,40 @@ export function StoreInitializer() {
       // learner's content ever shows up on another device.
       const local = await listLocalCourses();
       if (local.length > 0) setCourses(local);
+
+      // Legacy format migration (task 48): courses uploaded before the
+      // structured-document era get their doc backfilled from slides right
+      // here — the normalizer is pure TS, so the browser does it itself.
+      for (const course of local) {
+        try {
+          const doc = await getLocalDoc(course.id);
+          if (!doc?.structuredDoc) {
+            const slides = await getLocalSlides(course.id);
+            if (slides.length > 0) {
+              await saveLocalDoc({
+                courseId: course.id,
+                structuredDoc: normalizeDocument(
+                  slides.map((s) => ({ title: s.title, content: s.content })),
+                  course.title,
+                ),
+              });
+            }
+          }
+        } catch {
+          // migration is best-effort; the course still works without a doc
+        }
+      }
     };
 
     fetchCourses();
   }, [courses.length, setCourses]);
+
+  // Background question generation starts the moment the app opens (task 42)
+  // and keeps running across page changes (task 41). The service pauses
+  // itself while the AI is answering and idles without an API key.
+  useEffect(() => {
+    ensureRunning();
+  }, []);
 
   return null;
 }

@@ -106,6 +106,9 @@ export async function launchQuiz(options: QuizLaunchOptions = {}): Promise<QuizL
     };
   }
   try {
+    // Hard timeout (task 52): a quiz launch may take seconds, never minutes.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90_000);
     const res = await aiFetch('/api/questions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -116,7 +119,8 @@ export async function launchQuiz(options: QuizLaunchOptions = {}): Promise<QuizL
         types: options.types,
         count: wanted,
       }),
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       return { ok: false, reason: err.error || 'Question generation failed. Please try again.' };

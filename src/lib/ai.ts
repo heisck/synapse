@@ -54,6 +54,40 @@ const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
+/**
+ * Role router (UNIFIED-PLAN task 32, C11; pinned model choices 2026-07-11).
+ * Each role runs its own free-model rotation; every role falls back to the
+ * general OPENROUTER_MODELS rotation when its specialists are all cooling
+ * down. Override per role with OPENROUTER_<ROLE>_MODELS env (comma-separated).
+ *
+ *  reason — orchestration decisions, verification, math/logic (DeepSeek-R1)
+ *  teach  — the voice the learner hears (gpt-oss-120b)
+ *  fast   — routing, classification, quick answers (gpt-oss-20b class)
+ *  vision — images/diagrams (see OPENROUTER_VISION_MODELS below)
+ */
+export type ModelRole = 'reason' | 'teach' | 'fast';
+
+const ROLE_MODELS: Record<ModelRole, string[]> = {
+  reason: (process.env.OPENROUTER_REASON_MODELS || 'deepseek/deepseek-r1:free,deepseek/deepseek-r1-distill-llama-70b:free')
+    .split(',').map((m) => m.trim()).filter(Boolean),
+  teach: (process.env.OPENROUTER_TEACH_MODELS || 'openai/gpt-oss-120b:free,nvidia/nemotron-3-super-120b-a12b:free')
+    .split(',').map((m) => m.trim()).filter(Boolean),
+  fast: (process.env.OPENROUTER_FAST_MODELS || 'openai/gpt-oss-20b:free,google/gemma-4-26b-a4b-it:free')
+    .split(',').map((m) => m.trim()).filter(Boolean),
+};
+
+/**
+ * JSON handoff schema between orchestrator and specialists (old-plan Phase 4):
+ * carried alongside every routed task so retries/failover keep full context.
+ */
+export interface TaskEnvelope {
+  task: string;
+  role: ModelRole;
+  hints?: string[];
+  retryPolicy?: { maxAttempts: number };
+  confidence?: number;
+}
+
 // Free vision models for image understanding / OCR / diagram description
 // (UNIFIED-PLAN task 23, C7; pinned choices: Qwen-VL → LLaVA → InternVL).
 // Availability changes upstream, so this is a rotation like OPENROUTER_MODELS.
@@ -403,6 +437,30 @@ async function visionViaOpenRouterModel(
 
 export const LLM = {
   /**
+   * Role-routed chat (task 32): tries the role's specialist rotation first,
+   * then falls back to the general chat() path (Hermes → general rotation →
+   * Pollinations). Same cooldown discipline as everything else.
+   */
+  async chatAs(role: ModelRole, { messages, auth }: { messages: ChatMessage[]; auth?: LLMAuth }): Promise<ChatResult | null> {
+    const apiKey = auth?.apiKey?.trim();
+    if (apiKey && !HERMES_AGENT_URL) {
+      const now = Date.now();
+      const available = ROLE_MODELS[role].filter(
+        (m) => now >= (modelDownUntil.get(cooldownKey(apiKey, m)) || 0),
+      );
+      for (const model of available) {
+        try {
+          return await chatViaOpenRouterModel(apiKey, model, messages);
+        } catch (err) {
+          modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + MODEL_COOLDOWN_MS);
+          console.warn(`[LLM.chatAs:${role}] model ${model} failed (cooling down):`, err);
+        }
+      }
+    }
+    return this.chat({ messages, auth });
+  },
+
+  /**
    * Vision: image understanding via the free vision-model rotation (C7).
    * Used for image/scan uploads (OCR), diagram description, and formula →
    * LaTeX extraction. Returns null when no model could answer — callers must
@@ -469,7 +527,7 @@ export const LLM = {
    * as chat(); if no provider can stream, falls back to the non-streaming
    * path and emits its full text as a single chunk.
    */
-  async chatStream({ messages, auth }: { messages: ChatMessage[]; auth?: LLMAuth }): Promise<{ stream: ReadableStream<string>; model: string } | null> {
+  async chatStream({ messages, auth, role }: { messages: ChatMessage[]; auth?: LLMAuth; role?: ModelRole }): Promise<{ stream: ReadableStream<string>; model: string } | null> {
     if (HERMES_AGENT_URL) {
       try {
         return await chatStreamViaHermes(messages);
@@ -481,7 +539,11 @@ export const LLM = {
     const apiKey = auth?.apiKey?.trim();
     if (apiKey) {
       const now = Date.now();
-      const available = OPENROUTER_MODELS.filter(
+      // Role specialists first (e.g. the teach role's gpt-oss-120b for tutor
+      // responses — stronger model, far less reasoning slop), then the
+      // general rotation.
+      const pool = role ? [...ROLE_MODELS[role], ...OPENROUTER_MODELS] : OPENROUTER_MODELS;
+      const available = [...new Set(pool)].filter(
         (m) => now >= (modelDownUntil.get(cooldownKey(apiKey, m)) || 0),
       );
       for (const model of available) {

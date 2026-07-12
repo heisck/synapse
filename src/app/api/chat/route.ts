@@ -242,6 +242,7 @@ export async function POST(request: NextRequest) {
       alwaysConfuses,
       bestTeachingStyle,
       slideContext,
+      struggleSignal,
     } = body;
 
     const userMessage = sanitize(message || '');
@@ -359,12 +360,29 @@ export async function POST(request: NextRequest) {
         title?: string;
         content?: string;
         courseTitle?: string;
+        kind?: string;
+        furthestIndex?: number;
         referenced?: { index?: number; title?: string; content?: string };
       };
       const parts: string[] = [];
       if (sc.courseTitle) parts.push(`Course: "${sanitize(String(sc.courseTitle)).slice(0, 120)}".`);
       if (sc.title || sc.index) {
         parts.push(`The learner is currently viewing slide ${sc.index ?? '?'}${sc.total ? ` of ${sc.total}` : ''}${sc.title ? `: "${sanitize(String(sc.title)).slice(0, 150)}"` : ''}.`);
+      }
+      // Slide purpose awareness (A10/A12): non-teaching pages get a light touch
+      const PURPOSE_GUIDANCE: Record<string, string> = {
+        'title': 'This is the deck TITLE page — greet the topic in one line and move toward the real content; do not analyze it.',
+        'course-info': 'This is COURSE ADMIN info (syllabus/assessment) — summarize only if asked; it is not examinable teaching content.',
+        'lecturer': 'This is the LECTURER/contact page — do not spend time on it unless the learner asks.',
+        'objectives': 'These are the LEARNING OBJECTIVES — anchor your teaching to them; every explanation should serve one of these objectives.',
+        'summary': 'This is a SUMMARY/recap page — use it to check understanding of what came before, not to introduce new material.',
+        'references': 'These are REFERENCES — non-essential; mention only if the learner asks for further reading.',
+        'appendix': 'This is an APPENDIX — supporting material only; keep focus on the core content unless asked.',
+      };
+      if (sc.kind && PURPOSE_GUIDANCE[sc.kind]) parts.push(PURPOSE_GUIDANCE[sc.kind]);
+      // Learning boundary (B16): never teach past where the learner has reached
+      if (typeof sc.furthestIndex === 'number' && sc.total) {
+        parts.push(`Progress boundary: the learner has reached slide ${sc.furthestIndex} of ${sc.total}. Do NOT introduce concepts from later slides unless they explicitly ask ahead — if they do, say it comes later and give only a brief preview.`);
       }
       if (sc.content) parts.push(`Slide content:\n${sanitize(String(sc.content)).slice(0, 1800)}`);
       if (parts.length > 0) {
@@ -376,6 +394,13 @@ export async function POST(request: NextRequest) {
       if (sc.referenced?.content) {
         systemPrompt = `${systemPrompt}\n\n[REFERENCED SLIDE — the learner's message mentions slide ${sc.referenced.index ?? '?'}${sc.referenced.title ? ` ("${sanitize(String(sc.referenced.title)).slice(0, 150)}")` : ''}; connect it to the current slide]:\n${sanitize(String(sc.referenced.content)).slice(0, 1200)}`;
       }
+    }
+
+    // Context awareness (B10, task 40): client-side code detected the learner
+    // re-asking something they already asked — the previous explanation didn't
+    // land. Change the approach instead of repeating it.
+    if (struggleSignal === true) {
+      systemPrompt = `${systemPrompt}\n\n[STRUGGLE DETECTED]: The learner is re-asking something they already asked this session — your earlier explanation did not land. Do NOT repeat it. Use a completely different angle: a simpler everyday analogy, smaller steps, or check the prerequisite they might be missing. End by asking one small question to confirm this version clicked.`;
     }
 
     // Standing behavior rules (brevity + interactive quiz protocol)
@@ -405,7 +430,8 @@ export async function POST(request: NextRequest) {
 
     // --- Streaming mode: emit tokens as the model produces them ---
     if (body.stream === true) {
-      const streamResult = await LLM.chatStream({ messages: deduped, auth });
+      // Teach role first (owner decision): gpt-oss-120b as the tutor voice
+      const streamResult = await LLM.chatStream({ messages: deduped, auth, role: 'teach' });
       if (!streamResult) {
         return NextResponse.json(
           { error: 'No response from AI. Please try again.' },

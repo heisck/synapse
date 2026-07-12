@@ -158,13 +158,14 @@ export function setPreferredTypes(types: string[]): void {
   }
 }
 
-/** The user-facing toggle: generate questions in the background or not. */
+/** Background generation toggle — ON by default (task 42): questions start
+    generating the moment the app opens; '0' is an explicit opt-out. */
 export function isBackgroundGenerationEnabled(): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    return localStorage.getItem(TOGGLE_KEY) === '1';
+    return localStorage.getItem(TOGGLE_KEY) !== '0';
   } catch {
-    return false;
+    return true;
   }
 }
 

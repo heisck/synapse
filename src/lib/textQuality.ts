@@ -131,6 +131,36 @@ export function normalizeFormatting(input: string): string {
 }
 
 /**
+ * Reasoning-leak scrubber (owner report 2026-07-12): reasoning-tuned models
+ * (DeepSeek-R1, gpt-oss) sometimes stream their deliberation — "According to
+ * INTERACTIVE QUIZ PROTOCOL... the spec says 5-10... let's craft 20 questions"
+ * — straight into the chat. These protocol markers exist ONLY in our system
+ * prompt, so their presence in output is a guaranteed leak, never legitimate
+ * teaching content.
+ *
+ * - Fence present: drop the leaked deliberation before the fence.
+ * - No fence but hard markers present: the whole message is deliberation that
+ *   never reached an answer → discard (caller shows the retry message).
+ */
+const REASONING_MARKERS =
+  /INTERACTIVE QUIZ PROTOCOL|BEHAVIOR_RULES|PROVEN GENERATION STRATEGY|\[REFERENCED SLIDE|\[CURRENT SLIDE|\[LEARNER CONTEXT|\[STRUGGLE DETECTED|answerIndex|the spec says|according to the spec|valid JSON in (?:this |the )?exact shape|fenced code block tagged/i;
+
+export function stripReasoningLeak(text: string): { text: string; discard: boolean; leaked: boolean } {
+  const fenceMatch = text.match(/```(?:quiz|flashcards?|json)\b/);
+  if (fenceMatch && fenceMatch.index !== undefined) {
+    const preamble = text.slice(0, fenceMatch.index);
+    if (REASONING_MARKERS.test(preamble)) {
+      return { text: `Here you go —\n\n${text.slice(fenceMatch.index)}`, discard: false, leaked: true };
+    }
+    return { text, discard: false, leaked: false };
+  }
+  if (REASONING_MARKERS.test(text)) {
+    return { text, discard: true, leaked: true };
+  }
+  return { text, discard: false, leaked: false };
+}
+
+/**
  * Identity firewall output scrub (B13). Only SELF-referential disclosures are
  * rewritten ("I am a large language model trained by …") — a lesson that
  * legitimately teaches about AI models is left untouched.
@@ -164,7 +194,10 @@ export function scrubIdentity(text: string): { text: string; scrubbed: boolean }
 export function cleanResponse(raw: string): TextQualityReport {
   const stage1 = detectAndRepair(raw);
   if (stage1.discard) return stage1;
-  const identity = scrubIdentity(stage1.text);
+  const reasoning = stripReasoningLeak(stage1.text);
+  if (reasoning.leaked) stage1.repairs.push('reasoning-leak');
+  if (reasoning.discard) return { ...stage1, discard: true };
+  const identity = scrubIdentity(reasoning.text);
   if (identity.scrubbed) stage1.repairs.push('identity-scrub');
   const text = normalizeFormatting(identity.text);
   if (process.env.NODE_ENV !== 'production' && (stage1.repairs.length || text !== raw.trim())) {

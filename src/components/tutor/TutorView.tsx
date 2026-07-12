@@ -3,7 +3,11 @@
 import { aiFetch } from '@/lib/aiKey';
 import { readStreamWithWatchdog, StreamStalledError } from '@/lib/streamWatchdog';
 import { cleanResponse } from '@/lib/textQuality';
-import { loadQuestionCache, appendToQuestionCache } from '@/lib/questionCache';
+import { loadQuestionCache, appendToQuestionCache, getSlideBank } from '@/lib/questionCache';
+import { requestSlideQuestions } from '@/lib/backgroundGenService';
+import { whisperSupported, startWhisperRecording, type WhisperRecording } from '@/lib/voice/stt';
+import { getLocalDoc } from '@/lib/localLibrary';
+import type { StructuredDocument } from '@/lib/document/normalizer';
 import type { Question } from '@/types';
 import { useState, useRef, useEffect, useCallback, useMemo, startTransition, type ReactNode } from 'react'
 import { useAppStore, listCourseChats, loadCourseChatMessages, clearCourseChat } from '@/stores/appStore'
@@ -62,7 +66,7 @@ import {
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Loader2 } from 'lucide-react'
-import { SlideAdvanceSuggestion, BreakSuggestionCard, BreakOverlay, useBreakTimer, detectSlideReference } from './TutorCoach'
+import { detectSlideReference, detectRepeatedQuestion, parseQuestionIntent } from './TutorCoach'
 
 // ---------- SpeechRecognition Types ----------
 type SpeechRecognitionResultType = {
@@ -299,6 +303,7 @@ export function TutorView() {
   const [inputSize, setInputSize] = useState<InputSize>('medium')
   const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'processing' | 'error'>('idle')
   const speechRef = useRef<SpeechRecognitionInstance | null>(null)
+  const whisperRecRef = useRef<WhisperRecording | null>(null)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
   const [timerSeconds, setTimerSeconds] = useState(0)
@@ -350,33 +355,87 @@ export function TutorView() {
     }
   }
 
-  const breakTimer = useBreakTimer()
-  const adaptiveResultsForCoach = useAppStore((s) => s.adaptiveResults)
+  // Structured document (tasks 31/37): page classification + compact sequence
+  // from the learner's own library — powers slide-purpose-aware tutoring (A10)
+  // and the Original/Compact slide player toggle (C18)
+  const [structuredDoc, setStructuredDoc] = useState<StructuredDocument | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    const courseId = activeCourse?.id
+    // Async resolve keeps setState out of the synchronous effect body
+    ;(courseId ? getLocalDoc(courseId) : Promise.resolve(null)).then((rec) => {
+      if (!cancelled) setStructuredDoc((rec?.structuredDoc as StructuredDocument) ?? null)
+    })
+    return () => { cancelled = true }
+  }, [activeCourse?.id])
 
-  // Advance suggestion: plain code checks — the orchestrator's future seam.
-  // Suggest when the learner has interacted on this slide for a while, or is
-  // on a 9/10 hot streak. Declining silences it for this slide.
+  // Orchestrator continuity blob (task 51/D28): lives client-side only (R1)
+  const orchestratorStateRef = useRef<unknown>(null)
+
+  // Learning boundary (B16): the furthest slide the learner has reached in
+  // this course — the tutor must not teach past it unless explicitly asked.
+  // The LAST-viewed index is saved too, so a resumed session reopens on the
+  // exact slide the learner left (task 47).
+  const furthestSlideRef = useRef(0)
+  useEffect(() => {
+    if (!activeCourse?.id) return
+    const key = `synapse-progress-${activeCourse.id}`
+    try {
+      const saved = Number(localStorage.getItem(key) ?? 0)
+      furthestSlideRef.current = Math.max(saved, currentSlideIndex)
+      localStorage.setItem(key, String(furthestSlideRef.current))
+      localStorage.setItem(`synapse-lastslide-${activeCourse.id}`, String(currentSlideIndex))
+    } catch { /* storage unavailable */ }
+  }, [activeCourse?.id, currentSlideIndex])
+
+  // Session restore (task 47): resuming a course conversation must bring the
+  // slides and their controls back, positioned on the slide the learner was
+  // on — not a slide-less chat with missing icons.
+  useEffect(() => {
+    let cancelled = false
+    const courseId = activeCourse?.id
+    if (!courseId || activeSlides.length > 0) return
+    ;(async () => {
+      const slides = isLocalCourse(courseId) ? await getLocalSlides(courseId) : []
+      if (cancelled || slides.length === 0) return
+      setActiveSlides(slides)
+      try {
+        const last = Number(localStorage.getItem(`synapse-lastslide-${courseId}`) ?? 0)
+        if (last > 0 && last < slides.length) setCurrentSlideIndexRaw(last)
+      } catch { /* storage unavailable */ }
+    })()
+    return () => { cancelled = true }
+  }, [activeCourse?.id, activeSlides.length, setActiveSlides, setCurrentSlideIndexRaw])
+
+  // Slide Player dual mode (task 31, C18): Original shows every page;
+  // Compact walks only the teaching sequence from the normalizer — title,
+  // references, lecturer and admin pages are skipped during navigation.
+  const [slideViewMode, setSlideViewMode] = useState<'original' | 'compact'>('original')
+  const compactSet = useMemo(() => {
+    if (!structuredDoc || structuredDoc.compact.length === 0) return null
+    return new Set(structuredDoc.compact.map((id) => Number(id.split('_')[1]) - 1))
+  }, [structuredDoc])
+
   // Slide navigation is non-blocking (B11): the heavy re-render of this view
   // (slide text, markdown, highlights) runs as a transition, so the tap that
   // triggered it never freezes — the button stays responsive and the slide
-  // swaps in when ready.
+  // swaps in when ready. In Compact mode, landing on a non-teaching page
+  // snaps to the nearest teaching page in the direction of travel.
   const setCurrentSlideIndex = useCallback((index: number) => {
-    startTransition(() => setCurrentSlideIndexRaw(index))
-  }, [setCurrentSlideIndexRaw])
-
-  const [advanceDismissed, setAdvanceDismissed] = useState<Set<number>>(new Set())
-  const slideEnteredAtRef = useRef(Date.now())
-  const msgsAtSlideEnterRef = useRef(0)
-  const currentSlideIndexStore = useAppStore((s) => s.currentSlideIndex)
-  useEffect(() => {
-    slideEnteredAtRef.current = Date.now()
-    msgsAtSlideEnterRef.current = useAppStore.getState().messages.length
-  }, [currentSlideIndexStore])
-  const [coachTick, setCoachTick] = useState(0)
-  useEffect(() => {
-    const interval = setInterval(() => setCoachTick((t) => t + 1), 15_000)
-    return () => clearInterval(interval)
-  }, [])
+    let target = index
+    if (slideViewMode === 'compact' && compactSet && !compactSet.has(target)) {
+      const total = useAppStore.getState().activeSlides.length
+      const dir = target >= useAppStore.getState().currentSlideIndex ? 1 : -1
+      let t = target
+      while (t >= 0 && t < total && !compactSet.has(t)) t += dir
+      if (t < 0 || t >= total) {
+        t = target
+        while (t >= 0 && t < total && !compactSet.has(t)) t -= dir
+      }
+      if (t >= 0 && t < total) target = t
+    }
+    startTransition(() => setCurrentSlideIndexRaw(target))
+  }, [setCurrentSlideIndexRaw, slideViewMode, compactSet])
 
   // Pomodoro state
   const [pomodoroExpanded, setPomodoroExpanded] = useState(false)
@@ -547,18 +606,6 @@ export function TutorView() {
       queueMicrotask(() => setMobileSlidesOpen(true))
     }
   }, [tutorMode])
-
-  // void coachTick — the 15s tick makes this recompute so time-based checks fire
-  void coachTick
-  const showAdvanceSuggestion = (() => {
-    if (activeSlides.length === 0 || currentSlideIndex >= activeSlides.length - 1) return false
-    if (advanceDismissed.has(currentSlideIndex) || breakTimer.onBreak) return false
-    const timeOnSlide = Date.now() - slideEnteredAtRef.current
-    const interacted = messages.length > msgsAtSlideEnterRef.current
-    const recent = adaptiveResultsForCoach.slice(-10)
-    const hotStreak = recent.length >= 10 && recent.filter((r) => r.correct).length >= 9
-    return (interacted && timeOnSlide > 90_000) || (hotStreak && timeOnSlide > 30_000)
-  })()
 
   // Quick topic suggestions derived from the user's real courses
   // Dedupe: users can have multiple courses with the same title
@@ -757,12 +804,44 @@ export function TutorView() {
 
   const toggleVoice = useCallback(() => {
     if (voiceState === 'listening') {
+      // Whisper fallback recording in progress? Stop and transcribe it.
+      if (whisperRecRef.current) {
+        const rec = whisperRecRef.current
+        whisperRecRef.current = null
+        setVoiceState('processing')
+        void rec.stop().then((text) => {
+          if (text) {
+            setInput((prev) => {
+              const base = prev.endsWith(' ') ? prev : prev ? prev + ' ' : ''
+              const combined = base + text
+              return combined.length > MAX_INPUT_CHARS ? combined.slice(0, MAX_INPUT_CHARS) : combined
+            })
+          } else {
+            toast.error("Couldn't make out any speech — try again closer to the mic.")
+          }
+          setVoiceState('idle')
+        })
+        return
+      }
       stopVoice()
       return
     }
 
     const SpeechRecognition = getSpeechRecognition()
     if (!SpeechRecognition) {
+      // Whisper STT fallback (task 50): record with MediaRecorder, transcribe
+      // in-browser with whisper-base — voice input works on Firefox too.
+      if (whisperSupported()) {
+        setVoiceState('listening')
+        void startWhisperRecording()
+          .then((rec) => { whisperRecRef.current = rec })
+          .catch(() => {
+            setVoiceState('error')
+            toast.error('Microphone access is blocked — allow the mic for this site.')
+            setTimeout(() => setVoiceState('idle'), 2000)
+          })
+        return
+      }
       toast.error('Voice input is not supported in this browser')
       return
     }
@@ -854,13 +933,18 @@ export function TutorView() {
       if (speechRef.current) {
         speechRef.current.abort()
       }
+      whisperRecRef.current?.cancel()
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current)
       }
     }
   }, [])
 
-  const speechSupported = useMemo(() => typeof window !== 'undefined' && !!getSpeechRecognition(), [])
+  // Voice input works with SpeechRecognition OR the Whisper fallback (task 50)
+  const speechSupported = useMemo(
+    () => typeof window !== 'undefined' && (!!getSpeechRecognition() || whisperSupported()),
+    [],
+  )
 
   // AI-initiated quiz navigation (A4): when the tutor answers with an
   // "exam"-mode quiz block, the app switches to the quiz view immediately,
@@ -931,6 +1015,97 @@ export function TutorView() {
       textareaRef.current.style.height = 'auto'
     }
 
+    // Bank-first question interceptor (task 43): "give me 20 questions on
+    // slide 8" is served by CODE from the question bank — unused questions
+    // first, background top-up for the shortfall — never by asking the LLM
+    // to write quiz JSON. The LLM is only involved when the bank is empty,
+    // and even then through the validated /api/questions path.
+    const questionIntent = parseQuestionIntent(content)
+    if (questionIntent && activeCourse) {
+      const slideIdx = questionIntent.slideNumber != null && questionIntent.slideNumber >= 1 && questionIntent.slideNumber <= activeSlides.length
+        ? questionIntent.slideNumber - 1
+        : currentSlideIndex
+      const slide = activeSlides[slideIdx]
+      const slideLabel = slide ? `slide ${slideIdx + 1}` : 'your course'
+      // Slide-grounded bank first, whole-course unused pool as fallback
+      const slideBank = slide ? getSlideBank(activeCourse.id, slide.id) : { unused: [], used: [] }
+      const courseBank = getSlideBank(activeCourse.id)
+      const pool = [...slideBank.unused, ...slideBank.used.filter((q) => !slideBank.unused.includes(q))]
+      const fallback = courseBank.unused.filter((q) => !pool.includes(q))
+      const available = [...pool, ...fallback]
+      const wanted = questionIntent.count
+      const have = available.slice(0, wanted)
+
+      const sessionMsg = (text: string) => addMessage({
+        id: crypto.randomUUID(),
+        sessionId,
+        role: 'assistant' as const,
+        content: text,
+        createdAt: new Date().toISOString(),
+      })
+
+      if (have.length >= Math.min(wanted, 3)) {
+        setCurrentQuestions(have)
+        const topUp = wanted - have.length
+        sessionMsg(
+          topUp > 0
+            ? `Loaded ${have.length} questions from your bank for ${slideLabel} — generating the remaining ${topUp} in the background. Opening the quiz…`
+            : `${have.length} questions ready for ${slideLabel} — opening the quiz…`,
+        )
+        if (topUp > 0 && slide) {
+          void requestSlideQuestions(activeCourse.id, slide.id, slide.content ?? '', topUp)
+        }
+        navigate('quiz')
+        return
+      }
+
+      // Bank empty for this request: one slide-grounded generation pass
+      const genId = crypto.randomUUID()
+      addMessage({ id: genId, sessionId, role: 'assistant', content: `Generating ${wanted} questions for ${slideLabel} — a few seconds…`, createdAt: new Date().toISOString() })
+      const added = slide
+        ? await requestSlideQuestions(activeCourse.id, slide.id, slide.content ?? '', wanted)
+        : []
+      const ready = [...have, ...added].slice(0, wanted)
+      if (ready.length > 0) {
+        setCurrentQuestions(ready)
+        updateMessage(genId, `Ready — ${ready.length} questions for ${slideLabel}. Opening the quiz…`)
+        navigate('quiz')
+      } else {
+        updateMessage(genId, 'I couldn\'t generate questions right now — check your OpenRouter key in Settings, or try again in a moment.')
+      }
+      return
+    }
+
+    // Orchestrator wiring (task 51): explicit navigation/tool requests go to
+    // /api/orchestrate (fast role + knowledge pack). State rides with the
+    // client (D28/R1). Anything but a confident navigate falls through to chat.
+    if (/\b(go to|open|take me to|switch to|show me the)\b/i.test(content)) {
+      try {
+        const res = await aiFetch('/api/orchestrate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: content,
+            state: orchestratorStateRef.current,
+            topic: activeTopic || activeCourse?.title,
+            slide: activeSlides.length > 0
+              ? { index: currentSlideIndex + 1, total: activeSlides.length, title: activeSlides[currentSlideIndex]?.title, kind: structuredDoc?.pages[currentSlideIndex]?.kind }
+              : undefined,
+          }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.state) orchestratorStateRef.current = data.state
+          const KNOWN_VIEWS = ['dashboard', 'courses', 'quiz', 'upload', 'notes', 'focus-timer', 'profile', 'leaderboard', 'settings']
+          if (data.decision === 'navigate' && KNOWN_VIEWS.includes(data.target)) {
+            addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `Taking you to ${data.target.replace('-', ' ')} —`, createdAt: new Date().toISOString() })
+            navigate(data.target)
+            return
+          }
+        }
+      } catch { /* orchestrator unavailable — normal chat handles it */ }
+    }
+
     setLoading(true)
     useAppStore.getState().setChatRequestStatus('sending')
 
@@ -965,6 +1140,9 @@ export function TutorView() {
           // message mentions another slide by number ("back on slide 4"),
           // code detects it and sends that slide too — the model gets the
           // material even if it fell out of the conversation window.
+          // Context awareness (B10): if this message closely repeats an earlier
+          // question, tell the tutor so it tries a different angle
+          struggleSignal: detectRepeatedQuestion(content, messages),
           slideContext: activeSlides.length > 0
             ? (() => {
                 const refIdx = detectSlideReference(content, activeSlides.length, currentSlideIndex);
@@ -973,6 +1151,9 @@ export function TutorView() {
                   index: currentSlideIndex + 1,
                   total: activeSlides.length,
                   title: activeSlides[currentSlideIndex]?.title,
+                  // Slide purpose from the normalizer (A10) + learning boundary (B16)
+                  kind: structuredDoc?.pages[currentSlideIndex]?.kind,
+                  furthestIndex: Math.max(furthestSlideRef.current, currentSlideIndex) + 1,
                   content: (activeSlides[currentSlideIndex]?.content || '').slice(0, 1800),
                   referenced: refIdx != null
                     ? {
@@ -1074,7 +1255,7 @@ export function TutorView() {
       // Every exit path lands back on idle — the composer can never lock (B9)
       useAppStore.getState().setChatRequestStatus('idle')
     }
-  }, [input, activeSessionId, messages, learnerProfile, masteryMap, addMessage, updateMessage, setActiveSession, setLoading, setSessionPhase, activePersona, moodSettings, activeTopic, activeCourse, userName, tips, feedbackItems, settings.responseSpeed, settings.language, hardSubjects, alwaysConfuses, bestTeachingStyle, activeSlides, currentSlideIndex, activeSlideContent, maybeStartExam])
+  }, [input, activeSessionId, messages, learnerProfile, masteryMap, addMessage, updateMessage, setActiveSession, setLoading, setSessionPhase, activePersona, moodSettings, activeTopic, activeCourse, userName, tips, feedbackItems, settings.responseSpeed, settings.language, hardSubjects, alwaysConfuses, bestTeachingStyle, activeSlides, currentSlideIndex, activeSlideContent, maybeStartExam, structuredDoc])
 
   // Revision mode: SessionControls sets the phase to 'review', then this sends
   // a visible revision request through the normal chat path
@@ -1520,10 +1701,6 @@ export function TutorView() {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Break overlay: fullscreen countdown that survives app restarts */}
-        {breakTimer.onBreak && (
-          <BreakOverlay secondsLeft={breakTimer.breakSecondsLeft} onEndEarly={breakTimer.endBreakEarly} />
-        )}
-
         {/* Session history: fullscreen overlay — search, click to resume, delete */}
         {historyOpen && (
           <div className="fixed inset-0 z-50 bg-background flex flex-col">
@@ -1712,14 +1889,30 @@ export function TutorView() {
                   <BookOpen className="w-4 h-4 text-primary" />
                   <span className="text-sm font-semibold">Course Slides</span>
                 </div>
-                <Badge variant="secondary" className="text-[10px]">
-                  {currentSlideIndex + 1} / {activeSlides.length}
-                </Badge>
+                <div className="flex items-center gap-1.5">
+                  {/* Slide Player dual mode (C18): Compact walks teaching pages only */}
+                  {compactSet && (
+                    <button
+                      onClick={() => setSlideViewMode((m) => (m === 'original' ? 'compact' : 'original'))}
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                        slideViewMode === 'compact'
+                          ? 'border-primary/40 bg-primary/10 text-primary'
+                          : 'border-border text-muted-foreground hover:text-foreground'
+                      }`}
+                      title={slideViewMode === 'compact' ? 'Compact: teaching pages only — click for all pages' : 'Original: all pages — click for teaching pages only'}
+                    >
+                      {slideViewMode === 'compact' ? 'Compact' : 'Original'}
+                    </button>
+                  )}
+                  <Badge variant="secondary" className="text-[10px]">
+                    {currentSlideIndex + 1} / {activeSlides.length}
+                  </Badge>
+                </div>
               </div>
             </div>
             <ScrollArea className="flex-1 min-h-0">
               <div className="p-4">
-                {/* Slide navigation dots */}
+                {/* Slide navigation dots — non-teaching pages fade in Compact mode */}
                 <div className="flex gap-1 mb-3 flex-wrap">
                   {activeSlides.map((_, idx) => (
                     <button
@@ -1729,7 +1922,7 @@ export function TutorView() {
                         idx === currentSlideIndex
                           ? 'bg-primary w-6'
                           : 'bg-muted w-2 hover:bg-primary/50'
-                      }`}
+                      } ${slideViewMode === 'compact' && compactSet && !compactSet.has(idx) ? 'opacity-25' : ''}`}
                     />
                   ))}
                 </div>
@@ -2030,22 +2223,6 @@ export function TutorView() {
               >
                 <ChevronDown className="h-4 w-4" />
               </motion.button>
-            )}
-          </AnimatePresence>
-
-          {/* Coach cards: code-driven advance suggestion + break proposal */}
-          <AnimatePresence>
-            {showAdvanceSuggestion && (
-              <SlideAdvanceSuggestion
-                key="advance"
-                slideIndex={currentSlideIndex}
-                total={activeSlides.length}
-                onAccept={() => setCurrentSlideIndex(currentSlideIndex + 1)}
-                onDecline={() => setAdvanceDismissed((prev) => new Set(prev).add(currentSlideIndex))}
-              />
-            )}
-            {breakTimer.suggested && !breakTimer.onBreak && (
-              <BreakSuggestionCard key="break" onAccept={breakTimer.acceptBreak} onDecline={breakTimer.declineBreak} />
             )}
           </AnimatePresence>
 

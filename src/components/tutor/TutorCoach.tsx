@@ -176,6 +176,10 @@ export function BreakOverlay({ secondsLeft, onEndEarly }: { secondsLeft: number;
 
 // ---------- Slide reference detection ----------
 
+// Pure intent detection lives in lib/questionIntent (unit-tested); re-exported
+// here so existing imports keep working.
+export { parseQuestionIntent, detectRepeatedQuestion, type QuestionIntent } from '@/lib/questionIntent';
+
 /** Detects "slide 4" / "slide #12" mentions in a message. Returns 0-based index or null. */
 export function detectSlideReference(message: string, totalSlides: number, currentIndex: number): number | null {
   const match = message.match(/\bslide\s*#?\s*(\d{1,3})\b/i);

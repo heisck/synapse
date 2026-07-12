@@ -30,7 +30,7 @@ import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
 
 const ONBOARDING_STEP_KEY = 'synapselearn_onboarding_step';
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
 
 type OnboardingPlatform = 'ios' | 'android' | 'web';
 
@@ -174,7 +174,7 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
                 animate={{ opacity: isCurrent ? 1 : 0.4 }}
                 className="mt-1.5 text-[10px] font-medium text-muted-foreground"
               >
-                {['Welcome', 'Style', 'Pace', 'AI Key', 'Done'][i]}
+                {['Welcome', 'Style', 'Pace', 'Tutor', 'AI Key', 'Done'][i]}
               </motion.span>
             </div>
             {stepNum < TOTAL_STEPS && (
@@ -728,6 +728,106 @@ function DoneStep({
   );
 }
 
+/**
+ * Persona calibration (UNIFIED-PLAN task 39, old-plan "onboarding that
+ * actually calibrates"): the SAME genuinely hard idea explained once in each
+ * tutor voice. Picking the one that clicked sets the persona — a real felt
+ * choice instead of a checkbox. Samples are static so this works before any
+ * API key exists.
+ */
+const PERSONA_SAMPLES: Array<{ id: string; label: string; sample: string }> = [
+  {
+    id: 'professor',
+    label: 'The Professor',
+    sample:
+      'Entropy is a measure of disorder in a system. The second law of thermodynamics states that in an isolated system, entropy never decreases — processes move toward more probable, more disordered states. That is why heat flows from hot to cold and never the reverse.',
+  },
+  {
+    id: 'coach',
+    label: 'The Coach',
+    sample:
+      "Entropy? You've got this. Think of it as a scoreboard for messiness — and the universe always plays toward a higher score. Your job: spot which way the mess grows, and you can predict what happens next. Let's drill it with an example!",
+  },
+  {
+    id: 'friend',
+    label: 'The Friend',
+    sample:
+      "Okay so entropy is basically why your room never cleans itself 😄 There are a million ways for stuff to be scattered and only one way for it to be tidy — so 'scattered' just wins by the numbers. The universe is lazy like that. Makes sense?",
+  },
+  {
+    id: 'storyteller',
+    label: 'The Storyteller',
+    sample:
+      'Picture a brand-new deck of cards, perfectly ordered. Drop it once, and the order is gone — shuffle forever and it never comes back. That one-way street from order to chaos has a name: entropy. Every cup of coffee going cold is telling the same story.',
+  },
+];
+
+function PersonaCalibrationStep({
+  selected,
+  onSelect,
+  onNext,
+  onBack,
+  onSkip,
+}: {
+  selected: string;
+  onSelect: (id: string) => void;
+  onNext: () => void;
+  onBack: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <motion.div
+      key="step-4"
+      custom={1}
+      variants={slideVariants}
+      initial="enter"
+      animate="center"
+      exit="exit"
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      className="space-y-5"
+    >
+      <div className="space-y-2 text-center">
+        <h2 className="text-2xl font-bold">Which explanation clicked?</h2>
+        <p className="text-muted-foreground text-sm max-w-md mx-auto">
+          Here&apos;s the same tricky idea — <span className="font-medium text-foreground">entropy</span> — explained four ways.
+          Pick the voice you&apos;d want to learn from. You can change it anytime.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {PERSONA_SAMPLES.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => onSelect(p.id)}
+            className={`rounded-xl border p-4 text-left transition-all ${
+              selected === p.id
+                ? 'border-primary bg-primary/5 ring-1 ring-primary/40'
+                : 'border-border hover:border-primary/40'
+            }`}
+          >
+            <p className="text-sm font-semibold mb-1.5">{p.label}</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">{p.sample}</p>
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center justify-between pt-2">
+        <Button variant="ghost" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4 mr-1" />
+          Back
+        </Button>
+        <div className="flex items-center gap-3">
+          <button onClick={onSkip} className="text-xs text-muted-foreground hover:text-primary transition-colors">
+            Skip
+          </button>
+          <Button onClick={onNext} disabled={!selected}>
+            Continue
+            <ArrowRight className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 export function OnboardingFlow() {
   const {
     setOnboardingComplete,
@@ -735,6 +835,7 @@ export function OnboardingFlow() {
     setLearnerProfile,
     setHardSubjects,
     setBestTeachingStyle,
+    setActivePersona,
     navigate,
   } = useAppStore();
 
@@ -756,6 +857,7 @@ export function OnboardingFlow() {
   const [selectedPace, setSelectedPace] = useState<string>('steady');
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [preferredName, setPreferredName] = useState<string>(() => useAppStore.getState().userName || '');
+  const [selectedPersona, setSelectedPersona] = useState<string>('');
   const [platform] = useState<OnboardingPlatform>(() => getOnboardingPlatform());
 
   // Persist step to localStorage whenever it changes
@@ -790,6 +892,8 @@ export function OnboardingFlow() {
     localStorage.removeItem(ONBOARDING_STEP_KEY);
     const primaryStyle = selectedStyles[0] ?? 'visual';
     setUserInfo(preferredName.trim() || 'Learner', '');
+    // Persona calibration (task 39): the explanation that clicked sets the voice
+    if (selectedPersona) setActivePersona(selectedPersona);
     setLearnerProfile({
       learningStyle: primaryStyle as 'visual' | 'auditory' | 'reading' | 'kinesthetic',
       pace: selectedPace as 'slow' | 'steady' | 'fast',
@@ -804,7 +908,7 @@ export function OnboardingFlow() {
     setBestTeachingStyle(selectedStyles.join(', '));
     setOnboardingComplete(true);
     navigate('dashboard');
-  }, [selectedStyles, selectedPace, selectedTopics, preferredName, setUserInfo, setLearnerProfile, setHardSubjects, setBestTeachingStyle, setOnboardingComplete, navigate]);
+  }, [selectedStyles, selectedPace, selectedTopics, preferredName, selectedPersona, setUserInfo, setLearnerProfile, setHardSubjects, setBestTeachingStyle, setActivePersona, setOnboardingComplete, navigate]);
 
   const handleQuickStart = useCallback(() => {
     // Clear persisted step on completion
@@ -892,11 +996,21 @@ export function OnboardingFlow() {
               />
             )}
             {step === 4 && (
-              <AiKeyStep key="s4" onNext={goNext} onBack={goBack} onSkip={goNext} />
+              <PersonaCalibrationStep
+                key="s4"
+                selected={selectedPersona}
+                onSelect={setSelectedPersona}
+                onNext={goNext}
+                onBack={goBack}
+                onSkip={goNext}
+              />
             )}
             {step === 5 && (
+              <AiKeyStep key="s5" onNext={goNext} onBack={goBack} onSkip={goNext} />
+            )}
+            {step === 6 && (
               <DoneStep
-                key="s5"
+                key="s6"
                 styles={selectedStyles}
                 pace={selectedPace}
                 topics={selectedTopics}
