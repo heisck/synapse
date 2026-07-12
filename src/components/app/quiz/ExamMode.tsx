@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useBackgroundGeneration } from '@/hooks/useBackgroundGeneration';
 import { loadQuestionCache } from '@/lib/questionCache';
+import { awardQuizXp } from '@/lib/xp';
 import type { Question } from '@/types';
 import { formatTimer, gradeFillBlank } from './helpers';
 
@@ -129,6 +130,8 @@ export function ExamMode({ courseId, courseTitle, initialPool, onExit }: ExamMod
       correct: correctIds.length,
       missedConcepts: [...new Set(wrongQuestions.map((q) => q.concept).filter(Boolean))] as string[],
     });
+    // Progress tracking (task 76): exams count toward quiz stats/achievements
+    awardQuizXp(correctIds.length, correctIds.length + wrongQuestions.length);
     setPhase('finished');
   }, [minutes, secondsLeft, courseId, courseTitle, correctIds.length, wrongQuestions]);
 

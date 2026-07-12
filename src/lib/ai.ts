@@ -68,7 +68,11 @@ const APP_URL =
 export type ModelRole = 'reason' | 'teach' | 'fast';
 
 const ROLE_MODELS: Record<ModelRole, string[]> = {
-  reason: (process.env.OPENROUTER_REASON_MODELS || 'deepseek/deepseek-r1:free,deepseek/deepseek-r1-distill-llama-70b:free')
+  // 2026-07-12: OpenRouter retired the free reasoning slugs (deepseek-r1*,
+  // qwq-32b all 404). Reasoning now runs on the proven-alive general models —
+  // gpt-oss-120b handles it well. If a free reasoning specialist reappears,
+  // pin it via OPENROUTER_REASON_MODELS; 404s park a model for 24h (below).
+  reason: (process.env.OPENROUTER_REASON_MODELS || 'openai/gpt-oss-120b:free,meta-llama/llama-3.3-70b-instruct:free')
     .split(',').map((m) => m.trim()).filter(Boolean),
   teach: (process.env.OPENROUTER_TEACH_MODELS || 'openai/gpt-oss-120b:free,nvidia/nemotron-3-super-120b-a12b:free')
     .split(',').map((m) => m.trim()).filter(Boolean),
@@ -125,6 +129,14 @@ const HERMES_AGENT_MODEL = process.env.HERMES_AGENT_MODEL || 'hermes';
 // cools a model down for everyone else.
 const modelDownUntil = new Map<string, number>();
 const MODEL_COOLDOWN_MS = 5 * 60 * 1000;
+// A 404 means the slug is gone from the free tier entirely (OpenRouter
+// periodically retires free models) — park it for a day, not five minutes,
+// so dead slugs stop burning a failed round-trip every few messages.
+const MODEL_GONE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+function cooldownMsFor(err: unknown): number {
+  return err instanceof Error && /\(404\)/.test(err.message) ? MODEL_GONE_COOLDOWN_MS : MODEL_COOLDOWN_MS;
+}
 
 function keyFingerprint(apiKey: string): string {
   return apiKey.slice(-10);
@@ -265,7 +277,7 @@ async function chatViaOpenRouter(apiKey: string, messages: ChatMessage[]): Promi
     try {
       return await chatViaOpenRouterModel(apiKey, model, messages);
     } catch (err) {
-      modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + MODEL_COOLDOWN_MS);
+      modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + cooldownMsFor(err));
       console.warn(`[LLM.chat] OpenRouter model ${model} failed (cooling down 5 min):`, err);
       lastError = err;
     }
@@ -452,7 +464,7 @@ export const LLM = {
         try {
           return await chatViaOpenRouterModel(apiKey, model, messages);
         } catch (err) {
-          modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + MODEL_COOLDOWN_MS);
+          modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + cooldownMsFor(err));
           console.warn(`[LLM.chatAs:${role}] model ${model} failed (cooling down):`, err);
         }
       }
@@ -477,7 +489,7 @@ export const LLM = {
       try {
         return await visionViaOpenRouterModel(apiKey, model, prompt, images);
       } catch (err) {
-        modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + MODEL_COOLDOWN_MS);
+        modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + cooldownMsFor(err));
         console.warn(`[LLM.vision] model ${model} failed (cooling down):`, err);
       }
     }
@@ -550,7 +562,7 @@ export const LLM = {
         try {
           return await chatStreamViaOpenRouterModel(apiKey, model, messages);
         } catch (err) {
-          modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + MODEL_COOLDOWN_MS);
+          modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + cooldownMsFor(err));
           console.warn(`[LLM.chatStream] OpenRouter model ${model} failed (cooling down 5 min):`, err);
         }
       }

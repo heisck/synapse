@@ -243,6 +243,8 @@ export async function POST(request: NextRequest) {
       bestTeachingStyle,
       slideContext,
       struggleSignal,
+      lastQuizResult,
+      orchestratorDecision,
     } = body;
 
     const userMessage = sanitize(message || '');
@@ -405,11 +407,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // "How did I do?" (task 57): the learner's most recent finished quiz,
+    // recorded by code on the results screen — the tutor answers score
+    // questions from this, never by guessing.
+    if (lastQuizResult && typeof lastQuizResult === 'object') {
+      const lq = lastQuizResult as { correct?: number; total?: number; completedAt?: string };
+      if (typeof lq.correct === 'number' && typeof lq.total === 'number' && lq.total > 0) {
+        const pct = Math.round((lq.correct / lq.total) * 100);
+        systemPrompt = `${systemPrompt}\n\n[LAST QUIZ RESULT]: The learner's most recent completed quiz: ${lq.correct}/${lq.total} (${pct}%)${lq.completedAt ? `, finished ${sanitize(String(lq.completedAt)).slice(0, 30)}` : ''}. If they ask how they did, use these exact numbers.`;
+      }
+    }
+
     // Context awareness (B10, task 40): client-side code detected the learner
     // re-asking something they already asked — the previous explanation didn't
     // land. Change the approach instead of repeating it.
     if (struggleSignal === true) {
       systemPrompt = `${systemPrompt}\n\n[STRUGGLE DETECTED]: The learner is re-asking something they already asked this session — your earlier explanation did not land. Do NOT repeat it. Use a completely different angle: a simpler everyday analogy, smaller steps, or check the prerequisite they might be missing. End by asking one small question to confirm this version clicked.`;
+    }
+
+    // Orchestrator reply-shaping (task 78/CR22): the fast-role orchestrator
+    // decided HOW this turn should be handled; the tutor executes. The
+    // decision is enum-validated client- and server-side — an unknown value
+    // is ignored, never rendered.
+    const DECISION_GUIDANCE: Record<string, string> = {
+      remediate: '[ORCHESTRATOR: REMEDIATE] The learner is struggling with this concept. Do not push forward. Re-explain from a different angle than before — simpler analogy, smaller steps, or check the missing prerequisite. End with one small confirming question.',
+      review: '[ORCHESTRATOR: REVIEW] Recap what has been covered so far in this session — the key ideas in order, each in one line — then ask which one to revisit.',
+      motivate: '[ORCHESTRATOR: MOTIVATE] The learner needs encouragement. Acknowledge the effort genuinely (no empty praise), point at one concrete thing they got right, and offer one small, winnable next step.',
+      break: '[ORCHESTRATOR: BREAK] The learner sounds fatigued. Answer briefly, then suggest a short break — mention the Focus Timer page has a Pomodoro timer. Do not start new material.',
+      assess: '[ORCHESTRATOR: ASSESS] Check understanding before continuing: answer, then ask 1-2 short questions about what was just covered. Do NOT emit a quiz JSON block — plain conversational questions.',
+    };
+    if (typeof orchestratorDecision === 'string' && DECISION_GUIDANCE[orchestratorDecision]) {
+      systemPrompt = `${systemPrompt}\n\n${DECISION_GUIDANCE[orchestratorDecision]}`;
     }
 
     // Standing behavior rules (brevity + interactive quiz protocol)

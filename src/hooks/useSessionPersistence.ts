@@ -27,6 +27,8 @@ const KEYS = {
   notifications: 'synapse-notifications',
   adaptiveResults: 'synapse-adaptive-results',
   courseCategories: 'synapse-course-categories',
+  activeSession: 'synapse-active-session',
+  quizProgress: 'synapse-quiz-card-progress',
 } as const;
 
 // Safely write to localStorage with quota handling
@@ -139,9 +141,19 @@ export function useSessionPersistence(): void {
     const savedNotifications: StudyNotification[] = safeGetItem(KEYS.notifications, []);
     const savedAdaptiveResults: AdaptiveResult[] = safeGetItem(KEYS.adaptiveResults, []);
     const savedCourseCategories: Record<string, string> = safeGetItem(KEYS.courseCategories, {});
+    // Active session/course (resume fix): without these, reopening the tutor
+    // resumed the chat with no activeCourse — so the slides never loaded.
+    // The Course OBJECT is rehydrated by StoreInitializer once IndexedDB
+    // courses arrive; here we restore the ids/topic.
+    const savedActiveSession = safeGetItem<{ sessionId: string | null; courseId: string | null; topic: string | null } | null>(KEYS.activeSession, null);
+    // In-chat quiz/flashcard deck progress (keyed by message id) — without
+    // this, a finished deck restarts at card 1 after a reload.
+    const savedQuizProgress = safeGetItem<Record<string, { index: number; selected: number | null; correctCount: number; finished: boolean }>>(KEYS.quizProgress, {});
 
     // Only restore if there is meaningful persisted data
     const hasData =
+      savedActiveSession !== null ||
+      Object.keys(savedQuizProgress).length > 0 ||
       savedMessages.length > 0 ||
       savedProfile !== null ||
       Object.keys(savedMasteryMap).length > 0 ||
@@ -182,6 +194,12 @@ export function useSessionPersistence(): void {
       ...(savedNotifications.length > 0 && { notifications: savedNotifications }),
       ...(savedAdaptiveResults.length > 0 && { adaptiveResults: savedAdaptiveResults }),
       ...(Object.keys(savedCourseCategories).length > 0 && { courseCategories: savedCourseCategories }),
+      ...(savedActiveSession && {
+        activeSessionId: savedActiveSession.sessionId,
+        activeCourseId: savedActiveSession.courseId,
+        activeTopic: savedActiveSession.topic,
+      }),
+      ...(Object.keys(savedQuizProgress).length > 0 && { quizProgress: savedQuizProgress }),
     };
     useAppStore.setState(restoredState);
   }, []);
@@ -312,7 +330,34 @@ export function useSessionPersistence(): void {
       },
     );
 
+    const unsubQuizProgress = store.subscribe(
+      (s) => s.quizProgress,
+      (quizProgress) => {
+        if (Object.keys(quizProgress).length > 0) {
+          // Cap: keep the 40 most recent decks so this never grows unbounded
+          const entries = Object.entries(quizProgress).slice(-40);
+          safeSetItem(KEYS.quizProgress, JSON.stringify(Object.fromEntries(entries)));
+        }
+      },
+    );
+
+    const unsubActiveSession = store.subscribe(
+      (s) => `${s.activeSessionId}|${s.activeCourseId}|${s.activeTopic}`,
+      () => {
+        const s = store.getState();
+        if (s.activeSessionId) {
+          safeSetItem(KEYS.activeSession, JSON.stringify({
+            sessionId: s.activeSessionId,
+            courseId: s.activeCourseId,
+            topic: s.activeTopic,
+          }));
+        }
+      },
+    );
+
     return () => {
+      unsubQuizProgress();
+      unsubActiveSession();
       unsubProfile();
       unsubMastery();
       unsubQuiz();

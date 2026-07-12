@@ -135,6 +135,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { ChatMessage } from '@/types'
+import { buildAppSnapshot, snapshotSummary } from '@/lib/orchestrator/context'
+import { launchQuiz } from '@/lib/quizLaunch'
 
 // ---------- Pomodoro Timer ----------
 const POMODORO_MODES = [
@@ -306,6 +308,31 @@ export function TutorView() {
   const whisperRecRef = useRef<WhisperRecording | null>(null)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
+
+  // Resizable right panel (owner request): drag its left edge to grow/shrink
+  // the Practice/session/persona panel; the chosen width persists.
+  const [rightPanelWidth, setRightPanelWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') return 288
+    const saved = Number(localStorage.getItem('synapse-tutor-panel-width'))
+    return saved >= 240 && saved <= 560 ? saved : 288
+  })
+  useEffect(() => {
+    try { localStorage.setItem('synapse-tutor-panel-width', String(rightPanelWidth)) } catch { /* storage unavailable */ }
+  }, [rightPanelWidth])
+  const handlePanelResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = rightPanelWidth
+    const onMove = (ev: PointerEvent) => {
+      setRightPanelWidth(Math.min(560, Math.max(240, startWidth + (startX - ev.clientX))))
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [rightPanelWidth])
   const [timerSeconds, setTimerSeconds] = useState(0)
   const timerStarted = useRef(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -376,6 +403,11 @@ export function TutorView() {
   // for a quiz without a count — the next number answers it
   const pendingQuizAskRef = useRef<{ slideNumber: number | null } | null>(null)
 
+  // Last quiz request that failed to generate — "generate them again" /
+  // "retry" re-runs the SAME request through the bank-first interceptor
+  // instead of falling through to the LLM (which invents an inline quiz).
+  const lastFailedQuizIntentRef = useRef<ReturnType<typeof parseQuestionIntent>>(null)
+
   // Quiz debrief (task 57): when a tutor-launched quiz finished, its results
   // land in tutorQuizContext.result — greet the learner with the outcome and
   // offer review / re-explanation / another round, then clear the context.
@@ -421,10 +453,14 @@ export function TutorView() {
 
   // Session restore (task 47): resuming a course conversation must bring the
   // slides and their controls back, positioned on the slide the learner was
-  // on — not a slide-less chat with missing icons.
+  // on — not a slide-less chat with missing icons. Keys off activeCourseId
+  // (the persisted string), NOT the activeCourse object — the object is
+  // rehydrated asynchronously from IndexedDB and losing that race used to
+  // leave a resumed session slide-less.
+  const restoredActiveCourseId = useAppStore((s) => s.activeCourseId)
   useEffect(() => {
     let cancelled = false
-    const courseId = activeCourse?.id
+    const courseId = activeCourse?.id ?? restoredActiveCourseId
     if (!courseId || activeSlides.length > 0) return
     ;(async () => {
       const slides = isLocalCourse(courseId) ? await getLocalSlides(courseId) : []
@@ -436,7 +472,7 @@ export function TutorView() {
       } catch { /* storage unavailable */ }
     })()
     return () => { cancelled = true }
-  }, [activeCourse?.id, activeSlides.length, setActiveSlides, setCurrentSlideIndexRaw])
+  }, [activeCourse?.id, restoredActiveCourseId, activeSlides.length, setActiveSlides, setCurrentSlideIndexRaw])
 
   // Slide Player dual mode (task 31, C18): Original shows every page;
   // Compact walks only the teaching sequence from the normalizer — title,
@@ -1086,6 +1122,13 @@ export function TutorView() {
     // to write quiz JSON. The LLM is only involved when the bank is empty,
     // and even then through the validated /api/questions path.
     let questionIntent = parseQuestionIntent(content)
+    // Retry after a failed generation: "generate the questions again",
+    // "try again", "retry" — re-run the exact same request (same count,
+    // same slide) through the bank-first path.
+    if (!questionIntent && lastFailedQuizIntentRef.current && /\b(again|retry|regenerate|once more|one more time)\b/i.test(content)) {
+      questionIntent = lastFailedQuizIntentRef.current
+      lastFailedQuizIntentRef.current = null
+    }
     // Pending "how many?" (task 57): the previous turn was a quiz request
     // without a count — a bare number (or "N questions") now answers it.
     if (!questionIntent && pendingQuizAskRef.current) {
@@ -1178,40 +1221,114 @@ export function TutorView() {
         markTutorQuiz()
         navigate('quiz')
       } else {
-        updateMessage(genId, 'I couldn\'t generate questions right now — check your OpenRouter key in Settings, or try again in a moment.')
+        // Remember the request so "generate them again" retries it exactly
+        lastFailedQuizIntentRef.current = questionIntent
+        updateMessage(genId, `I couldn't generate the ${wanted} questions right now — the model may be busy. Say **again** to retry, or check your OpenRouter key in Settings.`)
       }
       return
     }
 
-    // Orchestrator wiring (task 51): explicit navigation/tool requests go to
-    // /api/orchestrate (fast role + knowledge pack). State rides with the
-    // client (D28/R1). Anything but a confident navigate falls through to chat.
-    if (/\b(go to|open|take me to|switch to|show me the)\b/i.test(content)) {
-      try {
-        const res = await aiFetch('/api/orchestrate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: content,
-            state: orchestratorStateRef.current,
-            topic: activeTopic || activeCourse?.title,
-            slide: activeSlides.length > 0
-              ? { index: currentSlideIndex + 1, total: activeSlides.length, title: activeSlides[currentSlideIndex]?.title, kind: structuredDoc?.pages[currentSlideIndex]?.kind }
-              : undefined,
-          }),
-        })
-        if (res.ok) {
-          const data = await res.json()
-          if (data.state) orchestratorStateRef.current = data.state
-          const KNOWN_VIEWS = ['dashboard', 'courses', 'quiz', 'upload', 'notes', 'focus-timer', 'profile', 'leaderboard', 'settings']
-          if (data.decision === 'navigate' && KNOWN_VIEWS.includes(data.target)) {
-            addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `Taking you to ${data.target.replace('-', ' ')} —`, createdAt: new Date().toISOString() })
-            navigate(data.target)
+    // Orchestrator loop (tasks 51/78, CR22 full wiring): EVERY turn that
+    // reaches the AI is routed through the orchestrator first. Deterministic
+    // interceptors above (question counts, "next", bank-first) still win —
+    // the orchestrator only sees what code didn't already handle. Its
+    // decision either triggers a code action (navigate/quiz/advance) or
+    // shapes the tutor's reply (remediate/motivate/break/assess/review) —
+    // it never generates learner-facing content itself. A 4s timeout keeps
+    // it off the critical path: any failure falls through to plain chat.
+    let orchestratorHint: string | null = null
+    try {
+      // Maintain the continuity blob's inputs client-side (D28): struggle
+      // streak from the repeated-question detector, rolling digest of turns.
+      const prevState = (orchestratorStateRef.current ?? {}) as { struggleStreak?: number; digest?: string }
+      const struggling = detectRepeatedQuestion(content, messages)
+      orchestratorStateRef.current = {
+        ...prevState,
+        version: 1,
+        struggleStreak: struggling ? (prevState.struggleStreak ?? 0) + 1 : 0,
+        digest: `${prevState.digest ?? ''}\nU: ${content.slice(0, 80)}`.slice(-600),
+      }
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 4000)
+      const res = await aiFetch('/api/orchestrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          message: content,
+          state: orchestratorStateRef.current,
+          // System authority (task 78): the orchestrator sees the app's
+          // real state — assembled by code, not by the model
+          app: snapshotSummary(buildAppSnapshot()),
+          topic: activeTopic || activeCourse?.title,
+          slide: activeSlides.length > 0
+            ? { index: currentSlideIndex + 1, total: activeSlides.length, title: activeSlides[currentSlideIndex]?.title, kind: structuredDoc?.pages[currentSlideIndex]?.kind }
+            : undefined,
+        }),
+      })
+      clearTimeout(timer)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.state) orchestratorStateRef.current = data.state
+        const KNOWN_VIEWS = ['dashboard', 'courses', 'quiz', 'upload', 'notes', 'focus-timer', 'profile', 'leaderboard', 'settings']
+        const target = typeof data.target === 'string' ? data.target : ''
+
+        if ((data.decision === 'navigate' || data.decision === 'tool') && KNOWN_VIEWS.includes(target)) {
+          // "Take me to the quiz" must arrive at a READY quiz, not a bare
+          // page — go through the shared launch service (bank → stored →
+          // generate) and only announce success when it worked.
+          if (target === 'quiz' && activeCourse) {
+            addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: 'Setting up your quiz —', createdAt: new Date().toISOString() })
+            // Register the session so the results come back for a debrief
+            useAppStore.getState().setTutorQuizContext({
+              sessionId,
+              courseId: activeCourse.id,
+              slideId: activeSlides[currentSlideIndex]?.id,
+              slideIndex: currentSlideIndex,
+            })
+            const result = await launchQuiz({ courseId: activeCourse.id })
+            if (!result.ok) {
+              useAppStore.getState().setTutorQuizContext(null)
+              addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: result.reason || 'The quiz could not be prepared — try again in a moment.', createdAt: new Date().toISOString() })
+            }
             return
           }
+          addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `Taking you to ${target.replace('-', ' ')} —`, createdAt: new Date().toISOString() })
+          navigate(target)
+          return
         }
-      } catch { /* orchestrator unavailable — normal chat handles it */ }
-    }
+
+        // "Test me properly" that the code interceptor didn't catch — enter
+        // the SAME controlled flow: ask for a count, then bank-first (task 12/57)
+        if (data.decision === 'quiz' && activeCourse) {
+          pendingQuizAskRef.current = { slideNumber: null }
+          addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: 'Happy to test you on this slide! How many questions do you want? (e.g. 5, 10, 20)', createdAt: new Date().toISOString() })
+          return
+        }
+
+        // "Got it, let's move on" — advance to the next teaching unit and
+        // start explaining, exactly like typing "next" (task 66)
+        if (data.decision === 'advance' && activeSlides.length > 0) {
+          let nxt = currentSlideIndex + 1
+          if (slideViewMode === 'compact' && compactSet) {
+            while (nxt < activeSlides.length && !compactSet.has(nxt)) nxt++
+          }
+          if (nxt < activeSlides.length) {
+            setCurrentSlideIndex(nxt)
+            toast(`Slide ${nxt + 1}/${activeSlides.length}: ${activeSlides[nxt]?.title ?? ''}`)
+            useAppStore.getState().setPendingSlideExplain(nxt)
+            return
+          }
+          // Last slide — fall through to chat with a review hint instead
+          orchestratorHint = 'review'
+        }
+
+        // Reply-shaping decisions ride into /api/chat as a hint
+        if (['remediate', 'review', 'motivate', 'break', 'assess'].includes(data.decision)) {
+          orchestratorHint = data.decision
+        }
+      }
+    } catch { /* orchestrator unavailable/slow — normal chat handles it */ }
 
     setLoading(true)
     useAppStore.getState().setChatRequestStatus('sending')
@@ -1250,6 +1367,20 @@ export function TutorView() {
           // Context awareness (B10): if this message closely repeats an earlier
           // question, tell the tutor so it tries a different angle
           struggleSignal: detectRepeatedQuestion(content, messages),
+          // Orchestrator reply-shaping (task 78): remediate/review/motivate/
+          // break/assess — decided by the fast role, rendered by the tutor
+          orchestratorDecision: orchestratorHint ?? undefined,
+          // "How did I do?" (task 57): the most recent finished quiz rides
+          // along on every message — read from the recorded sessions, so the
+          // tutor knows the score even for quizzes it didn't launch itself.
+          lastQuizResult: (() => {
+            try {
+              const raw = localStorage.getItem('synapse-quiz-sessions')
+              const sessions = raw ? (JSON.parse(raw) as Array<{ correct: number; total: number; completedAt: string }>) : []
+              const last = sessions[sessions.length - 1]
+              return last ? { correct: last.correct, total: last.total, completedAt: last.completedAt } : undefined
+            } catch { return undefined }
+          })(),
           slideContext: activeSlides.length > 0
             ? (() => {
                 const refIdx = detectSlideReference(content, activeSlides.length, currentSlideIndex);
@@ -2622,7 +2753,18 @@ export function TutorView() {
             onClick={() => setRightPanelOpen(false)}
             aria-hidden="true"
           />
-          <div className="fixed inset-y-0 right-0 z-50 w-80 max-w-[85vw] bg-background/95 backdrop-blur-xl shadow-xl border-l glass overflow-y-auto md:static md:z-auto md:w-72 md:max-w-none md:bg-transparent md:shadow-none md:block">
+          <div
+            className="fixed inset-y-0 right-0 z-50 w-80 max-w-[85vw] bg-background/95 backdrop-blur-xl shadow-xl border-l glass overflow-y-auto md:relative md:z-auto md:w-(--panel-w) md:max-w-none md:bg-transparent md:shadow-none md:block md:shrink-0"
+            style={{ '--panel-w': `${rightPanelWidth}px` } as React.CSSProperties}
+          >
+            {/* Drag handle (desktop): resize the panel by its left edge */}
+            <div
+              onPointerDown={handlePanelResizeStart}
+              className="absolute inset-y-0 left-0 z-10 hidden w-1.5 cursor-col-resize md:block hover:bg-primary/30 active:bg-primary/50 transition-colors"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize side panel"
+            />
             <div className="p-3">
               {/* Practice: the latest quiz/flashcards answer here, chat stays central */}
               {latestQuiz && tutorMode !== 'cards' && (

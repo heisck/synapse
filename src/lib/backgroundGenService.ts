@@ -46,6 +46,9 @@ let stopped = false;
 const priorityQueue: PriorityRequest[] = [];
 // Courses that failed recently — retried after a cooldown, never hot-looped
 const courseCooldown = new Map<string, number>();
+// Waker: a priority request cuts the loop's idle sleep short instantly —
+// the tutor is watching that promise, it must never wait out a 30s tick.
+let wakeLoop: (() => void) | null = null;
 
 function aiAnswering(): boolean {
   const s = useAppStore.getState().chatRequestStatus;
@@ -63,6 +66,14 @@ function learnerInQuiz(): boolean {
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Idle sleep that a priority request can interrupt. */
+async function idleSleep(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(() => { wakeLoop = null; resolve(); }, ms);
+    wakeLoop = () => { clearTimeout(timer); wakeLoop = null; resolve(); };
+  });
 }
 
 async function waitWhileAnswering(): Promise<void> {
@@ -91,12 +102,24 @@ async function fetchQuestions(body: Record<string, unknown>): Promise<{ question
 /**
  * Tutor priority lane (task 43): generate questions for ONE slide right now.
  * Resolves with whatever was added to the bank (possibly []). The main loop
- * yields to this between its own requests.
+ * yields to this between its own requests. NEVER hangs: wakes the loop
+ * immediately and self-resolves [] after a hard deadline so the tutor can
+ * always tell the learner what happened.
  */
 export function requestSlideQuestions(courseId: string, slideId: string, slideContent: string, count: number): Promise<Question[]> {
   return new Promise((resolve) => {
-    priorityQueue.push({ courseId, slideId, slideContent, count, resolve });
+    let settled = false;
+    const settle = (qs: Question[]) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      resolve(qs);
+    };
+    // Generous deadline: one request timeout + queue/pause headroom
+    const deadline = setTimeout(() => settle([]), REQUEST_TIMEOUT_MS + 30_000);
+    priorityQueue.push({ courseId, slideId, slideContent, count, resolve: settle });
     void ensureRunning();
+    wakeLoop?.();
   });
 }
 
@@ -193,17 +216,20 @@ async function generateForCourse(courseId: string): Promise<boolean> {
 
 async function mainLoop(): Promise<void> {
   while (!stopped) {
+    // Priority lane ALWAYS wins — served even when background walking is
+    // disabled: the toggle governs unattended generation, not the questions
+    // the learner just asked the tutor for.
+    while (priorityQueue.length > 0) await servePriority(priorityQueue.shift()!);
+
     if (!getOpenRouterKey() || !isBackgroundGenerationEnabled()) {
-      await sleep(IDLE_RECHECK_MS);
+      await idleSleep(IDLE_RECHECK_MS);
       continue;
     }
-    // Priority lane always wins
-    while (priorityQueue.length > 0) await servePriority(priorityQueue.shift()!);
 
     // Never interfere with a live quiz (task 69): background walking waits
     // until the learner leaves the quiz page; priority requests still run.
     if (learnerInQuiz()) {
-      await sleep(PAUSE_POLL_MS);
+      await idleSleep(PAUSE_POLL_MS);
       continue;
     }
 
@@ -224,7 +250,7 @@ async function mainLoop(): Promise<void> {
         break; // one section per cycle keeps the app responsive
       }
     }
-    if (!didWork && priorityQueue.length === 0) await sleep(IDLE_RECHECK_MS);
+    if (!didWork && priorityQueue.length === 0) await idleSleep(IDLE_RECHECK_MS);
     else await sleep(400);
   }
   running = false;

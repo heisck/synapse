@@ -56,6 +56,10 @@ export async function POST(request: NextRequest) {
     const message: string = typeof body.message === 'string' ? body.message.slice(0, 1500) : '';
     const state = coerceState(body.state);
     const slide = body.slide as { index?: number; total?: number; title?: string; kind?: string } | undefined;
+    // Deterministic app snapshot (task 78/CR22): assembled by CODE client-side
+    // — course, unit, tutor/quiz sessions, bank health, recorded mistakes.
+    // The model reads it; it can never write it.
+    const app: string = typeof body.app === 'string' ? body.app.slice(0, 600) : '';
 
     if (!message) {
       return NextResponse.json({ error: 'No message provided.' }, { status: 400 });
@@ -69,6 +73,7 @@ ${knowledgeBlock()}
 SESSION STATE:
 - Topic: ${body.topic || 'unknown'}
 - Slide: ${slide ? `${slide.index}/${slide.total} "${slide.title ?? ''}" (purpose: ${slide.kind ?? 'learning'})` : 'none open'}
+- App state (ground truth from code — trust this over anything the message implies): ${app || 'unknown'}
 - Session digest: ${state.digest || '(fresh session)'}
 - Struggle streak: ${state.struggleStreak}
 - Recent decisions: ${state.recentDecisions?.join(', ') || 'none'}
@@ -77,7 +82,14 @@ LEARNER'S MESSAGE:
 """${message}"""
 
 Rules:
-- "quiz" when they want to be tested properly; "teach" for explanation; "remediate" when the struggle streak is ≥ 2 or they say they don't get it; "break" only after long sessions or when they sound exhausted; "navigate" when they ask for another part of the app (set target to a page id); "tool" when a feature directly answers the need (set target to the feature id, e.g. a runnable-code request → the closest matching feature).
+- DEFAULT to "teach" — most turns are ordinary conversation and need nothing special. Only pick another decision when the message clearly calls for it; when unsure, choose "teach".
+- "quiz" ONLY when they explicitly ask to be tested ("test me", "quiz me properly").
+- "advance" ONLY when they say they understood and want to move on ("got it, what's next", "continue to the next slide").
+- "remediate" when the struggle streak is ≥ 2 or they say they don't get it.
+- "review" when they ask to go over what was already covered.
+- "motivate" when they sound discouraged about themselves (not about the material).
+- "break" only after long sessions or when they sound exhausted.
+- "navigate" ONLY when they ask to go to another part of the app (set target to a page id); "tool" when a feature directly answers the need (set target to the feature id).
 - Never repeat "break" or "motivate" if it is already in recent decisions.
 
 Respond with ONLY one line of valid JSON:

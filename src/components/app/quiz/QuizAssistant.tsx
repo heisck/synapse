@@ -39,6 +39,11 @@ export function QuizAssistant({ currentQuestion }: { currentQuestion?: Question 
     const text = input.trim();
     if (!text || sending) return;
     const history = messages.map((m) => ({ role: m.role, content: m.content }));
+    // Mid-quiz struggle (task 78): saying they don't get it — or re-asking
+    // the same thing — flips the tutor into remediation instead of a repeat.
+    const struggling =
+      /\b(don'?t (get|understand)|confused|makes no sense|still lost|no idea)\b/i.test(text) ||
+      messages.some((m) => m.role === 'user' && m.content.toLowerCase() === text.toLowerCase());
     setInput('');
     setMessages((prev) => [...prev, { role: 'user', content: text }]);
     setSending(true);
@@ -50,6 +55,7 @@ export function QuizAssistant({ currentQuestion }: { currentQuestion?: Question 
           message: text,
           stream: false,
           history,
+          orchestratorDecision: struggling ? 'remediate' : undefined,
           topic: activeCourse?.title,
           slideContext: {
             courseTitle: activeCourse?.title ?? '',

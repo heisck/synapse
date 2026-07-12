@@ -53,6 +53,8 @@ import { useTheme } from 'next-themes';
 import { exportProfileCode, importProfileCode, resetAllData } from '@/lib/transfer';
 import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
 import { getByoStorage, setByoStorage } from '@/lib/byoStorage';
+import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, speak } from '@/lib/voice/tts';
+import { Volume2 } from 'lucide-react';
 
 /** Personas must match the tutor's PersonaSelector so the default applies. */
 const PERSONA_OPTIONS = [
@@ -189,6 +191,107 @@ function ExportButton({ onClick, children, icon }: { onClick: () => void; childr
         {children}
       </Button>
     </motion.div>
+  );
+}
+
+/**
+ * Voice manager (task 71): Kokoro voice download lives here — progress bar,
+ * ready state, voice picker, quick preview. Once downloaded the model warms
+ * on app entry, so read-aloud starts instantly everywhere.
+ */
+function VoiceSettings() {
+  const [downloaded, setDownloaded] = useState(() => isVoiceDownloaded());
+  const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [voice, setVoice] = useState(() => getSelectedVoice());
+  const [previewing, setPreviewing] = useState(false);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    setProgress(0);
+    const ok = await downloadVoices((pct) => setProgress(pct));
+    setDownloading(false);
+    if (ok) {
+      setDownloaded(true);
+      toast.success('Voices downloaded — text-to-speech now starts instantly');
+    } else {
+      toast.error('Voice download failed — the browser voice will be used instead');
+    }
+  };
+
+  const handleVoiceChange = (id: string) => {
+    setVoice(id);
+    setSelectedVoice(id);
+  };
+
+  const handlePreview = async () => {
+    setPreviewing(true);
+    await speak('Hi! This is how I sound when I read your slides.', {
+      voice,
+      onEnd: () => setPreviewing(false),
+    });
+  };
+
+  return (
+    <>
+      <SettingRow
+        label="Natural voice (Kokoro)"
+        description={
+          downloaded
+            ? 'Downloaded — speech starts instantly, everything stays on this device'
+            : 'One-time ~80 MB download; runs fully in your browser'
+        }
+        stackOnMobile
+      >
+        {downloaded ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+            <Check className="h-3.5 w-3.5" /> Ready
+          </span>
+        ) : (
+          <Button size="sm" onClick={handleDownload} disabled={downloading}>
+            {downloading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {progress > 0 ? `${progress}%` : 'Downloading…'}
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4 mr-2" /> Download voices
+              </>
+            )}
+          </Button>
+        )}
+      </SettingRow>
+      {downloading && (
+        <div className="relative h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
+          <motion.div
+            className="absolute inset-y-0 left-0 rounded-full bg-primary"
+            animate={{ width: `${Math.max(progress, 4)}%` }}
+            transition={{ duration: 0.2 }}
+          />
+        </div>
+      )}
+      <Separator className="opacity-50" />
+      <SettingRow label="Voice" description="Used when reading slides and answers aloud">
+        <div className="flex items-center gap-2">
+          <SelectWithGlow value={voice} onValueChange={handleVoiceChange}>
+            {KOKORO_VOICES.map((v) => (
+              <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+            ))}
+          </SelectWithGlow>
+          <Button variant="outline" size="sm" onClick={handlePreview} disabled={previewing} aria-label="Preview voice">
+            {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+          </Button>
+        </div>
+      </SettingRow>
+      <Separator className="opacity-50" />
+      <SettingRow
+        label="Cloned voices"
+        description="Bring-your-own cloned voice support is planned — downloaded voices above work today"
+      >
+        <span className="text-xs text-muted-foreground rounded-full border border-border/60 px-2.5 py-1">Coming soon</span>
+      </SettingRow>
+    </>
   );
 }
 
@@ -436,6 +539,11 @@ export function SettingsView() {
             ariaLabel="Compact Mode"
           />
         </SettingRow>
+      </SectionCard>
+
+      {/* Voice & Speech (task 71) */}
+      <SectionCard icon={Volume2} title="Voice & Speech" index={1}>
+        <VoiceSettings />
       </SectionCard>
 
       {/* AI Preferences */}

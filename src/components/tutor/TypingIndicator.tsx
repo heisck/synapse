@@ -1,15 +1,16 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { Brain } from 'lucide-react'
 
 export function TypingIndicator() {
-  // Matches ChatBubble's assistant row layout (left-aligned, same gap) so the
-  // bubble doesn't appear centered and then shift when the reply lands
+  // Matches ChatBubble's assistant row layout (left-aligned, same gap) AND its
+  // Brain avatar, so nothing swaps identity when the reply lands
   return (
     <div className="flex items-end gap-2 mb-3">
-      {/* Assistant avatar hint */}
-      <div className="shrink-0 mt-1 w-7 h-7 rounded-full bg-linear-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-sm shadow-emerald-500/20">
-        <span className="text-[10px] font-bold text-white">AI</span>
+      {/* Same avatar as the assistant's messages */}
+      <div className="shrink-0 mt-1 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+        <Brain className="w-4 h-4 text-primary" />
       </div>
 
       {/* Bubble with glass-morphism */}
@@ -44,7 +45,7 @@ export function TypingIndicator() {
             animate={{ opacity: [0.4, 0.7, 0.4] }}
             transition={{ delay: 0.5, duration: 2, repeat: Infinity, ease: 'easeInOut' }}
           >
-            AI is thinking...
+            Thinking…
           </motion.span>
         </div>
       </div>

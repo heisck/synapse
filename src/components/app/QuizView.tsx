@@ -88,6 +88,7 @@ import { InteractiveFlashcard } from './quiz/InteractiveFlashcard';
 import { ExamMode } from './quiz/ExamMode';
 import { QuizAssistant } from './quiz/QuizAssistant';
 import { playCorrect, playIncorrect, playMilestone } from '@/lib/sfx';
+import { awardQuizXp } from '@/lib/xp';
 import { useBackgroundGeneration } from '@/hooks/useBackgroundGeneration';
 import { GraduationCap, Cpu } from 'lucide-react';
 import { appendToQuestionCache, loadQuestionCache, getPreferredTypes, setPreferredTypes, ALL_QUESTION_TYPES, loadAnsweredIds, markQuestionAnswered } from '@/lib/questionCache';
@@ -900,6 +901,19 @@ export function QuizView() {
     setShowExplanation(false);
   }
 
+  // A NEW question set always starts at question 1: the view stays mounted
+  // across navigation, so without this a swap mid-set resumed at the old
+  // index (e.g. question 7 of a fresh 10). Signature = first id + length.
+  const questionSetSig = questions.length > 0 ? `${questions[0].id}:${questions.length}` : '';
+  const [prevQuestionSetSig, setPrevQuestionSetSig] = useState(questionSetSig);
+  if (questionSetSig !== prevQuestionSetSig) {
+    setPrevQuestionSetSig(questionSetSig);
+    if (currentIndex !== 0) {
+      setCurrentIndex(0);
+      setShowExplanation(false);
+    }
+  }
+
   // Defensive: never render an empty page while the clamp effect catches up
   const currentQ = questions[currentIndex] ?? questions[0];
   const progress = questions.length > 0 ? ((Math.min(currentIndex, questions.length - 1) + 1) / questions.length) * 100 : 0;
@@ -1130,6 +1144,9 @@ export function QuizView() {
     }
     if (sessionLoggedRef.current) return;
     sessionLoggedRef.current = true;
+    // Progress tracking (task 76): a finished quiz feeds quizScore/quizTotal
+    // and re-checks achievements (Perfect Score, Quiz Master, Quick Learner)
+    awardQuizXp(Math.round(score), questions.length);
     try {
       const raw = localStorage.getItem('synapse-quiz-sessions');
       const sessions = raw ? (JSON.parse(raw) as unknown[]) : [];
@@ -3684,6 +3701,9 @@ export function QuizView() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* AI help during the quiz (task 61/CR5) — knows the current question */}
+        <QuizAssistant currentQuestion={studyMode === 'quiz' ? currentQ : undefined} />
       </div>
     </div>
   );

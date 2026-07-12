@@ -9,6 +9,7 @@ import { usePresence } from '@/hooks/usePresence';
 import { listLocalCourses, getLocalDoc, getLocalSlides, saveLocalDoc } from '@/lib/localLibrary';
 import { normalizeDocument } from '@/lib/document/normalizer';
 import { ensureRunning } from '@/lib/backgroundGenService';
+import { isVoiceDownloaded, warmUpTTS } from '@/lib/voice/tts';
 
 export function StoreInitializer() {
   const { setCourses, courses, achievements } = useAppStore();
@@ -72,6 +73,15 @@ export function StoreInitializer() {
       const local = await listLocalCourses();
       if (local.length > 0) setCourses(local);
 
+      // Resume fix: session persistence restores activeCourseId (a string),
+      // but views key off the activeCourse OBJECT — rehydrate it now that
+      // the courses exist, so reopening the tutor brings its slides back.
+      const st = useAppStore.getState();
+      if (st.activeCourseId && !st.activeCourse) {
+        const course = local.find((c) => c.id === st.activeCourseId);
+        if (course) st.setActiveCourse(course);
+      }
+
       // Legacy format migration (task 48): courses uploaded before the
       // structured-document era get their doc backfilled from slides right
       // here — the normalizer is pure TS, so the browser does it itself.
@@ -104,6 +114,9 @@ export function StoreInitializer() {
   // itself while the AI is answering and idles without an API key.
   useEffect(() => {
     ensureRunning();
+    // Instant speech (task 71): a voice downloaded in Settings warms up on
+    // app entry, so the first "read aloud" never waits for the model.
+    if (isVoiceDownloaded()) warmUpTTS();
   }, []);
 
   return null;
