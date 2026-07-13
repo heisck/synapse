@@ -53,7 +53,7 @@ import { useTheme } from 'next-themes';
 import { exportProfileCode, importProfileCode, resetAllData } from '@/lib/transfer';
 import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
 import { getByoStorage, setByoStorage } from '@/lib/byoStorage';
-import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, deleteVoiceDownload, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice, isIOSKokoroEnabled, setIOSKokoroEnabled, previewVoiceBlend, listNativeVoices, getSelectedNativeVoiceURI, setSelectedNativeVoice } from '@/lib/voice/tts';
+import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, deleteVoiceDownload, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice, isIOSKokoroEnabled, setIOSKokoroEnabled, previewVoiceBlend, listNativeVoices, getSelectedNativeVoiceURI, setSelectedNativeVoice, getKokoroBackend } from '@/lib/voice/tts';
 import { hapticsSupported, hapticsEnabled, setHapticsEnabled, hapticSuccess } from '@/lib/haptics';
 import { isWhisperDownloaded, downloadWhisper, deleteWhisperDownload, onWhisperStatus } from '@/lib/voice/stt';
 import { isIOS } from '@/lib/voice/device';
@@ -210,6 +210,14 @@ function VoiceSettings() {
   const [progress, setProgress] = useState(0);
   const [voice, setVoice] = useState(() => getSelectedVoice());
   const [previewing, setPreviewing] = useState(false);
+  // WebGPU experiment: surface which engine Kokoro actually loaded on, so an
+  // iOS tester can tell whether the GPU path took (survives the memory ceiling)
+  // or it silently fell back to CPU/WASM (the path that crashes old iPhones).
+  const [backend, setBackend] = useState<string | null>(() => getKokoroBackend());
+  useEffect(() => {
+    const id = setInterval(() => setBackend(getKokoroBackend()), 1000);
+    return () => clearInterval(id);
+  }, []);
   // iOS opt-in: Kokoro is off by default on iPhone/iPad; users can turn it on
   // and accept the (small, on modern devices) risk of a memory-pressured tab.
   const [iosKokoro, setIosKokoro] = useState(() => isIOSKokoroEnabled());
@@ -440,6 +448,15 @@ function VoiceSettings() {
             transition={{ duration: 0.2 }}
           />
         </div>
+      )}
+      {downloaded && backend && (
+        <p className="text-xs text-muted-foreground">
+          Engine:{' '}
+          <span className="font-medium text-foreground">
+            {backend.startsWith('webgpu') ? 'GPU · WebGPU' : 'CPU · WASM'}
+          </span>{' '}
+          <span className="opacity-60">({backend})</span>
+        </p>
       )}
       {downloaded && !downloading && (
         <div className="flex justify-end">

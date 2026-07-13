@@ -274,11 +274,85 @@ function filterOrtNoise(): void {
   }
 }
 
+// Which backend/dtype Kokoro actually loaded on (e.g. "webgpu/q4f16",
+// "wasm/q8") — surfaced in Settings so an iOS tester can report whether the
+// WebGPU path took, vs a silent fall back to wasm.
+let kokoroBackend: string | null = null;
+export function getKokoroBackend(): string | null {
+  return kokoroBackend;
+}
+
+type KokoroCfg = { device: 'webgpu' | 'wasm'; dtype: string };
+
+/**
+ * Does this device have a usable WebGPU adapter, and does it support the
+ * `shader-f16` feature? We probe the adapter directly (not just `'gpu' in
+ * navigator`) so we never pick a WebGPU config the device can't actually run —
+ * important on iOS, where a wrong guess means a wasted multi-MB download before
+ * it fails.
+ */
+async function probeWebGPU(): Promise<{ available: boolean; f16: boolean }> {
+  try {
+    const gpu = (navigator as unknown as { gpu?: { requestAdapter: () => Promise<{ features?: { has?: (f: string) => boolean } } | null> } }).gpu;
+    if (!gpu) return { available: false, f16: false };
+    const adapter = await gpu.requestAdapter();
+    if (!adapter) return { available: false, f16: false };
+    return { available: true, f16: adapter.features?.has?.('shader-f16') ?? false };
+  } catch {
+    return { available: false, f16: false };
+  }
+}
+
+/**
+ * Ordered list of load configs to try, best-first, each falling back to the
+ * next on failure.
+ *
+ * iOS EXPERIMENT: the wasm heap crashes the tab during inference ("a problem
+ * repeatedly occurred"), so on iOS we try to run the math on the GPU instead —
+ * q4f16 keeps the GPU footprint tiny (~40 MB) and needs the shader-f16 feature,
+ * which modern A-series iPhones expose. If WebGPU/f16 isn't available we don't
+ * gamble on a huge fp32 GPU download; we fall straight to the proven wasm/q8
+ * (which may still crash old iPhones — that's the signal to move to Piper).
+ * Desktop keeps its working webgpu/fp32 path, now with a wasm/q8 safety net.
+ */
+async function kokoroLadder(ios: boolean): Promise<KokoroCfg[]> {
+  const gpu = await probeWebGPU();
+  if (ios) {
+    if (gpu.available && gpu.f16) {
+      return [{ device: 'webgpu', dtype: 'q4f16' }, { device: 'wasm', dtype: 'q8' }];
+    }
+    return [{ device: 'wasm', dtype: 'q8' }];
+  }
+  if (gpu.available) return [{ device: 'webgpu', dtype: 'fp32' }, { device: 'wasm', dtype: 'q8' }];
+  return [{ device: 'wasm', dtype: 'q8' }];
+}
+
+/**
+ * A fresh progress aggregator. transformers.js reports progress PER FILE —
+ * aggregate loaded/total across files so the bar never jumps backwards. Cap at
+ * 99 until the model is actually ready (session init runs after the last byte).
+ */
+function makeKokoroProgress(onProgress: (pct: number) => void): (info: { file?: string; loaded?: number; total?: number }) => void {
+  const files = new Map<string, { loaded: number; total: number }>();
+  let best = 0;
+  return (info) => {
+    if (!info?.file || typeof info.loaded !== 'number' || typeof info.total !== 'number' || info.total <= 0) return;
+    files.set(info.file, { loaded: info.loaded, total: info.total });
+    let loaded = 0; let total = 0;
+    for (const f of files.values()) { loaded += f.loaded; total += f.total; }
+    const pct = Math.min(99, Math.round((loaded / total) * 100));
+    if (pct > best) { best = pct; onProgress(pct); }
+  };
+}
+
 async function loadKokoro(onProgress?: (pct: number) => void): Promise<KokoroTTSInstance | null> {
-  // iOS Safari's wasm memory ceiling can't hold the fp32 Kokoro model (tab
-  // crashes with "a problem repeatedly occurred"), so iPhones default to the
-  // built-in system voices. Users who opt in (Settings) get the q8 build,
-  // which is small enough to fit on modern devices — force q8/wasm below.
+  // iOS Safari's wasm memory ceiling crashes the tab during inference ("a
+  // problem repeatedly occurred"), so iPhones default to the built-in system
+  // voices. Users who opt in (Settings) get the Kokoro ladder from
+  // kokoroLadder(): WebGPU/q4f16 first where supported (runs the math on the GPU,
+  // off the crashing wasm heap), else the proven wasm/q8. Warm-up stays OFF on
+  // iOS below so the first real turn — not the download — is where any remaining
+  // memory crash surfaces.
   const iosOptIn = isIOS();
   if (iosOptIn && !isIOSKokoroEnabled()) {
     status = 'unavailable';
@@ -290,31 +364,27 @@ async function loadKokoro(onProgress?: (pct: number) => void): Promise<KokoroTTS
   kokoroPromise = (async () => {
     try {
       const { KokoroTTS } = await import('kokoro-js');
-      // On iOS force the small q8/wasm build even if WebGPU is exposed — the
-      // fp32 path is what blows Safari's memory ceiling.
-      const hasWebGPU = !iosOptIn && typeof navigator !== 'undefined' && 'gpu' in navigator;
-      const tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-        dtype: hasWebGPU ? 'fp32' : 'q8',
-        device: hasWebGPU ? 'webgpu' : 'wasm',
-        // transformers.js reports progress PER FILE — aggregate loaded/total
-        // across files so the bar never jumps backwards
-        progress_callback: onProgress
-          ? (() => {
-              const files = new Map<string, { loaded: number; total: number }>();
-              let best = 0;
-              return (info: { file?: string; loaded?: number; total?: number }) => {
-                if (!info?.file || typeof info.loaded !== 'number' || typeof info.total !== 'number' || info.total <= 0) return;
-                files.set(info.file, { loaded: info.loaded, total: info.total });
-                let loaded = 0; let total = 0;
-                for (const f of files.values()) { loaded += f.loaded; total += f.total; }
-                // Cap at 99 until the model is actually ready (session init runs
-                // after the last byte) — keeps the bar from freezing at 100.
-                const pct = Math.min(99, Math.round((loaded / total) * 100));
-                if (pct > best) { best = pct; onProgress(pct); }
-              };
-            })()
-          : undefined,
-      } as Parameters<typeof KokoroTTS.from_pretrained>[1]);
+      const progress_callback = onProgress ? makeKokoroProgress(onProgress) : undefined;
+      const ladder = await kokoroLadder(iosOptIn);
+      let tts: KokoroTTSInstance | null = null;
+      for (const cfg of ladder) {
+        try {
+          tts = (await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
+            dtype: cfg.dtype,
+            device: cfg.device,
+            progress_callback,
+          } as Parameters<typeof KokoroTTS.from_pretrained>[1])) as unknown as KokoroTTSInstance;
+          kokoroBackend = `${cfg.device}/${cfg.dtype}`;
+          console.info('[tts] Kokoro loaded on', kokoroBackend);
+          break;
+        } catch (err) {
+          console.warn(`[tts] Kokoro ${cfg.device}/${cfg.dtype} failed to load, trying next:`, err);
+        }
+      }
+      if (!tts) {
+        status = 'unavailable';
+        return null;
+      }
       status = 'ready';
       try { localStorage.setItem(DOWNLOADED_KEY, '1'); } catch { /* storage unavailable */ }
       // Synthesis warm-up: loading the weights isn't enough — the FIRST
