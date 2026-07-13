@@ -261,6 +261,56 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
   // Live Whisper download progress in the header chip
   useEffect(() => onWhisperStatus((status, progress) => setWhisper({ status, progress })), [])
 
+  // The orb must react to your VOICE, not to STT or the API. On the native
+  // SpeechRecognition path (Chrome/Edge/Android) the orb used to grow ONLY when
+  // SR returned interim text — but SR transcription is cloud-based, so if it was
+  // slow or offline the orb sat dead even though the mic was working fine (the
+  // "I'm talking and the orb does nothing on my laptop" bug). Drive it from a
+  // raw mic-level meter (AnalyserNode) instead, so it always responds live.
+  // (The VAD path — iOS/Firefox — already meters the mic via onFrameProcessed.)
+  useEffect(() => {
+    if (!nativeSpeechRecognitionSupported()) return
+    let raf = 0
+    let stream: MediaStream | null = null
+    let src: MediaStreamAudioSourceNode | null = null
+    let disposed = false
+    let last = 0
+    ;(async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+        if (disposed) { stream.getTracks().forEach((t) => t.stop()); return }
+        const ctx = getAudioContext()
+        if (!ctx) return
+        src = ctx.createMediaStreamSource(stream)
+        const analyser = ctx.createAnalyser()
+        analyser.fftSize = 512
+        analyser.smoothingTimeConstant = 0.85
+        src.connect(analyser)
+        const data = new Uint8Array(analyser.frequencyBinCount)
+        const tick = () => {
+          if (disposed) return
+          raf = requestAnimationFrame(tick)
+          const now = performance.now()
+          if (now - last < 33) return // ~30fps: smooth without flooding React with re-renders
+          last = now
+          analyser.getByteTimeDomainData(data)
+          let sum = 0
+          for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v }
+          const rms = Math.sqrt(sum / data.length)
+          // Speech RMS (~0.015..0.25) → 0..1 with a small noise floor so silence rests the orb.
+          setVadLevel(mutedRef.current ? 0 : Math.min(1, Math.max(0, (rms - 0.015) * 7)))
+        }
+        tick()
+      } catch { /* mic blocked — the SpeechRecognition path surfaces the permission error */ }
+    })()
+    return () => {
+      disposed = true
+      cancelAnimationFrame(raf)
+      try { src?.disconnect() } catch { /* already gone */ }
+      stream?.getTracks().forEach((t) => t.stop())
+    }
+  }, [getAudioContext])
+
   // Mount: start the conversation loop until closed.
   // Preferred ears: the browser's NATIVE SpeechRecognition (Chrome/Edge/
   // Android) — instant, no download, live interim transcripts. Fallback:
@@ -305,11 +355,9 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
           }
           if (interim.trim()) {
             setUserCaption(interim.trim()) // LIVE transcription as you speak
-            setVadLevel(0.85)
           }
           const finalText = final.trim()
           if (finalText) {
-            setVadLevel(0)
             void runTurn(finalText)
           }
         }

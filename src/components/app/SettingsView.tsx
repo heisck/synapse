@@ -356,7 +356,7 @@ function VoiceSettings() {
               : 'iPhones and iPads default to the built-in system voice — turn on to try the natural voice (experimental)'
             : downloaded
               ? 'Downloaded — speech starts instantly, everything stays on this device'
-              : 'One-time ~80 MB download; runs fully in your browser'
+              : 'One-time ~40 MB download; runs fully in your browser'
         }
         stackOnMobile
       >
@@ -417,7 +417,7 @@ function VoiceSettings() {
       {downloaded && !downloading && (
         <div className="flex justify-end">
           <Button size="sm" variant="ghost" onClick={handleVoiceDelete} className="text-xs text-muted-foreground hover:text-red-500">
-            <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete &amp; re-download (fixes a corrupt/won&apos;t-play voice)
+            <Trash2 className="h-3.5 w-3.5 mr-1.5 shrink-0" /> Delete &amp; re-download
           </Button>
         </div>
       )}
@@ -462,7 +462,7 @@ function VoiceSettings() {
       {sttDownloaded && !sttDownloading && (
         <div className="flex justify-end">
           <Button size="sm" variant="ghost" onClick={handleSttDelete} className="text-xs text-muted-foreground hover:text-red-500">
-            <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete &amp; re-download (fixes a corrupt download)
+            <Trash2 className="h-3.5 w-3.5 mr-1.5 shrink-0" /> Delete &amp; re-download
           </Button>
         </div>
       )}
