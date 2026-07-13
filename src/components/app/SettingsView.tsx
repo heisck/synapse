@@ -55,6 +55,7 @@ import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
 import { getByoStorage, setByoStorage } from '@/lib/byoStorage';
 import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice } from '@/lib/voice/tts';
 import { hapticsSupported, hapticsEnabled, setHapticsEnabled, hapticSuccess } from '@/lib/haptics';
+import { isWhisperDownloaded, downloadWhisper, onWhisperStatus } from '@/lib/voice/stt';
 import { Volume2 } from 'lucide-react';
 
 /** Personas must match the tutor's PersonaSelector so the default applies. */
@@ -207,6 +208,27 @@ function VoiceSettings() {
   const [voice, setVoice] = useState(() => getSelectedVoice());
   const [previewing, setPreviewing] = useState(false);
 
+  // Speech recognition (Whisper) download — powers voice mode transcription
+  const [sttDownloaded, setSttDownloaded] = useState(() => isWhisperDownloaded());
+  const [sttDownloading, setSttDownloading] = useState(false);
+  const [sttProgress, setSttProgress] = useState(0);
+  useEffect(() => onWhisperStatus((status, progress) => {
+    if (status === 'loading') { setSttDownloading(true); setSttProgress(progress); }
+    if (status === 'ready') { setSttDownloading(false); setSttDownloaded(true); }
+    if (status === 'unavailable') setSttDownloading(false);
+  }), []);
+  const handleSttDownload = async () => {
+    setSttDownloading(true);
+    const ok = await downloadWhisper();
+    setSttDownloading(false);
+    if (ok) {
+      setSttDownloaded(true);
+      toast.success('Speech recognition ready — voice mode now understands you instantly');
+    } else {
+      toast.error('Speech recognition download failed — check your connection');
+    }
+  };
+
   // Feedback channels: quiz sounds + haptics
   const [sfxOn, setSfxOn] = useState(() => {
     try { return typeof window === 'undefined' || localStorage.getItem('synapse-sfx') !== '0'; } catch { return true; }
@@ -315,6 +337,44 @@ function VoiceSettings() {
           <motion.div
             className="absolute inset-y-0 left-0 rounded-full bg-primary"
             animate={{ width: `${Math.max(progress, 4)}%` }}
+            transition={{ duration: 0.2 }}
+          />
+        </div>
+      )}
+      <Separator className="opacity-50" />
+      <SettingRow
+        label="Speech recognition (Whisper)"
+        description={
+          sttDownloaded
+            ? 'Downloaded — voice mode transcribes instantly, fully on-device'
+            : 'One-time ~40 MB download; needed for voice mode to understand you'
+        }
+        stackOnMobile
+      >
+        {sttDownloaded ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+            <Check className="h-3.5 w-3.5" /> Ready
+          </span>
+        ) : (
+          <Button size="sm" onClick={handleSttDownload} disabled={sttDownloading}>
+            {sttDownloading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {sttProgress > 0 ? `${sttProgress}%` : 'Downloading…'}
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4 mr-2" /> Download recognition
+              </>
+            )}
+          </Button>
+        )}
+      </SettingRow>
+      {sttDownloading && (
+        <div className="relative h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
+          <motion.div
+            className="absolute inset-y-0 left-0 rounded-full bg-primary"
+            animate={{ width: `${Math.max(sttProgress, 4)}%` }}
             transition={{ duration: 0.2 }}
           />
         </div>

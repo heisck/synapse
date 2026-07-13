@@ -15,23 +15,69 @@ type Transcriber = (audio: Float32Array) => Promise<{ text: string }>;
 
 let whisperPromise: Promise<Transcriber | null> | null = null;
 
+export type WhisperStatus = 'idle' | 'loading' | 'ready' | 'unavailable';
+let whisperStatus: WhisperStatus = 'idle';
+let whisperProgress = 0;
+const statusListeners = new Set<(status: WhisperStatus, progress: number) => void>();
+
+export function getWhisperStatus(): { status: WhisperStatus; progress: number } {
+  return { status: whisperStatus, progress: whisperProgress };
+}
+
+/** Subscribe to Whisper load status/progress (voice mode UI). */
+export function onWhisperStatus(cb: (status: WhisperStatus, progress: number) => void): () => void {
+  statusListeners.add(cb);
+  cb(whisperStatus, whisperProgress);
+  return () => statusListeners.delete(cb);
+}
+
+function emitStatus(status: WhisperStatus, progress: number): void {
+  whisperStatus = status;
+  whisperProgress = progress;
+  for (const cb of statusListeners) cb(status, progress);
+}
+
 async function loadWhisper(): Promise<Transcriber | null> {
   if (whisperPromise) return whisperPromise;
+  emitStatus('loading', 0);
   whisperPromise = (async () => {
-    try {
-      const { pipeline } = await import('@huggingface/transformers');
-      const asr = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-base', {
-        dtype: 'q8',
-        device: 'wasm',
-      });
-      return (async (audio: Float32Array) => {
-        const out = (await asr(audio)) as { text?: string };
-        return { text: out?.text ?? '' };
-      }) as Transcriber;
-    } catch (err) {
-      console.warn('[stt] Whisper unavailable:', err);
+    const { pipeline } = await import('@huggingface/transformers').catch(() => ({ pipeline: null as never }));
+    if (!pipeline) {
+      emitStatus('unavailable', 0);
       return null;
     }
+    // Fallback ladder: transformers.js v4's ONNX runtime rejects the q8
+    // whisper-base decoder ("Missing required scale ... MatMulNBits"), so a
+    // failed config falls through to the next known-good one. fp32 base is
+    // bigger (~150 MB) but always loads; tiny fp32 is the small last resort.
+    const configs: Array<{ model: string; dtype: 'q8' | 'fp32' }> = [
+      { model: 'onnx-community/whisper-base', dtype: 'q8' },
+      { model: 'onnx-community/whisper-base', dtype: 'fp32' },
+      { model: 'onnx-community/whisper-tiny.en', dtype: 'fp32' },
+    ];
+    for (const cfg of configs) {
+      try {
+        const asr = await pipeline('automatic-speech-recognition', cfg.model, {
+          dtype: cfg.dtype,
+          device: 'wasm',
+          progress_callback: (info: unknown) => {
+            const p = (info as { progress?: number })?.progress;
+            if (typeof p === 'number') emitStatus('loading', Math.round(p));
+          },
+        });
+        emitStatus('ready', 100);
+        try { localStorage.setItem('synapse-stt-downloaded', '1'); } catch { /* storage unavailable */ }
+        return (async (audio: Float32Array) => {
+          const out = (await asr(audio)) as { text?: string };
+          return { text: out?.text ?? '' };
+        }) as Transcriber;
+      } catch (err) {
+        console.warn(`[stt] ${cfg.model} (${cfg.dtype}) failed, trying next:`, err);
+      }
+    }
+    emitStatus('unavailable', 0);
+    whisperPromise = null; // allow a retry after transient failures
+    return null;
   })();
   return whisperPromise;
 }
@@ -39,6 +85,31 @@ async function loadWhisper(): Promise<Transcriber | null> {
 /** Preload Whisper (voice mode calls this on open so turn 1 is fast). */
 export function warmUpWhisper(): void {
   void loadWhisper();
+}
+
+const STT_DOWNLOADED_KEY = 'synapse-stt-downloaded';
+
+/** True once Whisper finished downloading at least once (browser-cached). */
+export function isWhisperDownloaded(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(STT_DOWNLOADED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Explicit download from Settings — progress arrives via onWhisperStatus.
+ * Resolves true when the model is ready; weights are cached by the browser,
+ * so this is one-time.
+ */
+export async function downloadWhisper(): Promise<boolean> {
+  const t = await loadWhisper();
+  if (t) {
+    try { localStorage.setItem(STT_DOWNLOADED_KEY, '1'); } catch { /* storage unavailable */ }
+  }
+  return t !== null;
 }
 
 /**

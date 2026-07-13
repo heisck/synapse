@@ -22,7 +22,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Mic, MicOff, Loader2 } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
 import { aiFetch } from '@/lib/aiKey'
-import { transcribeAudio, warmUpWhisper } from '@/lib/voice/stt'
+import { transcribeAudio, warmUpWhisper, onWhisperStatus, getWhisperStatus, type WhisperStatus } from '@/lib/voice/stt'
 import { getKokoro, getSelectedVoice, resolveVoiceId } from '@/lib/voice/tts'
 
 type VoiceState = 'connecting' | 'listening' | 'transcribing' | 'thinking' | 'speaking' | 'error'
@@ -53,6 +53,10 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
   const [aiCaption, setAiCaption] = useState('')
   const [muted, setMuted] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  // Live visibility: mic speech-probability from the VAD (proof it hears you)
+  // + Whisper download status (the silent first-use wait, made visible)
+  const [vadLevel, setVadLevel] = useState(0)
+  const [whisper, setWhisper] = useState<{ status: WhisperStatus; progress: number }>(() => getWhisperStatus())
 
   // Everything async checks this token — an interrupt or a new turn bumps it
   const turnRef = useRef(0)
@@ -216,6 +220,9 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
     if (token === turnRef.current) setVoiceState('listening')
   }, [activeCourse, activeTopic, activeSlides, currentSlideIndex, drainAudioQueue, setVoiceState])
 
+  // Live Whisper download progress in the header chip
+  useEffect(() => onWhisperStatus((status, progress) => setWhisper({ status, progress })), [])
+
   // Mount: warm the models, start the VAD, run the loop until closed
   useEffect(() => {
     let disposed = false
@@ -237,6 +244,11 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
           negativeSpeechThreshold: 0.35,
           minSpeechMs: 160,
           redemptionMs: 380,
+          // Live mic meter: per-frame speech probability drives the UI bar,
+          // so "is it hearing me?" is answered at a glance
+          onFrameProcessed: (probs: { isSpeech: number }) => {
+            if (!disposed) setVadLevel(probs.isSpeech)
+          },
           onSpeechStart: () => {
             if (mutedRef.current) return
             // Barge-in: talking while the tutor speaks cuts it off
@@ -247,6 +259,8 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
             const st = stateRef.current
             if (st !== 'listening' && st !== 'speaking' && st !== 'thinking') return
             interrupt()
+            setUserCaption('')
+            setAiCaption('')
             setVoiceState('transcribing')
             void (async () => {
               const text = await transcribeAudio(audio)
@@ -282,18 +296,19 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
     })
   }
 
-  const orbColor =
-    state === 'speaking' ? 'from-emerald-400 to-teal-500'
-    : state === 'thinking' || state === 'transcribing' ? 'from-amber-400 to-orange-500'
-    : state === 'error' ? 'from-red-400 to-rose-500'
-    : 'from-sky-400 to-indigo-500'
+  // Orb scale: expands with your voice while listening, pulses while it
+  // speaks, breathes gently while thinking — rests otherwise
+  const orbScale =
+    state === 'listening' ? 1 + Math.min(vadLevel, 1) * 0.35
+    : state === 'transcribing' ? 1.08
+    : 1
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[80] flex flex-col items-center justify-between bg-background/95 backdrop-blur-xl p-6"
+      className="fixed inset-0 z-[80] flex flex-col items-center bg-background/95 backdrop-blur-xl p-6"
       role="dialog"
       aria-label="Voice conversation mode"
     >
@@ -311,44 +326,102 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      {/* Orb */}
-      <div className="flex flex-col items-center gap-6">
-        <motion.div
-          animate={
-            state === 'speaking'
-              ? { scale: [1, 1.12, 1.04, 1.15, 1] }
-              : state === 'listening'
-                ? { scale: [1, 1.05, 1] }
-                : { scale: 1 }
-          }
-          transition={{ repeat: Infinity, duration: state === 'speaking' ? 1.2 : 2.4, ease: 'easeInOut' }}
-          className={`relative h-36 w-36 rounded-full bg-linear-to-br ${orbColor} shadow-2xl`}
-        >
-          <motion.div
-            className={`absolute -inset-4 rounded-full bg-linear-to-br ${orbColor} opacity-25 blur-2xl`}
-            animate={{ opacity: state === 'speaking' ? [0.2, 0.45, 0.2] : [0.15, 0.3, 0.15] }}
-            transition={{ repeat: Infinity, duration: 1.8 }}
-          />
-          {(state === 'thinking' || state === 'transcribing' || state === 'connecting') && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Loader2 className="h-8 w-8 text-white/80 animate-spin" />
-            </div>
-          )}
-        </motion.div>
-        <p className="text-sm font-medium text-muted-foreground">{STATE_LABEL[state]}</p>
+      {/* Captions fill the middle; the orb lives low, ChatGPT-style */}
+      <div className="flex w-full flex-1 flex-col items-center justify-end gap-5 pb-2">
         {state === 'error' && <p className="max-w-sm text-center text-xs text-red-500">{errorMsg}</p>}
 
-        {/* Captions */}
+        {/* Live captions: what it heard, and the reply as it streams */}
         <div className="min-h-24 max-w-xl space-y-3 text-center">
+          {state === 'transcribing' && !userCaption && (
+            <p className="text-sm text-muted-foreground italic">Transcribing what you said…</p>
+          )}
           {userCaption && (
             <p className="text-sm text-muted-foreground">
               <span className="font-semibold">You:</span> {userCaption}
             </p>
           )}
+          {state === 'thinking' && !aiCaption && (
+            <p className="text-sm text-muted-foreground italic">Thinking about it…</p>
+          )}
           {aiCaption && (
             <p className="text-[15px] leading-relaxed">{aiCaption}</p>
           )}
         </div>
+
+        {/* Whisper first-use download — the silent wait, made visible */}
+        {whisper.status === 'loading' && (
+          <span className="inline-flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Preparing speech recognition… {whisper.progress > 0 ? `${whisper.progress}%` : ''} (first use only)
+          </span>
+        )}
+        {whisper.status === 'unavailable' && (
+          <span className="rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-600">
+            Speech recognition failed to load — check your connection and reopen
+          </span>
+        )}
+
+        {/* The orb — ChatGPT-style gradient blob, low on the screen.
+            Expands with your voice, pulses while speaking, rests otherwise. */}
+        <motion.div
+          animate={
+            state === 'speaking'
+              ? { scale: [1.02, 1.18, 1.06, 1.2, 1.02] }
+              : state === 'thinking' || state === 'connecting'
+                ? { scale: [1, 1.05, 1] }
+                : { scale: orbScale }
+          }
+          transition={
+            state === 'speaking'
+              ? { repeat: Infinity, duration: 1.1, ease: 'easeInOut' }
+              : state === 'thinking' || state === 'connecting'
+                ? { repeat: Infinity, duration: 2.2, ease: 'easeInOut' }
+                : { type: 'spring', stiffness: 260, damping: 18 }
+          }
+          className="relative mt-2 h-32 w-32 rounded-full"
+          style={{
+            background:
+              'radial-gradient(circle at 32% 28%, #e0f2fe 0%, #93c5fd 26%, #60a5fa 45%, #818cf8 65%, #a78bfa 82%, #7c3aed 100%)',
+            boxShadow: '0 0 60px 12px rgba(99, 102, 241, 0.35)',
+          }}
+        >
+          {/* Slow-rotating sheen, like ChatGPT's blob */}
+          <motion.div
+            className="absolute inset-0 rounded-full opacity-60"
+            style={{
+              background:
+                'conic-gradient(from 0deg, transparent 0%, rgba(255,255,255,0.35) 12%, transparent 30%, rgba(167,139,250,0.4) 55%, transparent 75%, rgba(125,211,252,0.4) 90%, transparent 100%)',
+            }}
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, duration: 9, ease: 'linear' }}
+          />
+          {/* Outer glow breathes with activity */}
+          <motion.div
+            className="absolute -inset-5 rounded-full blur-2xl"
+            style={{ background: 'radial-gradient(circle, rgba(96,165,250,0.5) 0%, rgba(139,92,246,0.25) 60%, transparent 100%)' }}
+            animate={{ opacity: state === 'speaking' ? [0.4, 0.8, 0.4] : state === 'listening' ? 0.3 + vadLevel * 0.5 : [0.25, 0.4, 0.25] }}
+            transition={state === 'listening' ? { duration: 0.1 } : { repeat: Infinity, duration: 1.6 }}
+          />
+          {(state === 'thinking' || state === 'transcribing' || state === 'connecting') && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Loader2 className="h-7 w-7 text-white/80 animate-spin" />
+            </div>
+          )}
+        </motion.div>
+        <p className="text-sm font-medium text-muted-foreground">{STATE_LABEL[state]}</p>
+
+        {/* Live mic meter — fills while the VAD hears speech */}
+        {state !== 'error' && state !== 'connecting' && (
+          <div className="flex w-56 items-center gap-2">
+            <Mic className={`h-3.5 w-3.5 shrink-0 ${vadLevel > 0.5 ? 'text-emerald-500' : 'text-muted-foreground/60'}`} />
+            <div className="relative h-1.5 flex-1 rounded-full bg-muted/50 overflow-hidden">
+              <div
+                className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-100 ${vadLevel > 0.5 ? 'bg-emerald-500' : 'bg-sky-400/70'}`}
+                style={{ width: `${Math.round(vadLevel * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Controls */}
