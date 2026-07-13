@@ -11,6 +11,8 @@
  * interrupt-and-resume UX, no audio ever leaves the device (R1).
  */
 
+import { isLowMemoryDevice } from '@/lib/voice/device';
+
 type Transcriber = (audio: Float32Array) => Promise<{ text: string }>;
 
 let whisperPromise: Promise<Transcriber | null> | null = null;
@@ -48,13 +50,20 @@ async function loadWhisper(): Promise<Transcriber | null> {
     }
     // Fallback ladder: transformers.js v4's ONNX runtime rejects the q8
     // whisper-base decoder ("Missing required scale ... MatMulNBits"), so a
-    // failed config falls through to the next known-good one. fp32 base is
-    // bigger (~150 MB) but always loads; tiny fp32 is the small last resort.
-    const configs: Array<{ model: string; dtype: 'q8' | 'fp32' }> = [
-      { model: 'onnx-community/whisper-base', dtype: 'q8' },
-      { model: 'onnx-community/whisper-base', dtype: 'fp32' },
-      { model: 'onnx-community/whisper-tiny.en', dtype: 'fp32' },
-    ];
+    // failed config falls through to the next known-good one.
+    // Phones/low-memory devices go straight to whisper-tiny — loading the
+    // ~150 MB fp32 base model there crashes the tab (OOM → reload → the
+    // "glitch back to the landing page" report).
+    const configs: Array<{ model: string; dtype: 'q8' | 'fp32' }> = isLowMemoryDevice()
+      ? [
+          { model: 'onnx-community/whisper-tiny.en', dtype: 'q8' },
+          { model: 'onnx-community/whisper-tiny.en', dtype: 'fp32' },
+        ]
+      : [
+          { model: 'onnx-community/whisper-base', dtype: 'q8' },
+          { model: 'onnx-community/whisper-base', dtype: 'fp32' },
+          { model: 'onnx-community/whisper-tiny.en', dtype: 'fp32' },
+        ];
     for (const cfg of configs) {
       try {
         const asr = await pipeline('automatic-speech-recognition', cfg.model, {

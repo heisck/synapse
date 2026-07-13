@@ -29,6 +29,7 @@ const KEYS = {
   courseCategories: 'synapse-course-categories',
   activeSession: 'synapse-active-session',
   quizProgress: 'synapse-quiz-card-progress',
+  currentView: 'synapse-current-view',
 } as const;
 
 // Safely write to localStorage with quota handling
@@ -149,6 +150,9 @@ export function useSessionPersistence(): void {
     // In-chat quiz/flashcard deck progress (keyed by message id) — without
     // this, a finished deck restarts at card 1 after a reload.
     const savedQuizProgress = safeGetItem<Record<string, { index: number; selected: number | null; correctCount: number; finished: boolean }>>(KEYS.quizProgress, {});
+    // Crash/reload resilience: a phone tab that dies (e.g. out of memory)
+    // reopens on the view the learner was in, not the landing page.
+    const savedView = safeGetItem<string>(KEYS.currentView, '');
 
     // Only restore if there is meaningful persisted data
     const hasData =
@@ -200,6 +204,9 @@ export function useSessionPersistence(): void {
         activeTopic: savedActiveSession.topic,
       }),
       ...(Object.keys(savedQuizProgress).length > 0 && { quizProgress: savedQuizProgress }),
+      ...(savedView && savedOnboarding && savedView !== 'landing' && savedView !== 'onboarding' && {
+        currentView: savedView as AppState['currentView'],
+      }),
     };
     useAppStore.setState(restoredState);
   }, []);
@@ -330,6 +337,15 @@ export function useSessionPersistence(): void {
       },
     );
 
+    const unsubCurrentView = store.subscribe(
+      (s) => s.currentView,
+      (view) => {
+        if (view && view !== 'landing' && view !== 'onboarding') {
+          safeSetItem(KEYS.currentView, JSON.stringify(view));
+        }
+      },
+    );
+
     const unsubQuizProgress = store.subscribe(
       (s) => s.quizProgress,
       (quizProgress) => {
@@ -356,6 +372,7 @@ export function useSessionPersistence(): void {
     );
 
     return () => {
+      unsubCurrentView();
       unsubQuizProgress();
       unsubActiveSession();
       unsubProfile();

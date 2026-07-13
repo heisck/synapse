@@ -16,6 +16,8 @@
  * (old browser, blocked download, low memory) — speech always works.
  */
 
+import { isIOS } from '@/lib/voice/device';
+
 export interface SpeakOptions {
   /** 0.5–2.0 playback speed. */
   speed?: number;
@@ -185,6 +187,13 @@ function filterOrtNoise(): void {
 }
 
 async function loadKokoro(onProgress?: (pct: number) => void): Promise<KokoroTTSInstance | null> {
+  // iOS Safari's wasm memory ceiling can't hold Kokoro alongside the rest of
+  // the app (tab crashes with "a problem repeatedly occurred") — iPhones use
+  // their excellent built-in system voices via SpeechSynthesis instead.
+  if (isIOS()) {
+    status = 'unavailable';
+    return null;
+  }
   if (kokoroPromise) return kokoroPromise;
   status = 'downloading';
   filterOrtNoise();

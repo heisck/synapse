@@ -11,6 +11,7 @@ import { normalizeDocument } from '@/lib/document/normalizer';
 import { ensureRunning } from '@/lib/backgroundGenService';
 import { isVoiceDownloaded, warmUpTTS } from '@/lib/voice/tts';
 import { isWhisperDownloaded, warmUpWhisper } from '@/lib/voice/stt';
+import { isLowMemoryDevice } from '@/lib/voice/device';
 import { initHaptics } from '@/lib/haptics';
 
 export function StoreInitializer() {
@@ -118,8 +119,13 @@ export function StoreInitializer() {
     ensureRunning();
     // Instant speech (task 71): a voice downloaded in Settings warms up on
     // app entry, so the first "read aloud" never waits for the model.
-    if (isVoiceDownloaded()) warmUpTTS();
-    if (isWhisperDownloaded()) warmUpWhisper();
+    // Warm-up only on machines with headroom: preloading ~200 MB of wasm
+    // models at app start crashes phone tabs (iOS: "a problem repeatedly
+    // occurred"). Phones load the (smaller) models lazily on first use.
+    if (!isLowMemoryDevice()) {
+      if (isVoiceDownloaded()) warmUpTTS();
+      if (isWhisperDownloaded()) warmUpWhisper();
+    }
     // Haptics: button ticks app-wide + pulses for the AI request lifecycle
     // (send → first token → done/failed). No-op where vibration is absent.
     initHaptics((cb) =>

@@ -56,6 +56,7 @@ import { getByoStorage, setByoStorage } from '@/lib/byoStorage';
 import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice } from '@/lib/voice/tts';
 import { hapticsSupported, hapticsEnabled, setHapticsEnabled, hapticSuccess } from '@/lib/haptics';
 import { isWhisperDownloaded, downloadWhisper, onWhisperStatus } from '@/lib/voice/stt';
+import { isIOS } from '@/lib/voice/device';
 import { Volume2 } from 'lucide-react';
 
 /** Personas must match the tutor's PersonaSelector so the default applies. */
@@ -124,7 +125,9 @@ function SettingRow({
           <p className="text-xs lg:text-sm text-muted-foreground mt-0.5">{description}</p>
         )}
       </div>
-      <div className="shrink-0">{children}</div>
+      {/* Stacked controls take the full row on phones — wide content (Voice
+          Lab selects, button groups) wraps inside instead of overflowing */}
+      <div className={stackOnMobile ? 'w-full min-w-0 sm:w-auto sm:shrink-0' : 'shrink-0 min-w-0'}>{children}</div>
     </div>
   );
 }
@@ -307,13 +310,17 @@ function VoiceSettings() {
       <SettingRow
         label="Natural voice (Kokoro)"
         description={
-          downloaded
-            ? 'Downloaded — speech starts instantly, everything stays on this device'
-            : 'One-time ~80 MB download; runs fully in your browser'
+          isIOS()
+            ? 'iPhones and iPads use the built-in system voice — the Kokoro model exceeds Safari’s memory limit'
+            : downloaded
+              ? 'Downloaded — speech starts instantly, everything stays on this device'
+              : 'One-time ~80 MB download; runs fully in your browser'
         }
         stackOnMobile
       >
-        {downloaded ? (
+        {isIOS() ? (
+          <span className="text-xs text-muted-foreground rounded-full border border-border/60 px-2.5 py-1">System voice</span>
+        ) : downloaded ? (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
             <Check className="h-3.5 w-3.5" /> Ready
           </span>
