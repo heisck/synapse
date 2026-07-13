@@ -14,31 +14,68 @@
  * blob per call, and let tts.ts own playback so stop/interrupt stays uniform.
  */
 
+import { isIOS } from '@/lib/voice/device';
+
 // Minimal shape of the parts of the library we use (it ships its own types,
 // but we import it dynamically to keep it out of the SSR/build graph).
 type PiperProgress = { url: string; total: number; loaded: number };
+type PiperWasmPaths = { onnxWasm: string; piperData: string; piperWasm: string };
 interface PiperTtsSession {
   predict: (text: string) => Promise<Blob>;
 }
 interface PiperModule {
   TtsSession: {
-    create: (opts: { voiceId: string; progress?: (p: PiperProgress) => void }) => Promise<PiperTtsSession>;
+    create: (opts: { voiceId: string; progress?: (p: PiperProgress) => void; wasmPaths?: PiperWasmPaths }) => Promise<PiperTtsSession>;
   };
   download: (voiceId: string, cb?: (p: PiperProgress) => void) => Promise<void>;
   stored: () => Promise<string[]>;
   remove: (voiceId: string) => Promise<void>;
 }
 
-/** Curated English Piper voices (there are 100+; these read cleanly for study). */
+// The fork's DEFAULT ORT wasm path is broken on iOS twice over: (1) it hardcodes
+// the cdnjs `.../onnxruntime-web/1.18.0/` folder, but the ORT it actually runs is
+// 1.27.0 — whose per-variant `.mjs` loaders don't exist under the 1.18.0 path
+// (404 → "Failed to fetch dynamically imported module"); and (2) cdnjs serves
+// `.mjs` with a MIME Safari refuses to import cross-origin anyway. Point ORT at
+// the MATCHING version (1.27.0) on jsdelivr, which serves it as
+// `application/javascript` with CORS — verified 200. The phonemizer wasm already
+// defaults to jsdelivr; pinned here explicitly too.
+const PIPER_WASM_PATHS: PiperWasmPaths = {
+  onnxWasm: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/',
+  piperWasm: 'https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.wasm',
+  piperData: 'https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.data',
+};
+
+/** Temporarily shadow navigator.hardwareConcurrency; returns a restore fn. */
+function patchHardwareConcurrency(value: number): () => void {
+  try {
+    const prev = Object.getOwnPropertyDescriptor(navigator, 'hardwareConcurrency');
+    Object.defineProperty(navigator, 'hardwareConcurrency', { value, configurable: true });
+    return () => {
+      try {
+        if (prev) Object.defineProperty(navigator, 'hardwareConcurrency', prev);
+        else delete (navigator as unknown as Record<string, unknown>).hardwareConcurrency;
+      } catch { /* ignore */ }
+    };
+  } catch {
+    return () => {};
+  }
+}
+
+// Curated English Piper voices. LOW-quality voices (~20-25 MB) are listed first
+// and are the default: on a flaky connection a 60 MB "medium" model truncates
+// mid-download (→ "protobuf parsing failed"), whereas a ~20 MB one completes
+// like Whisper does. Medium/high are offered for fast connections that want
+// richer audio.
 export const PIPER_VOICES: Array<{ id: string; label: string }> = [
-  { id: 'en_US-hfc_female-medium', label: 'Aria — US female (clear)' },
-  { id: 'en_US-amy-medium', label: 'Amy — US female (warm)' },
-  { id: 'en_US-hfc_male-medium', label: 'Marcus — US male' },
-  { id: 'en_US-ryan-high', label: 'Ryan — US male (hi-fi)' },
-  { id: 'en_GB-alba-medium', label: 'Alba — UK female' },
-  { id: 'en_US-lessac-medium', label: 'Lessac — US neutral' },
+  { id: 'en_US-amy-low', label: 'Amy — US female (small, reliable)' },
+  { id: 'en_US-danny-low', label: 'Danny — US male (small)' },
+  { id: 'en_US-lessac-low', label: 'Lessac — US neutral (small)' },
+  { id: 'en_GB-alan-low', label: 'Alan — UK male (small)' },
+  { id: 'en_US-hfc_female-medium', label: 'Aria — US female (HQ, ~60 MB)' },
+  { id: 'en_US-ryan-high', label: 'Ryan — US male (best, largest)' },
 ];
-const DEFAULT_VOICE = 'en_US-hfc_female-medium';
+const DEFAULT_VOICE = 'en_US-amy-low';
 const VOICE_KEY = 'synapse-piper-voice';
 const DOWNLOADED_KEY = 'synapse-piper-downloaded';
 
@@ -88,16 +125,32 @@ async function loadPiper(onProgress?: (pct: number) => void): Promise<PiperTtsSe
   sessionVoiceId = voiceId;
   emit('downloading', 0);
   sessionPromise = (async () => {
+    // The fork sets ORT's numThreads = navigator.hardwareConcurrency, which
+    // forces the THREADED wasm build — and that needs cross-origin isolation
+    // (SharedArrayBuffer) that iOS Safari doesn't grant. Temporarily pin
+    // hardwareConcurrency to 1 so ORT loads the single-threaded build instead,
+    // which runs anywhere. Scoped to iOS and restored right after init.
+    const forceSingleThread = isIOS();
+    const restoreHC = forceSingleThread ? patchHardwareConcurrency(1) : null;
     try {
       const piper = (await import('@mintplex-labs/piper-tts-web')) as unknown as PiperModule;
-      const session = await piper.TtsSession.create({
-        voiceId,
-        progress: (p) => {
-          const pct = p.total > 0 ? Math.min(99, Math.round((p.loaded * 100) / p.total)) : 0;
-          onProgress?.(pct);
-          emit('downloading', pct);
-        },
-      });
+      const mkProgress = () => (p: PiperProgress) => {
+        const pct = p.total > 0 ? Math.min(99, Math.round((p.loaded * 100) / p.total)) : 0;
+        onProgress?.(pct);
+        emit('downloading', pct);
+      };
+      let session: PiperTtsSession;
+      try {
+        session = await piper.TtsSession.create({ voiceId, wasmPaths: PIPER_WASM_PATHS, progress: mkProgress() });
+      } catch (firstErr) {
+        // A truncated/aborted download poisons the OPFS cache — the next load
+        // then fails with ERROR_CODE 7 "protobuf parsing failed" on the garbage
+        // bytes. Clear this voice and try ONE clean re-download before giving up.
+        console.warn('[piper] load failed, clearing cache + retrying once:', firstErr);
+        emit('downloading', 0);
+        try { await piper.remove(voiceId); } catch { /* nothing cached to remove */ }
+        session = await piper.TtsSession.create({ voiceId, wasmPaths: PIPER_WASM_PATHS, progress: mkProgress() });
+      }
       emit('ready', 100);
       try { localStorage.setItem(DOWNLOADED_KEY, '1'); } catch { /* storage unavailable */ }
       return session;
@@ -106,6 +159,8 @@ async function loadPiper(onProgress?: (pct: number) => void): Promise<PiperTtsSe
       emit('unavailable', 0);
       sessionPromise = null; // allow a retry after transient failures
       return null;
+    } finally {
+      restoreHC?.();
     }
   })();
   return sessionPromise;
