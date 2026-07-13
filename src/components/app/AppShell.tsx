@@ -6,6 +6,7 @@ import { Brain, LayoutDashboard, MessageSquare, Upload, ClipboardCheck, User, Se
 import { useAppStore } from '@/stores/appStore';
 import { AppSidebar } from './AppSidebar';
 import { StoreInitializer } from './StoreInitializer';
+import { QuizGenProgressBar } from './QuizGenProgressBar';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -749,6 +750,7 @@ export function AppShell() {
   return (
     <>
       <StoreInitializer />
+      <QuizGenProgressBar />
       <SearchModal />
       <KeyboardShortcuts />
 

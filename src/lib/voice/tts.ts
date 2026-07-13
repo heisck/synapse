@@ -17,6 +17,7 @@
  */
 
 import { isIOS, isLowMemoryDevice } from '@/lib/voice/device';
+import { piperSynthesize, isPiperDownloaded, warmUpPiper, piperSupported } from '@/lib/voice/piper';
 
 export interface SpeakOptions {
   /** 0.5–2.0 playback speed. */
@@ -70,6 +71,50 @@ export function setIOSKokoroEnabled(on: boolean): void {
   try {
     localStorage.setItem(IOS_KOKORO_KEY, on ? '1' : '0');
   } catch { /* storage unavailable */ }
+}
+
+// ─── Kokoro synthesis-crash breadcrumb (iOS → Piper fallback) ───────────────
+// The iOS failure isn't a catchable error — the wasm heap growth during the
+// first generate() CRASHES the whole tab ("a problem repeatedly occurred"),
+// which reloads the page before any catch runs. So we leave a breadcrumb: set
+// 'trying' right before a synth, 'ok' after it returns. If a fresh page load
+// finds a stale 'trying', the previous synth must have crashed the tab → mark
+// Kokoro 'bad' and route TTS to Piper from then on. A CATCHABLE failure clears
+// the breadcrumb (inconclusive — retry Kokoro next time), so only a real crash
+// trips the fallback. Armed on iOS only, where this crash is the known issue.
+const KOKORO_SYNTH_KEY = 'synapse-kokoro-synth';
+let synthHealthResolved = false;
+function resolveKokoroSynthHealthOnce(): void {
+  if (synthHealthResolved || typeof window === 'undefined') return;
+  synthHealthResolved = true;
+  try {
+    if (localStorage.getItem(KOKORO_SYNTH_KEY) === 'trying') {
+      localStorage.setItem(KOKORO_SYNTH_KEY, 'bad');
+    }
+  } catch { /* storage unavailable */ }
+}
+
+/** True once a Kokoro synth has crashed this device's tab — use Piper instead. */
+export function isKokoroSynthKnownBad(): boolean {
+  resolveKokoroSynthHealthOnce();
+  try { return localStorage.getItem(KOKORO_SYNTH_KEY) === 'bad'; } catch { return false; }
+}
+export function markKokoroSynthStart(): void {
+  if (!isIOS()) return;
+  try { if (localStorage.getItem(KOKORO_SYNTH_KEY) !== 'ok') localStorage.setItem(KOKORO_SYNTH_KEY, 'trying'); } catch { /* ignore */ }
+}
+export function markKokoroSynthOk(): void {
+  if (!isIOS()) return;
+  try { localStorage.setItem(KOKORO_SYNTH_KEY, 'ok'); } catch { /* ignore */ }
+}
+function clearKokoroSynthBreadcrumb(): void {
+  if (!isIOS()) return;
+  try { if (localStorage.getItem(KOKORO_SYNTH_KEY) === 'trying') localStorage.removeItem(KOKORO_SYNTH_KEY); } catch { /* ignore */ }
+}
+/** Reset the health flag (Settings "delete & re-download" gives Kokoro another go). */
+export function resetKokoroSynthHealth(): void {
+  synthHealthResolved = false;
+  try { localStorage.removeItem(KOKORO_SYNTH_KEY); } catch { /* ignore */ }
 }
 
 // ─── Custom voice via style-vector blending (Voice Lab) ─────────────────────
@@ -554,19 +599,54 @@ if (typeof window !== 'undefined' && window.speechSynthesis) {
  * Speaks `text`. Resolves once playback STARTS (UI can flip its icon);
  * `onEnd` fires when playback finishes or is stopped. Returns the engine used.
  */
-export async function speak(text: string, options: SpeakOptions = {}): Promise<'kokoro' | 'browser' | 'none'> {
+export async function speak(text: string, options: SpeakOptions = {}): Promise<'kokoro' | 'piper' | 'browser' | 'none'> {
   const clean = text.replace(/```[\s\S]*?```/g, ' (code block) ').replace(/[*_#>`]/g, '').trim();
   if (!clean) return 'none';
   stopSpeaking();
 
-  const kokoro = await loadKokoro();
-  if (kokoro) {
-    try {
-      const audio = await kokoro.generate(clean.slice(0, 2000), {
-        voice: resolveVoiceId(options.voice ?? getSelectedVoice()),
-        speed: options.speed ?? 1,
-      });
-      const url = URL.createObjectURL(audio.toBlob());
+  // On iOS, once Kokoro's synth has crashed the tab we never try it again —
+  // route to Piper (lighter, stable ORT). Kick off its download in the
+  // background the first time so the fallback becomes available without a
+  // surprise stall inside this call.
+  const skipKokoro = isIOS() && isKokoroSynthKnownBad();
+  if (skipKokoro && piperSupported() && !isPiperDownloaded()) warmUpPiper();
+
+  if (!skipKokoro) {
+    const kokoro = await loadKokoro();
+    if (kokoro) {
+      markKokoroSynthStart();
+      try {
+        const audio = await kokoro.generate(clean.slice(0, 2000), {
+          voice: resolveVoiceId(options.voice ?? getSelectedVoice()),
+          speed: options.speed ?? 1,
+        });
+        markKokoroSynthOk();
+        const url = URL.createObjectURL(audio.toBlob());
+        const el = new Audio(url);
+        currentAudio = el;
+        const finish = () => {
+          URL.revokeObjectURL(url);
+          if (currentAudio === el) currentAudio = null;
+          options.onEnd?.();
+        };
+        el.onended = finish;
+        el.onerror = finish;
+        await el.play();
+        return 'kokoro';
+      } catch (err) {
+        clearKokoroSynthBreadcrumb(); // catchable error ≠ crash — let Kokoro retry later
+        console.warn('[tts] Kokoro generation failed, falling back:', err);
+      }
+    }
+  }
+
+  // Piper fallback (on-device, stable ORT) — only when already downloaded, so a
+  // simple read-aloud never triggers a surprise ~60 MB fetch. On iOS this is the
+  // intended voice once Kokoro is known-bad; elsewhere it's an opt-in extra.
+  if (piperSupported() && isPiperDownloaded()) {
+    const blob = await piperSynthesize(clean.slice(0, 2000));
+    if (blob) {
+      const url = URL.createObjectURL(blob);
       const el = new Audio(url);
       currentAudio = el;
       const finish = () => {
@@ -577,9 +657,7 @@ export async function speak(text: string, options: SpeakOptions = {}): Promise<'
       el.onended = finish;
       el.onerror = finish;
       await el.play();
-      return 'kokoro';
-    } catch (err) {
-      console.warn('[tts] Kokoro generation failed, falling back:', err);
+      return 'piper';
     }
   }
 

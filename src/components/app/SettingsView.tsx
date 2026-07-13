@@ -53,7 +53,8 @@ import { useTheme } from 'next-themes';
 import { exportProfileCode, importProfileCode, resetAllData } from '@/lib/transfer';
 import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
 import { getByoStorage, setByoStorage } from '@/lib/byoStorage';
-import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, deleteVoiceDownload, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice, isIOSKokoroEnabled, setIOSKokoroEnabled, previewVoiceBlend, listNativeVoices, getSelectedNativeVoiceURI, setSelectedNativeVoice, getKokoroBackend } from '@/lib/voice/tts';
+import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, deleteVoiceDownload, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice, isIOSKokoroEnabled, setIOSKokoroEnabled, previewVoiceBlend, listNativeVoices, getSelectedNativeVoiceURI, setSelectedNativeVoice, getKokoroBackend, resetKokoroSynthHealth, isKokoroSynthKnownBad } from '@/lib/voice/tts';
+import { PIPER_VOICES, getSelectedPiperVoice, setSelectedPiperVoice, isPiperDownloaded, downloadPiper, deletePiperDownload, onPiperStatus, piperSynthesize } from '@/lib/voice/piper';
 import { hapticsSupported, hapticsEnabled, setHapticsEnabled, hapticSuccess } from '@/lib/haptics';
 import { isWhisperDownloaded, downloadWhisper, deleteWhisperDownload, onWhisperStatus } from '@/lib/voice/stt';
 import { isIOS } from '@/lib/voice/device';
@@ -281,6 +282,50 @@ function VoiceSettings() {
     toast('Speech recognition deleted — tap Download to re-install it fresh');
   };
 
+  // Piper — the on-device FALLBACK voice, used automatically when Kokoro can't
+  // run (notably after it crashes an iPhone tab). Lighter model, stable runtime.
+  const [piperDownloaded, setPiperDownloaded] = useState(() => isPiperDownloaded());
+  const [piperDownloading, setPiperDownloading] = useState(false);
+  const [piperProgress, setPiperProgress] = useState(0);
+  const [piperVoice, setPiperVoice] = useState(() => getSelectedPiperVoice());
+  const [kokoroCrashed, setKokoroCrashed] = useState(() => isKokoroSynthKnownBad());
+  useEffect(() => onPiperStatus((s, p) => {
+    if (s === 'downloading') { setPiperDownloading(true); setPiperProgress(p); }
+    if (s === 'ready') { setPiperDownloading(false); setPiperDownloaded(true); }
+    if (s === 'unavailable') setPiperDownloading(false);
+  }), []);
+  const handlePiperDownload = async () => {
+    setPiperDownloading(true);
+    const ok = await downloadPiper((p) => setPiperProgress(p));
+    setPiperDownloading(false);
+    if (ok) { setPiperDownloaded(true); toast.success('Fallback voice ready — it speaks even when Kokoro can’t'); }
+    else toast.error('Fallback voice download failed — check your connection');
+  };
+  const handlePiperDelete = async () => {
+    await deletePiperDownload();
+    setPiperDownloaded(false);
+    setPiperProgress(0);
+    toast('Fallback voice deleted — tap Download to re-install it fresh');
+  };
+  const handlePiperVoiceChange = (id: string) => {
+    setPiperVoice(id);
+    setSelectedPiperVoice(id);
+  };
+  const [piperPreviewing, setPiperPreviewing] = useState(false);
+  const handlePiperPreview = async () => {
+    if (!piperDownloaded || piperPreviewing) return;
+    setPiperPreviewing(true);
+    try {
+      const blob = await piperSynthesize('Hi! This is the fallback voice reading your slides.');
+      if (blob) {
+        const audio = new Audio(URL.createObjectURL(blob));
+        audio.onended = () => setPiperPreviewing(false);
+        audio.onerror = () => setPiperPreviewing(false);
+        await audio.play();
+      } else { setPiperPreviewing(false); }
+    } catch { setPiperPreviewing(false); }
+  };
+
   // Feedback channels: quiz sounds + haptics
   const [sfxOn, setSfxOn] = useState(() => {
     try { return typeof window === 'undefined' || localStorage.getItem('synapse-sfx') !== '0'; } catch { return true; }
@@ -360,6 +405,8 @@ function VoiceSettings() {
 
   const handleVoiceDelete = async () => {
     await deleteVoiceDownload();
+    resetKokoroSynthHealth(); // clear the crash flag so Kokoro gets a fresh try
+    setKokoroCrashed(false);
     setDownloaded(false);
     setProgress(0);
     toast('Voice model deleted — tap Download to re-install it fresh (fixes a corrupted download)');
@@ -544,6 +591,63 @@ function VoiceSettings() {
             </Button>
           </div>
         </SettingRow>
+      )}
+      <Separator className="opacity-50" />
+
+      {/* Piper — on-device fallback voice, used automatically when Kokoro can't
+          run (e.g. after it crashes an iPhone tab). Lighter model than Kokoro. */}
+      <SettingRow
+        label="Fallback voice (Piper)"
+        description={
+          kokoroCrashed
+            ? 'Recommended: the natural voice crashed on this device, so download this lighter voice — it speaks reliably where Kokoro can’t.'
+            : piperDownloaded
+              ? 'Downloaded — used automatically if the natural voice ever fails. Runs fully on-device.'
+              : 'A lighter on-device voice (~60 MB) that runs where the natural voice can’t — the reliable fallback on iPhone.'
+        }
+        stackOnMobile
+      >
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <SelectWithGlow value={piperVoice} onValueChange={handlePiperVoiceChange} className="flex-1 min-w-0 sm:flex-none" triggerClassName="w-full sm:w-44">
+            {PIPER_VOICES.map((v) => (
+              <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+            ))}
+          </SelectWithGlow>
+          {piperDownloaded ? (
+            <Button variant="outline" size="sm" onClick={handlePiperPreview} disabled={piperPreviewing} aria-label="Preview fallback voice" className="shrink-0">
+              <Volume2 className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button size="sm" onClick={handlePiperDownload} disabled={piperDownloading} className={`shrink-0 ${kokoroCrashed ? 'glow-emerald' : ''}`}>
+              {piperDownloading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {piperProgress >= 99 ? 'Finalizing…' : piperProgress > 0 ? `${piperProgress}%` : 'Downloading…'}
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4 mr-2" /> Download
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      </SettingRow>
+      {piperDownloading && (
+        <div className="relative h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
+          <motion.div
+            className="absolute inset-y-0 left-0 rounded-full bg-primary"
+            animate={{ width: `${Math.max(piperProgress, 4)}%` }}
+            transition={{ duration: 0.2 }}
+          />
+        </div>
+      )}
+      {piperDownloaded && !piperDownloading && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="ghost" onClick={handlePiperDelete} className="text-xs text-muted-foreground hover:text-red-500">
+            <Trash2 className="h-3.5 w-3.5 mr-1.5 shrink-0" /> Delete &amp; re-download
+          </Button>
+        </div>
       )}
       <Separator className="opacity-50" />
 

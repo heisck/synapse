@@ -31,6 +31,21 @@ const nextConfig: NextConfig = {
   // Next.js/Turbopack stops inferring the wrong one.
   turbopack: {
     root: __dirname,
+    // Piper's wasm loader (@mintplex-labs/piper-tts-web) has emscripten glue
+    // that `require("fs")`/`require("path")` inside a dead ENVIRONMENT_IS_NODE
+    // branch. Turbopack still resolves those, so stub them to empty in the
+    // BROWSER graph only — server code (Prisma, etc.) keeps the real modules.
+    resolveAlias: {
+      fs: { browser: './src/lib/browser-empty.js' },
+      path: { browser: './src/lib/browser-empty.js' },
+    },
+  },
+  // Same stub for the webpack path (non-Turbopack builds): drop Node built-ins
+  // from the client bundle so the emscripten fallback code resolves to nothing.
+  webpack: (config) => {
+    config.resolve = config.resolve || {};
+    config.resolve.fallback = { ...(config.resolve.fallback || {}), fs: false, path: false };
+    return config;
   },
   reactStrictMode: false,
 };

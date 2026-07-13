@@ -272,6 +272,13 @@ export interface AppState {
   setChatRequestStatus: (status: 'idle' | 'sending' | 'streaming' | 'failed') => void;
   canSendChat: () => boolean;
 
+  // Quiz-generation progress (0–100) while a fresh batch is being generated;
+  // null when idle. Driven by lib/quizProgress.ts as a smooth time-based ramp
+  // (generation is one opaque request, so this is "fairly accurate", monotonic,
+  // snaps to 100 on completion). Every "Preparing…" surface reads this.
+  quizGenProgress: number | null;
+  setQuizGenProgress: (pct: number | null) => void;
+
   // Tutor-initiated quiz session (task 57): set when the tutor launches a
   // quiz so the quiz page can offer "Return to Tutor" and the tutor can
   // debrief the results. Cleared after the debrief.
@@ -972,6 +979,8 @@ export const useAppStore = create<AppState>()(subscribeWithSelector((set, get): 
 
   chatRequestStatus: 'idle',
   setChatRequestStatus: (status) => set({ chatRequestStatus: status }),
+  quizGenProgress: null,
+  setQuizGenProgress: (pct) => set({ quizGenProgress: pct }),
   tutorQuizContext: null,
   setTutorQuizContext: (ctx) => set({ tutorQuizContext: ctx }),
   pendingSlideExplain: null,

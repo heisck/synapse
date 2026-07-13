@@ -127,6 +127,7 @@ export function QuizView() {
   // Set when the tutor launched this quiz — the results screen offers a
   // one-tap way back into that tutoring session
   const tutorQuizContext = useAppStore((s) => s.tutorQuizContext);
+  const quizGenProgress = useAppStore((s) => s.quizGenProgress);
 
   const [selectedCourse, setSelectedCourse] = useState<string>('all');
   const bgCourseId = selectedCourse !== 'all' ? selectedCourse : activeCourse?.id ?? null;
@@ -1250,12 +1251,20 @@ export function QuizView() {
                         <BookOpen className="h-4.5 w-4.5 text-primary" />
                       </div>
                       {preparingCourseId === course.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                        <span className="inline-flex items-center gap-1 text-primary shrink-0">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          {quizGenProgress != null && <span className="text-[11px] font-semibold tabular-nums">{quizGenProgress}%</span>}
+                        </span>
                       ) : (
                         <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                       )}
                     </div>
                     <p className="font-semibold text-sm leading-snug line-clamp-2">{course.title}</p>
+                    {preparingCourseId === course.id && quizGenProgress != null && (
+                      <div className="h-1 w-full rounded-full bg-muted/50 overflow-hidden">
+                        <div className="h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: `${Math.max(quizGenProgress, 4)}%` }} />
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-auto">
                       {course.subject && <span className="rounded-full border border-border/60 px-1.5 py-px">{course.subject}</span>}
                       <span>{bankCount > 0 ? `${bankCount} questions ready` : 'Generates on start'}</span>

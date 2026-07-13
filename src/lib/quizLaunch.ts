@@ -12,6 +12,7 @@ import { useAppStore } from '@/stores/appStore';
 import { aiFetch } from '@/lib/aiKey';
 import { getSlideBank } from '@/lib/questionCache';
 import { isLocalCourse, getLocalSlides } from '@/lib/localLibrary';
+import { beginQuizProgress, finishQuizProgress, failQuizProgress } from '@/lib/quizProgress';
 import type { Question } from '@/types';
 
 export interface QuizLaunchResult {
@@ -105,6 +106,9 @@ export async function launchQuiz(options: QuizLaunchOptions = {}): Promise<QuizL
       reason: 'This course has no readable slide content to generate questions from. Try re-uploading the material.',
     };
   }
+  // Show a 0→100 ramp while generating (D-progress): pace it to the batch size
+  // so it feels fairly accurate, and always resolve it (finish/fail) below.
+  beginQuizProgress(Math.max(8_000, (wanted ?? 10) * 900));
   try {
     // Hard timeout (task 52): a quiz launch may take seconds, never minutes.
     const controller = new AbortController();
@@ -122,19 +126,23 @@ export async function launchQuiz(options: QuizLaunchOptions = {}): Promise<QuizL
       signal: controller.signal,
     }).finally(() => clearTimeout(timer));
     if (!res.ok) {
+      failQuizProgress();
       const err = await res.json().catch(() => ({}));
       return { ok: false, reason: err.error || 'Question generation failed. Please try again.' };
     }
     const data = await res.json();
     const generated = (data.questions ?? []) as Question[];
     if (generated.length === 0) {
+      failQuizProgress();
       return { ok: false, reason: 'The material did not yield any valid questions — try a different course or slide.' };
     }
     const tagged = generated.map((q) => ({ ...q, provenance: q.provenance ?? ('ondemand' as const) }));
+    finishQuizProgress();
     store.setCurrentQuestions(wanted ? tagged.slice(0, wanted) : tagged);
     store.navigate('quiz');
     return { ok: true, source: 'generated', count: tagged.length };
   } catch {
+    failQuizProgress();
     return { ok: false, reason: 'Could not reach the question generator. Check your connection and API key in Settings.' };
   }
 }

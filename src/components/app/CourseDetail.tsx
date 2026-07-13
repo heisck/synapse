@@ -120,11 +120,16 @@ export function CourseDetail() {
     setActiveSlides,
     removeCourse,
     setCurrentQuestions,
+    quizGenProgress,
   } = useAppStore();
 
   const [showDeleteCourseConfirm, setShowDeleteCourseConfirm] = useState(false);
   const [isDeletingCourse, setIsDeletingCourse] = useState(false);
   const [isPreparingQuiz, setIsPreparingQuiz] = useState(false);
+  // "Preparing…" → "Preparing 42%" once the generation ramp is live (D-progress)
+  const prepLabel = isPreparingQuiz
+    ? quizGenProgress != null ? `Preparing ${quizGenProgress}%` : 'Preparing…'
+    : 'Start Quiz';
   const [slideQuestionCounts, setSlideQuestionCounts] = useState<Record<string, number>>({});
   const [generatingSlideId, setGeneratingSlideId] = useState<string | null>(null);
 
@@ -425,7 +430,7 @@ export function CourseDetail() {
                     ) : (
                       <ClipboardCheck className="h-4 w-4 mr-2" />
                     )}
-                    {isPreparingQuiz ? 'Preparing…' : 'Start Quiz'}
+                    {prepLabel}
                   </Button>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="card-hover-lift">
@@ -472,7 +477,7 @@ export function CourseDetail() {
                 ) : (
                   <ClipboardCheck className="h-4 w-4 mr-2" />
                 )}
-                {isPreparingQuiz ? 'Preparing…' : 'Start Quiz'}
+                {prepLabel}
               </Button>
               <Button size="sm" variant="outline" className="flex-1" onClick={handleStudyCards}>
                 <Layers className="h-4 w-4 mr-2" />
