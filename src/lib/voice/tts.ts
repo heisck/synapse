@@ -416,11 +416,51 @@ export function isSpeaking(): boolean {
  * robotic one; iOS/macOS ship far better "enhanced/premium" and named voices
  * (Samantha, Siri), so prefer those. Cached; safe to call every utterance.
  */
+// IMPORTANT platform limitation: iOS Safari does NOT expose the neural "Siri"
+// voices to the web SpeechSynthesis API — Apple keeps those for native apps.
+// getVoices() on iOS only returns the Vocalizer voices (Samantha, Karen, …), so
+// the app CANNOT sound like the "Siri Voice 1" a user set in iOS Accessibility.
+// The best we can do is let the user pick among the voices iOS actually exposes.
+const NATIVE_VOICE_KEY = 'synapse-native-voice';
 let nativeVoiceCache: SpeechSynthesisVoice | null = null;
+
+/** English-first list of the native voices this device actually exposes (for the picker). */
+export function listNativeVoices(): SpeechSynthesisVoice[] {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return [];
+  const voices = window.speechSynthesis.getVoices();
+  const en = voices.filter((v) => /^en[-_]?/i.test(v.lang));
+  return en.length ? en : voices;
+}
+
+export function getSelectedNativeVoiceURI(): string | null {
+  if (typeof window === 'undefined') return null;
+  try { return localStorage.getItem(NATIVE_VOICE_KEY); } catch { return null; }
+}
+
+export function setSelectedNativeVoice(voiceURI: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (voiceURI) localStorage.setItem(NATIVE_VOICE_KEY, voiceURI);
+    else localStorage.removeItem(NATIVE_VOICE_KEY);
+  } catch { /* storage unavailable */ }
+  nativeVoiceCache = null; // force re-resolve on next use
+}
+
+/**
+ * The native SpeechSynthesis voice to speak with. Honors the user's explicit
+ * pick first (Settings → System voice); otherwise auto-selects the best
+ * exposed voice — enhanced/premium named voices over the robotic default.
+ * Cached; safe to call every utterance.
+ */
 export function pickBestNativeVoice(): SpeechSynthesisVoice | null {
   if (typeof window === 'undefined' || !window.speechSynthesis) return null;
   const voices = window.speechSynthesis.getVoices();
   if (voices.length === 0) return null; // not loaded yet — caller uses the default
+  const chosen = getSelectedNativeVoiceURI();
+  if (chosen) {
+    const match = voices.find((v) => v.voiceURI === chosen || v.name === chosen);
+    if (match) return match;
+  }
   if (nativeVoiceCache && voices.includes(nativeVoiceCache)) return nativeVoiceCache;
   const en = voices.filter((v) => /^en[-_]?/i.test(v.lang));
   const pool = en.length ? en : voices;

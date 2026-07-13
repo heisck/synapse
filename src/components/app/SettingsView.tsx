@@ -53,7 +53,7 @@ import { useTheme } from 'next-themes';
 import { exportProfileCode, importProfileCode, resetAllData } from '@/lib/transfer';
 import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
 import { getByoStorage, setByoStorage } from '@/lib/byoStorage';
-import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, deleteVoiceDownload, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice, isIOSKokoroEnabled, setIOSKokoroEnabled, previewVoiceBlend } from '@/lib/voice/tts';
+import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, deleteVoiceDownload, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice, isIOSKokoroEnabled, setIOSKokoroEnabled, previewVoiceBlend, listNativeVoices, getSelectedNativeVoiceURI, setSelectedNativeVoice } from '@/lib/voice/tts';
 import { hapticsSupported, hapticsEnabled, setHapticsEnabled, hapticSuccess } from '@/lib/haptics';
 import { isWhisperDownloaded, downloadWhisper, deleteWhisperDownload, onWhisperStatus } from '@/lib/voice/stt';
 import { isIOS } from '@/lib/voice/device';
@@ -216,6 +216,33 @@ function VoiceSettings() {
   const handleIosKokoroToggle = (on: boolean) => {
     setIosKokoro(on);
     setIOSKokoroEnabled(on);
+  };
+
+  // System (device) voice picker — the reliable voice on iOS, where Kokoro can
+  // crash. NOTE: iOS only exposes its Vocalizer voices to the web, never the
+  // neural Siri voices, so "Siri Voice N" from iOS Accessibility won't appear.
+  const [nativeVoices, setNativeVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [nativeVoice, setNativeVoice] = useState<string>(() => getSelectedNativeVoiceURI() || '');
+  useEffect(() => {
+    const load = () => setNativeVoices(listNativeVoices());
+    load();
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.addEventListener('voiceschanged', load);
+      return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
+    }
+  }, []);
+  const handleNativeVoiceChange = (uri: string) => {
+    const val = uri === 'auto' ? '' : uri;
+    setNativeVoice(val);
+    setSelectedNativeVoice(val || null);
+  };
+  const handleNativeVoicePreview = () => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance('Hi! This is how I sound reading your slides.');
+    const v = nativeVoices.find((x) => x.voiceURI === nativeVoice);
+    if (v) u.voice = v;
+    window.speechSynthesis.speak(u);
   };
 
   // Speech recognition (Whisper) download — powers voice mode transcription
@@ -480,6 +507,27 @@ function VoiceSettings() {
           </Button>
         </div>
       </SettingRow>
+      {nativeVoices.length > 0 && (
+        <SettingRow
+          label="System voice (device)"
+          description={isIOS()
+            ? 'The reliable voice on iPhone/iPad. iOS only exposes its built-in web voices — not the neural Siri voice, so a "Siri" option won\'t appear here even if it\'s set in iOS Accessibility.'
+            : "Used when the natural voice isn't downloaded, or on devices where it can't run."}
+          stackOnMobile
+        >
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <SelectWithGlow value={nativeVoice || 'auto'} onValueChange={handleNativeVoiceChange} className="flex-1 min-w-0 sm:flex-none" triggerClassName="w-full sm:w-44">
+              <SelectItem value="auto">Auto (recommended)</SelectItem>
+              {nativeVoices.map((v) => (
+                <SelectItem key={v.voiceURI} value={v.voiceURI}>{v.name}{v.localService ? '' : ' (online)'}</SelectItem>
+              ))}
+            </SelectWithGlow>
+            <Button variant="outline" size="sm" onClick={handleNativeVoicePreview} aria-label="Preview system voice" className="shrink-0">
+              <Volume2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </SettingRow>
+      )}
       <Separator className="opacity-50" />
 
       {/* Voice Lab: design a custom voice by blending two built-in style

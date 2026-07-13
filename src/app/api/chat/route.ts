@@ -457,8 +457,9 @@ export async function POST(request: NextRequest) {
       // must stay words (handled above).
       systemPrompt = `${systemPrompt}\n\n[MATH & FORMULAS — the chat renders LaTeX, so USE it]:
 - Put ALL math inside dollar signs so it renders as real notation: inline like $E = mc^2$, and standalone equations on their own line like $$a^2 + b^2 = c^2$$.
-- Use proper LaTeX: \\frac{a}{b} (fractions), x^{2} (powers), x_{1} (subscripts), \\sqrt{x}, \\times, \\cdot, \\pi, \\Delta, \\sum, \\int, \\rightarrow, Greek letters, etc.
-- NEVER write math as bare text like "a/b", "x^2", "2 times x", or "x = y" outside dollar signs, and never spell operators as words ("times", "equals") — it must be inside $...$ to render correctly.`;
+- Use proper LaTeX: \\frac{a}{b} (fractions), x^{2} (powers), x_{1} (subscripts), \\sqrt{x}, \\times, \\cdot, \\pi, \\Delta, \\sum, \\int, \\rightarrow, Greek letters, and chemistry like $H_2O$, $CO_2$, $\\rightarrow$ for reactions.
+- NEVER write math as bare text like "a/b", "x^2", "2 times x", or "x = y" outside dollar signs, and never spell operators as words ("times", "equals") — it must be inside $...$ to render correctly.
+- SOLVING PROBLEMS (maths/physics/chemistry): work through it STEP BY STEP — number the steps, put each step's equation in LaTeX on its own line ($$...$$), briefly say what you did, then end with the final answer clearly marked. Don't jump to the answer; show the reasoning a learner can follow.`;
     }
 
     // Standing behavior rules (brevity + interactive quiz protocol)
