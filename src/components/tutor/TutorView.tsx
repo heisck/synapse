@@ -1729,6 +1729,9 @@ export function TutorView() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => setVoiceModeOpen(true)}>
+                  <AudioLines className="w-3.5 h-3.5 mr-2" /> Voice mode
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleNewSession}>
                   <SquarePen className="w-3.5 h-3.5 mr-2" /> New session
                 </DropdownMenuItem>

@@ -54,6 +54,7 @@ import { exportProfileCode, importProfileCode, resetAllData } from '@/lib/transf
 import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
 import { getByoStorage, setByoStorage } from '@/lib/byoStorage';
 import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice } from '@/lib/voice/tts';
+import { hapticsSupported, hapticsEnabled, setHapticsEnabled, hapticSuccess } from '@/lib/haptics';
 import { Volume2 } from 'lucide-react';
 
 /** Personas must match the tutor's PersonaSelector so the default applies. */
@@ -205,6 +206,21 @@ function VoiceSettings() {
   const [progress, setProgress] = useState(0);
   const [voice, setVoice] = useState(() => getSelectedVoice());
   const [previewing, setPreviewing] = useState(false);
+
+  // Feedback channels: quiz sounds + haptics
+  const [sfxOn, setSfxOn] = useState(() => {
+    try { return typeof window === 'undefined' || localStorage.getItem('synapse-sfx') !== '0'; } catch { return true; }
+  });
+  const handleSfxToggle = (on: boolean) => {
+    setSfxOn(on);
+    try { localStorage.setItem('synapse-sfx', on ? '1' : '0'); } catch { /* storage unavailable */ }
+  };
+  const [hapticsOn, setHapticsOn] = useState(() => hapticsEnabled());
+  const handleHapticsToggle = (on: boolean) => {
+    setHapticsOn(on);
+    setHapticsEnabled(on);
+    if (on) hapticSuccess(); // immediate confirmation buzz
+  };
 
   // Voice Lab (custom voice via style-vector blending)
   const [customVoice, setCustomVoice] = useState(() => getCustomVoice());
@@ -381,6 +397,25 @@ function VoiceSettings() {
         description="True sample-based cloning needs a heavier model (e.g. OpenVoice/F5-TTS) than a browser can run — the Voice Lab blend above is the local-first equivalent"
       >
         <span className="text-xs text-muted-foreground rounded-full border border-border/60 px-2.5 py-1">Not in-browser yet</span>
+      </SettingRow>
+      <Separator className="opacity-50" />
+      <SettingRow label="Sound effects" description="Answer chimes and streak celebrations">
+        <AnimatedSwitch checked={sfxOn} onCheckedChange={handleSfxToggle} ariaLabel="Sound effects" />
+      </SettingRow>
+      <Separator className="opacity-50" />
+      <SettingRow
+        label="Haptic feedback"
+        description={
+          hapticsSupported()
+            ? 'Vibrate on taps, answers, and when the AI responds'
+            : 'Not supported on this device (iPhones and most desktops)'
+        }
+      >
+        <AnimatedSwitch
+          checked={hapticsOn && hapticsSupported()}
+          onCheckedChange={handleHapticsToggle}
+          ariaLabel="Haptic feedback"
+        />
       </SettingRow>
     </>
   );

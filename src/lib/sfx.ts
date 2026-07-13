@@ -1,7 +1,10 @@
 /**
  * WebAudio-only sound effects for quiz feedback — no audio assets.
- * Muted when localStorage 'synapse-sfx' === '0'.
+ * Muted when localStorage 'synapse-sfx' === '0'. Each cue carries a matching
+ * haptic buzz (lib/haptics) on devices that support vibration.
  */
+
+import { hapticSuccess, hapticError, hapticCelebrate } from '@/lib/haptics';
 
 let audioCtx: AudioContext | null = null;
 
@@ -55,6 +58,7 @@ function playTone(
 
 /** Short pleasant two-note chime for a correct answer. */
 export function playCorrect() {
+  hapticSuccess();
   if (!sfxEnabled()) return;
   const ctx = getCtx();
   if (!ctx) return;
@@ -65,6 +69,7 @@ export function playCorrect() {
 
 /** Soft low thud for an incorrect answer. */
 export function playIncorrect() {
+  hapticError();
   if (!sfxEnabled()) return;
   const ctx = getCtx();
   if (!ctx) return;
@@ -88,6 +93,7 @@ export function playIncorrect() {
  * fuller run.
  */
 export function playMilestone(level: number) {
+  hapticCelebrate();
   if (!sfxEnabled()) return;
   const ctx = getCtx();
   if (!ctx) return;

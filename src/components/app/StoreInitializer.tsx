@@ -10,6 +10,7 @@ import { listLocalCourses, getLocalDoc, getLocalSlides, saveLocalDoc } from '@/l
 import { normalizeDocument } from '@/lib/document/normalizer';
 import { ensureRunning } from '@/lib/backgroundGenService';
 import { isVoiceDownloaded, warmUpTTS } from '@/lib/voice/tts';
+import { initHaptics } from '@/lib/haptics';
 
 export function StoreInitializer() {
   const { setCourses, courses, achievements } = useAppStore();
@@ -117,6 +118,14 @@ export function StoreInitializer() {
     // Instant speech (task 71): a voice downloaded in Settings warms up on
     // app entry, so the first "read aloud" never waits for the model.
     if (isVoiceDownloaded()) warmUpTTS();
+    // Haptics: button ticks app-wide + pulses for the AI request lifecycle
+    // (send → first token → done/failed). No-op where vibration is absent.
+    initHaptics((cb) =>
+      useAppStore.subscribe(
+        (s) => s.chatRequestStatus,
+        (status, prev) => cb(status, prev),
+      ),
+    );
   }, []);
 
   return null;

@@ -225,6 +225,12 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
       try {
         const { MicVAD } = await import('@ricky0123/vad-web')
         const vad = await MicVAD.new({
+          // Under a bundler there is no <script src> to derive asset paths
+          // from, so the library defaults to fetching its model/worklet from
+          // "/" (404). The model, worklet, and ORT wasm are self-hosted in
+          // public/vad/ (copied from node_modules) — no CDN, no CORS.
+          baseAssetPath: '/vad/',
+          onnxWASMBasePath: '/vad/',
           // Slightly conservative thresholds: the tutor's own voice through
           // speakers must not trigger barge-in (echoCancellation helps too)
           positiveSpeechThreshold: 0.6,
