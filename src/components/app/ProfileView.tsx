@@ -48,11 +48,9 @@ import {
   Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/appStore';
-import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { clearSessionStorage } from '@/hooks/useSessionPersistence';
 import { useStudyStreak, useTotalStudyTime } from '@/hooks/useStudyTracker';
 import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
@@ -366,15 +364,6 @@ export function ProfileView() {
   const [studyStatsExpanded, setStudyStatsExpanded] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
 
-  const initials = userName
-    ? userName
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2)
-    : 'SL';
-
   const heatmap = useMemo(() => generateHeatmap(studySessions), [studySessions]);
   const weekLabels = ['4w ago', '3w ago', '2w ago', 'Last week', 'This week'];
 
@@ -576,89 +565,49 @@ export function ProfileView() {
       {/* ════════════════════════════════════════════
           1. Profile Header
       ════════════════════════════════════════════ */}
-      <motion.div variants={fadeUp} className="glass rounded-2xl overflow-hidden gradient-border gradient-border-static card-shadow">
-        {/* Animated gradient header strip */}
-        <div className="h-24 sm:h-28 mesh-gradient relative overflow-hidden">
-          <motion.div
-            className="absolute inset-0"
-            animate={{
-              background: [
-                'radial-gradient(ellipse 80% 50% at 20% 40%, rgba(16,185,129,0.12) 0%, transparent 50%), radial-gradient(ellipse 60% 40% at 80% 20%, rgba(20,184,166,0.1) 0%, transparent 50%)',
-                'radial-gradient(ellipse 80% 50% at 60% 60%, rgba(16,185,129,0.15) 0%, transparent 50%), radial-gradient(ellipse 60% 40% at 30% 30%, rgba(20,184,166,0.12) 0%, transparent 50%)',
-                'radial-gradient(ellipse 80% 50% at 20% 40%, rgba(16,185,129,0.12) 0%, transparent 50%), radial-gradient(ellipse 60% 40% at 80% 20%, rgba(20,184,166,0.1) 0%, transparent 50%)',
-              ],
-            }}
-            transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-          />
-          <div className="absolute inset-0 grid-pattern opacity-30" />
+      <motion.div variants={fadeUp} className="space-y-1.5">
+        <h1 className="text-2xl sm:text-3xl font-bold gradient-text truncate">
+          {userName || 'Learner'}
+        </h1>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Mail className="h-4 w-4 shrink-0" />
+          <p className="text-sm truncate">{userEmail || 'student@synapselearn.ai'}</p>
         </div>
-        <div className="px-6 sm:px-8 pb-6 sm:pb-8 -mt-12 relative z-10">
-          <div className="flex items-start gap-5">
-            {/* Avatar with pulsing glow ring */}
-            <div className="relative">
-              <motion.div
-                className="absolute -inset-1 rounded-full"
-                animate={{
-                  boxShadow: [
-                    '0 0 8px rgba(16,185,129,0.2), 0 0 16px rgba(16,185,129,0.1)',
-                    '0 0 16px rgba(16,185,129,0.4), 0 0 32px rgba(16,185,129,0.2)',
-                    '0 0 8px rgba(16,185,129,0.2), 0 0 16px rgba(16,185,129,0.1)',
-                  ],
-                }}
-                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-              />
-              <Avatar className="h-20 w-20 ring-2 ring-emerald-500/30 ring-offset-2 ring-offset-background shrink-0 relative z-10">
-                <AvatarFallback className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xl font-bold">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-            </div>
-            <div className="flex-1 min-w-0 space-y-1.5 pt-2">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl sm:text-3xl font-bold gradient-text truncate">
-                  {userName || 'Learner'}
-                </h1>
-                <ThemeToggle />
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Mail className="h-4 w-4 shrink-0" />
-                <p className="text-sm truncate">{userEmail || 'student@synapselearn.ai'}</p>
-              </div>
-              <div className="flex items-center gap-3 pt-1">
-                <Badge
-                  variant="secondary"
-                  className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15"
-                >
-                  <Sparkles className="h-3 w-3 mr-1" />
-                  Free Plan
-                </Badge>
-                {unlockedCount > 0 && (
-                  <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400 border-amber-500/20">
-                    <Trophy className="h-3 w-3 mr-1" />
-                    {unlockedCount} unlocked
-                  </Badge>
-                )}
-              </div>
-            </div>
-          </div>
+        <div className="flex items-center gap-3 pt-1 flex-wrap">
+          <Badge
+            variant="secondary"
+            className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15"
+          >
+            <Sparkles className="h-3 w-3 mr-1" />
+            Free Plan
+          </Badge>
+          {unlockedCount > 0 && (
+            <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400 border-amber-500/20">
+              <Trophy className="h-3 w-3 mr-1" />
+              {unlockedCount} unlocked
+            </Badge>
+          )}
         </div>
       </motion.div>
+
+      <Separator />
 
       {/* ════════════════════════════════════════════
           2. Learning Profile
       ════════════════════════════════════════════ */}
-      <motion.div variants={fadeUp} className="glass rounded-2xl p-6 sm:p-8 space-y-5 card-shadow">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+      <motion.div variants={fadeUp} className="space-y-4">
+        {/* Header: title + Reconfigure, always on one line */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
             <motion.div
               animate={{ y: [0, -2, 0] }}
               transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
             >
-              <Brain className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              <Brain className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
             </motion.div>
-            <h2 className="text-lg font-semibold gradient-text">Learning Profile</h2>
+            <h2 className="text-lg font-semibold gradient-text truncate">Learning Profile</h2>
           </div>
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="shrink-0">
             <Button variant="ghost" size="sm" onClick={handleReconfigure} className="text-muted-foreground hover:text-foreground transition-colors">
               <Settings className="h-4 w-4 mr-1" />
               Reconfigure
@@ -667,40 +616,33 @@ export function ProfileView() {
         </div>
 
         {learnerProfile ? (
-          <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
             {/* Learning Style */}
-            <div className="flex items-center gap-3 flex-wrap">
-              {styleInfo && (
-                <div
-                  className={`flex items-center gap-2 rounded-xl px-4 py-2.5 font-medium ${styleInfo.color}`}
-                >
-                  <styleInfo.icon className="h-4 w-4" />
-                  <span className="text-sm">{styleInfo.label} Learner</span>
-                </div>
-              )}
-              {bestTeachingStyle && (
-                <Badge variant="outline" className="rounded-xl px-3 py-1.5 text-xs">
-                  <Lightbulb className="h-3 w-3 mr-1" />
-                  Best style: {bestTeachingStyle}
-                </Badge>
-              )}
-              {learnerProfile.masteryApproach && (
-                <Badge variant="outline" className="rounded-xl px-3 py-1.5 text-xs">
-                  <Target className="h-3 w-3 mr-1" />
-                  Mastery: {learnerProfile.masteryApproach}
-                </Badge>
-              )}
+            <div className="rounded-xl bg-muted/30 p-4 space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                {styleInfo ? <styleInfo.icon className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                Learning Style
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {styleInfo && (
+                  <div className={`flex items-center justify-center rounded-lg px-3 py-2 font-medium text-sm whitespace-nowrap ${styleInfo.color}`}>
+                    {styleInfo.label} Learner
+                  </div>
+                )}
+                {learnerProfile.masteryApproach && (
+                  <div className="flex items-center justify-center rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs font-medium whitespace-nowrap">
+                    Mastery: {learnerProfile.masteryApproach}
+                  </div>
+                )}
+              </div>
             </div>
 
-            <Separator />
-
             {/* Pace */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                {paceInfo && <paceInfo.icon className="h-4 w-4" />}
-                {!paceInfo && <Gauge className="h-4 w-4" />}
-                <span>Learning Pace</span>
-              </div>
+            <div className="rounded-xl bg-muted/30 p-4 space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                {paceInfo ? <paceInfo.icon className="h-3.5 w-3.5" /> : <Gauge className="h-3.5 w-3.5" />}
+                Learning Pace
+              </p>
               {paceInfo ? (
                 <div>
                   <p className="font-medium text-sm">{paceInfo.label}</p>
@@ -711,88 +653,68 @@ export function ProfileView() {
               )}
             </div>
 
-            <Separator />
-
-            {/* Preferences */}
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground flex items-center gap-2">
-                <Lightbulb className="h-4 w-4" />
+            {/* Preferences — full width */}
+            <div className="rounded-xl bg-muted/30 p-4 space-y-3 sm:col-span-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Lightbulb className="h-3.5 w-3.5" />
                 Preferences
               </p>
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {learnerProfile.prefersStory && (
-                  <Badge
-                    variant="outline"
-                    className="rounded-lg border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 text-xs"
-                  >
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 text-[11px] font-medium px-2.5 py-2 text-center whitespace-nowrap min-w-0">
                     Stories &amp; Analogies
-                  </Badge>
+                  </div>
                 )}
                 {learnerProfile.prefersBigPicture && (
-                  <Badge
-                    variant="outline"
-                    className="rounded-lg border-teal-500/20 bg-teal-500/5 text-teal-700 dark:text-teal-400 text-xs"
-                  >
+                  <div className="rounded-lg border border-teal-500/20 bg-teal-500/5 text-teal-700 dark:text-teal-400 text-[11px] font-medium px-2.5 py-2 text-center whitespace-nowrap min-w-0">
                     Big Picture First
-                  </Badge>
+                  </div>
                 )}
                 {learnerProfile.vocabularySensitive && (
-                  <Badge
-                    variant="outline"
-                    className="rounded-lg border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-400 text-xs"
-                  >
+                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-400 text-[11px] font-medium px-2.5 py-2 text-center whitespace-nowrap min-w-0">
                     Simple Vocabulary
-                  </Badge>
+                  </div>
                 )}
                 {learnerProfile.simpleGrammar && (
-                  <Badge
-                    variant="outline"
-                    className="rounded-lg border-rose-500/20 bg-rose-500/5 text-rose-700 dark:text-rose-400 text-xs"
-                  >
+                  <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 text-rose-700 dark:text-rose-400 text-[11px] font-medium px-2.5 py-2 text-center whitespace-nowrap min-w-0">
                     Simple Grammar
-                  </Badge>
+                  </div>
                 )}
                 {learnerProfile.masteryApproach === 'evidence' && (
-                  <Badge
-                    variant="outline"
-                    className="rounded-lg border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 text-xs"
-                  >
-                    Evidence-Based Mastery
-                  </Badge>
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 text-[11px] font-medium px-2.5 py-2 text-center whitespace-nowrap min-w-0">
+                    Evidence-Based
+                  </div>
                 )}
-                <Badge variant="outline" className="rounded-lg text-xs">
-                  Jargon Tolerance: {learnerProfile.jargonTolerance}/10
-                </Badge>
+                <div className="rounded-lg border border-border bg-muted/20 text-[11px] font-medium px-2.5 py-2 text-center whitespace-nowrap min-w-0">
+                  Jargon: {learnerProfile.jargonTolerance}
+                </div>
               </div>
             </div>
 
-            {/* Hard Subjects & Confusion */}
+            {/* Hard Subjects & Confusion — full width */}
             {(hardSubjects.length || alwaysConfuses) && (
-              <>
-                <Separator />
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground flex items-center gap-2">
-                    <Target className="h-4 w-4" />
-                    Focus Areas
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {hardSubjects.map((s) => (
-                      <Badge key={s} variant="secondary" className="text-xs">
-                        {s}
-                      </Badge>
-                    ))}
-                    {alwaysConfuses && (
-                      <Badge variant="secondary" className="text-xs">
-                        Confused by: {alwaysConfuses}
-                      </Badge>
-                    )}
-                  </div>
+              <div className="rounded-xl bg-muted/30 p-4 space-y-2 sm:col-span-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Target className="h-3.5 w-3.5" />
+                  Focus Areas
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {hardSubjects.map((s) => (
+                    <Badge key={s} variant="secondary" className="text-xs">
+                      {s}
+                    </Badge>
+                  ))}
+                  {alwaysConfuses && (
+                    <Badge variant="secondary" className="text-xs">
+                      Confused by: {alwaysConfuses}
+                    </Badge>
+                  )}
                 </div>
-              </>
+              </div>
             )}
           </div>
         ) : (
-          <div className="text-center py-10">
+          <div className="text-center py-10 rounded-xl bg-muted/30">
             <Palette className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
             <p className="text-sm text-muted-foreground mb-1">No learning profile configured yet.</p>
             <p className="text-xs text-muted-foreground/70 mb-4">
@@ -1464,26 +1386,26 @@ export function ProfileView() {
                     underneath — never squeezed side by side (D5) */}
                 <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-muted-foreground">Share your learning progress with others</p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                  <div className="flex flex-nowrap items-center gap-2 w-full sm:w-auto">
+                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex-1 sm:flex-none">
                       <Button
                         variant="outline"
                         size="sm"
-                        className="border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300 hover:border-emerald-500/40 transition-all"
+                        className="w-full sm:w-auto border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300 hover:border-emerald-500/40 transition-all"
                         onClick={handleExportStatsImage}
                       >
-                        <Download className="h-3.5 w-3.5 mr-1.5" />
+                        <Download className="h-3.5 w-3.5 mr-1.5 shrink-0" />
                         Export Image
                       </Button>
                     </motion.div>
-                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex-1 sm:flex-none">
                       <Button
                         variant="outline"
                         size="sm"
-                        className="border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300 hover:border-emerald-500/40 transition-all"
+                        className="w-full sm:w-auto border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300 hover:border-emerald-500/40 transition-all"
                         onClick={() => setShareModalOpen(true)}
                       >
-                        <Share2 className="h-3.5 w-3.5 mr-1.5" />
+                        <Share2 className="h-3.5 w-3.5 mr-1.5 shrink-0" />
                         Share Stats
                       </Button>
                     </motion.div>
@@ -1498,24 +1420,24 @@ export function ProfileView() {
       {/* ════════════════════════════════════════════
           8. Action Buttons
       ════════════════════════════════════════════ */}
-      <motion.div variants={fadeUp} className="flex flex-wrap gap-3 pt-2">
-        <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+      <motion.div variants={fadeUp} className="grid grid-cols-3 gap-3 pt-2">
+        <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="col-span-2 min-w-0">
           <Button
             variant="outline"
-            className="border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300 hover:border-emerald-500/40 transition-all"
+            className="w-full min-w-0 whitespace-nowrap text-[11px] sm:text-sm px-2 sm:px-4 border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-300 hover:border-emerald-500/40 transition-all"
             onClick={handleReconfigure}
           >
-            <Settings className="h-4 w-4 mr-2" />
-            Reconfigure Learning Profile
+            <Settings className="h-4 w-4 mr-1.5 shrink-0" />
+            Reconfigure Profile
           </Button>
         </motion.div>
-        <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+        <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="min-w-0">
           <Button
             variant="outline"
-            className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/20 hover:border-destructive/40 transition-all"
+            className="w-full min-w-0 whitespace-nowrap text-[11px] sm:text-sm px-2 sm:px-4 text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/20 hover:border-destructive/40 transition-all"
             onClick={handleSignOut}
           >
-            <LogOut className="h-4 w-4 mr-2" />
+            <LogOut className="h-4 w-4 mr-1.5 shrink-0" />
             Sign Out
           </Button>
         </motion.div>

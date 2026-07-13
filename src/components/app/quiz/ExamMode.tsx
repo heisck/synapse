@@ -248,7 +248,7 @@ export function ExamMode({ courseId, courseTitle, initialPool, onExit }: ExamMod
               </p>
             </div>
 
-            <div className="flex justify-center gap-3">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-center sm:gap-3 [&_button]:w-full sm:[&_button]:w-auto [&_button]:min-w-0 [&_button]:text-xs sm:[&_button]:text-sm [&_button]:px-2 sm:[&_button]:px-4">
               <Button variant="outline" onClick={onExit}>Cancel</Button>
               <Button onClick={startExam} disabled={pool.length === 0 && !courseId} className="glow-emerald">
                 Start Exam
@@ -376,7 +376,7 @@ export function ExamMode({ courseId, courseTitle, initialPool, onExit }: ExamMod
               </div>
             )}
 
-            <div className="flex justify-center gap-3">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-center sm:gap-3 [&_button]:w-full sm:[&_button]:w-auto [&_button]:min-w-0 [&_button]:text-xs sm:[&_button]:text-sm [&_button]:px-2 sm:[&_button]:px-4">
               <Button variant="outline" onClick={onExit}>Back to Quiz</Button>
               <Button onClick={() => { setPhase('config'); }}>New Exam</Button>
             </div>

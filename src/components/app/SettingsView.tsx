@@ -53,7 +53,7 @@ import { useTheme } from 'next-themes';
 import { exportProfileCode, importProfileCode, resetAllData } from '@/lib/transfer';
 import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
 import { getByoStorage, setByoStorage } from '@/lib/byoStorage';
-import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice } from '@/lib/voice/tts';
+import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice, isIOSKokoroEnabled, setIOSKokoroEnabled, previewVoiceBlend } from '@/lib/voice/tts';
 import { hapticsSupported, hapticsEnabled, setHapticsEnabled, hapticSuccess } from '@/lib/haptics';
 import { isWhisperDownloaded, downloadWhisper, onWhisperStatus } from '@/lib/voice/stt';
 import { isIOS } from '@/lib/voice/device';
@@ -154,11 +154,11 @@ function AnimatedSwitch({ checked, onCheckedChange, ariaLabel }: { checked: bool
   );
 }
 
-function SelectWithGlow({ value, onValueChange, children }: { value: string; onValueChange: (value: string) => void; children: React.ReactNode }) {
+function SelectWithGlow({ value, onValueChange, children, className, triggerClassName = 'w-40' }: { value: string; onValueChange: (value: string) => void; children: React.ReactNode; className?: string; triggerClassName?: string }) {
   return (
-    <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} transition={{ duration: 0.15 }}>
+    <motion.div className={className} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} transition={{ duration: 0.15 }}>
       <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger className="w-40 transition-shadow duration-300 hover:glow-emerald">
+        <SelectTrigger className={`${triggerClassName} transition-shadow duration-300 hover:glow-emerald`}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -210,6 +210,13 @@ function VoiceSettings() {
   const [progress, setProgress] = useState(0);
   const [voice, setVoice] = useState(() => getSelectedVoice());
   const [previewing, setPreviewing] = useState(false);
+  // iOS opt-in: Kokoro is off by default on iPhone/iPad; users can turn it on
+  // and accept the (small, on modern devices) risk of a memory-pressured tab.
+  const [iosKokoro, setIosKokoro] = useState(() => isIOSKokoroEnabled());
+  const handleIosKokoroToggle = (on: boolean) => {
+    setIosKokoro(on);
+    setIOSKokoroEnabled(on);
+  };
 
   // Speech recognition (Whisper) download — powers voice mode transcription
   const [sttDownloaded, setSttDownloaded] = useState(() => isWhisperDownloaded());
@@ -254,6 +261,23 @@ function VoiceSettings() {
   const [blendRatio, setBlendRatio] = useState(() => getCustomVoice()?.ratio ?? 0.5);
   const [blendName, setBlendName] = useState(() => getCustomVoice()?.name ?? 'My Voice');
   const [savingBlend, setSavingBlend] = useState(false);
+  const [previewingBlend, setPreviewingBlend] = useState(false);
+
+  const handlePreviewBlend = async () => {
+    setPreviewingBlend(true);
+    const result = await previewVoiceBlend(
+      { name: blendName.trim() || 'Preview', voiceA: blendA, voiceB: blendB, ratio: blendRatio },
+      { onEnd: () => setPreviewingBlend(false) },
+    );
+    if (result !== 'ok') {
+      setPreviewingBlend(false);
+      if (result === 'unavailable') {
+        toast.error(isIOS() ? 'Turn on the natural voice above to hear blends' : 'Download the natural voice above first, then preview');
+      } else {
+        toast('That’s a lot of blends! Refresh the page to preview more.');
+      }
+    }
+  };
 
   const handleSaveBlend = async () => {
     setSavingBlend(true);
@@ -311,7 +335,11 @@ function VoiceSettings() {
         label="Natural voice (Kokoro)"
         description={
           isIOS()
-            ? 'iPhones and iPads use the built-in system voice — the Kokoro model exceeds Safari’s memory limit'
+            ? iosKokoro
+              ? downloaded
+                ? 'Downloaded — natural voice active on this iPhone/iPad'
+                : 'Experimental on iOS: ~40 MB download. If Safari reloads or crashes, turn this off.'
+              : 'iPhones and iPads default to the built-in system voice — turn on to try the natural voice (experimental)'
             : downloaded
               ? 'Downloaded — speech starts instantly, everything stays on this device'
               : 'One-time ~80 MB download; runs fully in your browser'
@@ -319,7 +347,31 @@ function VoiceSettings() {
         stackOnMobile
       >
         {isIOS() ? (
-          <span className="text-xs text-muted-foreground rounded-full border border-border/60 px-2.5 py-1">System voice</span>
+          <div className="flex items-center gap-3">
+            <AnimatedSwitch
+              checked={iosKokoro}
+              onCheckedChange={handleIosKokoroToggle}
+              ariaLabel="Enable natural voice on iOS"
+            />
+            {iosKokoro && (downloaded ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                <Check className="h-3.5 w-3.5" /> Ready
+              </span>
+            ) : (
+              <Button size="sm" onClick={handleDownload} disabled={downloading}>
+                {downloading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    {progress >= 99 ? 'Finalizing…' : progress > 0 ? `${progress}%` : 'Downloading…'}
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4 mr-2" /> Download voices
+                  </>
+                )}
+              </Button>
+            ))}
+          </div>
         ) : downloaded ? (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
             <Check className="h-3.5 w-3.5" /> Ready
@@ -329,7 +381,7 @@ function VoiceSettings() {
             {downloading ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                {progress > 0 ? `${progress}%` : 'Downloading…'}
+                {progress >= 99 ? 'Finalizing…' : progress > 0 ? `${progress}%` : 'Downloading…'}
               </>
             ) : (
               <>
@@ -367,7 +419,7 @@ function VoiceSettings() {
             {sttDownloading ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                {sttProgress > 0 ? `${sttProgress}%` : 'Downloading…'}
+                {sttProgress >= 99 ? 'Finalizing…' : sttProgress > 0 ? `${sttProgress}%` : 'Downloading…'}
               </>
             ) : (
               <>
@@ -387,15 +439,15 @@ function VoiceSettings() {
         </div>
       )}
       <Separator className="opacity-50" />
-      <SettingRow label="Voice" description="Used when reading slides, voice mode, and answers aloud">
-        <div className="flex items-center gap-2">
-          <SelectWithGlow value={voice} onValueChange={handleVoiceChange}>
+      <SettingRow label="Voice" description="Used when reading slides, voice mode, and answers aloud" stackOnMobile>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <SelectWithGlow value={voice} onValueChange={handleVoiceChange} className="flex-1 min-w-0 sm:flex-none" triggerClassName="w-full sm:w-40">
             {KOKORO_VOICES.map((v) => (
               <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
             ))}
             {customVoice && <SelectItem value="custom">★ {customVoice.name} (custom)</SelectItem>}
           </SelectWithGlow>
-          <Button variant="outline" size="sm" onClick={handlePreview} disabled={previewing} aria-label="Preview voice">
+          <Button variant="outline" size="sm" onClick={handlePreview} disabled={previewing} aria-label="Preview voice" className="shrink-0">
             {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
           </Button>
         </div>
@@ -406,18 +458,18 @@ function VoiceSettings() {
           vectors — the practical "voice cloning" for a fully-local stack */}
       <SettingRow
         label="Voice Lab — create your own voice"
-        description="Blend two voices into a new one. It runs 100% locally, like everything else here."
+        description="Blend two voices into a new one — tap the speaker to hear the mix before you create it. Runs 100% locally, like everything else here."
         stackOnMobile
       >
         <div className="flex flex-col gap-2 w-full sm:w-auto">
           <div className="flex items-center gap-2">
-            <SelectWithGlow value={blendA} onValueChange={setBlendA}>
+            <SelectWithGlow value={blendA} onValueChange={setBlendA} className="flex-1 min-w-0" triggerClassName="w-full">
               {KOKORO_VOICES.map((v) => (
                 <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
               ))}
             </SelectWithGlow>
-            <span className="text-xs text-muted-foreground">+</span>
-            <SelectWithGlow value={blendB} onValueChange={setBlendB}>
+            <span className="text-xs text-muted-foreground shrink-0">+</span>
+            <SelectWithGlow value={blendB} onValueChange={setBlendB} className="flex-1 min-w-0" triggerClassName="w-full">
               {KOKORO_VOICES.map((v) => (
                 <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
               ))}
@@ -434,6 +486,16 @@ function VoiceSettings() {
               className="flex-1 accent-emerald-500"
             />
             <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">{Math.round(blendRatio * 100)}%A</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePreviewBlend}
+              disabled={previewingBlend}
+              aria-label="Listen to this blend"
+              className="h-8 shrink-0"
+            >
+              {previewingBlend ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+            </Button>
           </div>
           <div className="flex items-center gap-2">
             <Input
@@ -462,6 +524,7 @@ function VoiceSettings() {
       <SettingRow
         label="Clone from a recording"
         description="True sample-based cloning needs a heavier model (e.g. OpenVoice/F5-TTS) than a browser can run — the Voice Lab blend above is the local-first equivalent"
+        stackOnMobile
       >
         <span className="text-xs text-muted-foreground rounded-full border border-border/60 px-2.5 py-1">Not in-browser yet</span>
       </SettingRow>
@@ -747,10 +810,12 @@ export function SettingsView() {
         gradientTo="to-teal-600"
         index={1}
       >
-        <SettingRow label="Default Persona" description="AI tutor personality">
+        <SettingRow label="Default Persona" description="AI tutor personality" stackOnMobile>
           <SelectWithGlow
             value={settings.defaultPersona}
             onValueChange={(val) => updateSettings({ defaultPersona: val })}
+            className="w-full sm:w-auto"
+            triggerClassName="w-full sm:w-40"
           >
             {PERSONA_OPTIONS.map((p) => (
               <SelectItem key={p.id} value={p.id} textValue={p.label}>
@@ -763,10 +828,12 @@ export function SettingsView() {
           </SelectWithGlow>
         </SettingRow>
         <Separator className="opacity-50" />
-        <SettingRow label="Response Speed" description="How verbose AI responses should be">
+        <SettingRow label="Response Speed" description="How verbose AI responses should be" stackOnMobile>
           <SelectWithGlow
             value={settings.responseSpeed}
             onValueChange={(val) => updateSettings({ responseSpeed: val as 'concise' | 'balanced' | 'detailed' })}
+            className="w-full sm:w-auto"
+            triggerClassName="w-full sm:w-40"
           >
             <SelectItem value="concise">Concise</SelectItem>
             <SelectItem value="balanced">Balanced</SelectItem>
@@ -774,10 +841,12 @@ export function SettingsView() {
           </SelectWithGlow>
         </SettingRow>
         <Separator className="opacity-50" />
-        <SettingRow label="Language" description="Preferred interaction language">
+        <SettingRow label="Language" description="Preferred interaction language" stackOnMobile>
           <SelectWithGlow
             value={settings.language}
             onValueChange={(val) => updateSettings({ language: val })}
+            className="w-full sm:w-auto"
+            triggerClassName="w-full sm:w-40"
           >
             <SelectItem value="English">English</SelectItem>
             <SelectItem value="Spanish">Spanish</SelectItem>
@@ -921,10 +990,12 @@ export function SettingsView() {
         gradientTo="to-orange-600"
         index={2}
       >
-        <SettingRow label="Default Session Duration" description="Minutes per study session">
+        <SettingRow label="Default Session Duration" description="Minutes per study session" stackOnMobile>
           <SelectWithGlow
             value={String(settings.defaultSessionDuration)}
             onValueChange={(val) => updateSettings({ defaultSessionDuration: parseInt(val, 10) })}
+            className="w-full sm:w-auto"
+            triggerClassName="w-full sm:w-40"
           >
             <SelectItem value="15">15 minutes</SelectItem>
             <SelectItem value="25">25 minutes</SelectItem>
@@ -951,10 +1022,12 @@ export function SettingsView() {
           />
         </SettingRow>
         <Separator className="opacity-50" />
-        <SettingRow label="Daily Goal (Hours)" description="Target study hours per day">
+        <SettingRow label="Daily Goal (Hours)" description="Target study hours per day" stackOnMobile>
           <SelectWithGlow
             value={String(settings.dailyGoalHours)}
             onValueChange={(val) => updateSettings({ dailyGoalHours: parseInt(val, 10) })}
+            className="w-full sm:w-auto"
+            triggerClassName="w-full sm:w-40"
           >
             <SelectItem value="1">1 hour</SelectItem>
             <SelectItem value="2">2 hours</SelectItem>

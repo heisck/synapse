@@ -22,7 +22,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Mic, MicOff, Loader2 } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
 import { aiFetch } from '@/lib/aiKey'
-import { transcribeAudio, warmUpWhisper, onWhisperStatus, getWhisperStatus, type WhisperStatus } from '@/lib/voice/stt'
+import { transcribeAudio, warmUpWhisper, onWhisperStatus, getWhisperStatus, nativeSpeechRecognitionSupported, type WhisperStatus } from '@/lib/voice/stt'
 import { getKokoro, getSelectedVoice, resolveVoiceId } from '@/lib/voice/tts'
 
 type VoiceState = 'connecting' | 'listening' | 'transcribing' | 'thinking' | 'speaking' | 'error'
@@ -223,11 +223,91 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
   // Live Whisper download progress in the header chip
   useEffect(() => onWhisperStatus((status, progress) => setWhisper({ status, progress })), [])
 
-  // Mount: warm the models, start the VAD, run the loop until closed
+  // Mount: start the conversation loop until closed.
+  // Preferred ears: the browser's NATIVE SpeechRecognition (Chrome/Edge/
+  // Android) — instant, no download, live interim transcripts. Fallback:
+  // Silero VAD + local Whisper for browsers without it (Firefox).
+  const srRef = useRef<{ stop: () => void } | null>(null)
   useEffect(() => {
     let disposed = false
-    warmUpWhisper()
     void getKokoro()
+
+    if (nativeSpeechRecognitionSupported()) {
+      type SRResultEvent = { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }
+      const SRCtor = (window as unknown as { SpeechRecognition?: new () => unknown; webkitSpeechRecognition?: new () => unknown })
+        .SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: new () => unknown }).webkitSpeechRecognition
+      // Microtask keeps setState out of the synchronous effect body
+      queueMicrotask(() => {
+      if (disposed) return
+      try {
+        const rec = new SRCtor!() as {
+          continuous: boolean; interimResults: boolean; lang: string
+          onresult: ((e: SRResultEvent) => void) | null
+          onerror: ((e: { error?: string }) => void) | null
+          onend: (() => void) | null
+          start: () => void; stop: () => void; abort: () => void
+        }
+        rec.continuous = true
+        rec.interimResults = true
+        rec.lang = 'en-US'
+        let active = true
+        rec.onresult = (e) => {
+          if (mutedRef.current || disposed) return
+          let interim = ''
+          let final = ''
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const r = e.results[i]
+            if (r.isFinal) final += r[0].transcript
+            else interim += r[0].transcript
+          }
+          // Barge-in: real words while the tutor talks/thinks cut it off
+          if ((interim.trim().length > 3 || final.trim()) && (stateRef.current === 'speaking' || stateRef.current === 'thinking')) {
+            interrupt()
+            setVoiceState('listening')
+          }
+          if (interim.trim()) {
+            setUserCaption(interim.trim()) // LIVE transcription as you speak
+            setVadLevel(0.85)
+          }
+          const finalText = final.trim()
+          if (finalText) {
+            setVadLevel(0)
+            void runTurn(finalText)
+          }
+        }
+        rec.onerror = (e) => {
+          // 'no-speech'/'aborted' are routine in continuous mode — onend restarts
+          if (e?.error === 'not-allowed' && !disposed) {
+            setErrorMsg('Microphone permission was denied. Allow the mic and reopen voice mode.')
+            setVoiceState('error')
+            active = false
+          }
+        }
+        rec.onend = () => {
+          // Continuous recognition times out periodically — keep it alive
+          if (active && !disposed) {
+            try { rec.start() } catch { /* already restarting */ }
+          }
+        }
+        rec.start()
+        srRef.current = { stop: () => { active = false; try { rec.abort() } catch { /* gone */ } } }
+        setVoiceState('listening')
+      } catch (err) {
+        console.warn('[voice-mode] native SpeechRecognition failed:', err)
+        setErrorMsg('Speech recognition failed to start. Check mic permissions and try again.')
+        setVoiceState('error')
+      }
+      })
+      return () => {
+        disposed = true
+        interrupt()
+        srRef.current?.stop()
+        srRef.current = null
+      }
+    }
+
+    // ── Fallback path: Silero VAD + local Whisper ──
+    warmUpWhisper()
     ;(async () => {
       try {
         const { MicVAD } = await import('@ricky0123/vad-web')

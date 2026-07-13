@@ -39,6 +39,30 @@ function emitStatus(status: WhisperStatus, progress: number): void {
   for (const cb of statusListeners) cb(status, progress);
 }
 
+/**
+ * transformers.js reports download progress PER FILE (tokenizer 0→100, then
+ * encoder 0→100, …), which reads as a bar jumping backwards. Aggregate
+ * loaded/total across all files into one monotonic percentage.
+ */
+function makeProgressAggregator(emit: (pct: number) => void): (info: unknown) => void {
+  const files = new Map<string, { loaded: number; total: number }>();
+  let best = 0;
+  return (info: unknown) => {
+    const i = info as { file?: string; loaded?: number; total?: number; status?: string };
+    if (!i?.file || typeof i.loaded !== 'number' || typeof i.total !== 'number' || i.total <= 0) return;
+    files.set(i.file, { loaded: i.loaded, total: i.total });
+    let loaded = 0;
+    let total = 0;
+    for (const f of files.values()) { loaded += f.loaded; total += f.total; }
+    // Cap byte-download progress at 99 — the model isn't usable until ONNX
+    // session creation finishes AFTER the last byte arrives. Reserving 100 for
+    // the 'ready' emit means the bar can't sit frozen at 100 during (or after
+    // a failure in) session init; a stall shows as 99 = "finalizing".
+    const pct = Math.min(99, Math.round((loaded / total) * 100));
+    if (pct > best) { best = pct; emit(pct); }
+  };
+}
+
 async function loadWhisper(): Promise<Transcriber | null> {
   if (whisperPromise) return whisperPromise;
   emitStatus('loading', 0);
@@ -48,31 +72,40 @@ async function loadWhisper(): Promise<Transcriber | null> {
       emitStatus('unavailable', 0);
       return null;
     }
-    // Fallback ladder: transformers.js v4's ONNX runtime rejects the q8
-    // whisper-base decoder ("Missing required scale ... MatMulNBits"), so a
-    // failed config falls through to the next known-good one.
+    // Fallback ladder.
     // Phones/low-memory devices go straight to whisper-tiny — loading the
     // ~150 MB fp32 base model there crashes the tab (OOM → reload → the
     // "glitch back to the landing page" report).
     const configs: Array<{ model: string; dtype: 'q8' | 'fp32' }> = isLowMemoryDevice()
       ? [
-          { model: 'onnx-community/whisper-tiny.en', dtype: 'q8' },
-          { model: 'onnx-community/whisper-tiny.en', dtype: 'fp32' },
+          { model: 'Xenova/whisper-tiny.en', dtype: 'q8' },
+          { model: 'Xenova/whisper-tiny.en', dtype: 'fp32' },
         ]
       : [
-          { model: 'onnx-community/whisper-base', dtype: 'q8' },
-          { model: 'onnx-community/whisper-base', dtype: 'fp32' },
-          { model: 'onnx-community/whisper-tiny.en', dtype: 'fp32' },
+          { model: 'Xenova/whisper-base', dtype: 'q8' },
+          { model: 'Xenova/whisper-base', dtype: 'fp32' },
+          { model: 'Xenova/whisper-tiny.en', dtype: 'q8' },
         ];
     for (const cfg of configs) {
       try {
         const asr = await pipeline('automatic-speech-recognition', cfg.model, {
           dtype: cfg.dtype,
           device: 'wasm',
-          progress_callback: (info: unknown) => {
-            const p = (info as { progress?: number })?.progress;
-            if (typeof p === 'number') emitStatus('loading', Math.round(p));
-          },
+          // onnxruntime-web (the 1.26.0-dev build bundled by @huggingface/
+          // transformers v4) crashes creating the Whisper decoder session at
+          // its default optimization level: its QDQ→MatMulNBits fusion
+          // ("extended" level) chokes on the decoder's tied embed_tokens
+          // weight — "qdq_actions.cc:137 TransposeDQWeightsForMatMulNBits
+          // Missing required scale: model.decoder.embed_tokens.weight_merged_0
+          // _scale". This hit EVERY rung of the ladder (the "STT download
+          // failed / unavailable on phone" report) and every dtype (q8 AND
+          // fp32), so it isn't a model-file issue — switching model repos does
+          // nothing. Capping optimization at 'basic' skips the broken fusion
+          // while keeping constant-folding etc.; the session then loads and
+          // runs. Verified against onnxruntime-web 1.26.0-dev directly: 'all'
+          // and 'extended' throw, 'basic' and 'disabled' succeed.
+          session_options: { graphOptimizationLevel: 'basic' },
+          progress_callback: makeProgressAggregator((pct) => emitStatus('loading', pct)),
         });
         emitStatus('ready', 100);
         try { localStorage.setItem('synapse-stt-downloaded', '1'); } catch { /* storage unavailable */ }
@@ -139,6 +172,17 @@ export async function transcribeAudio(audio: Float32Array): Promise<string> {
   } catch {
     return '';
   }
+}
+
+/**
+ * Native SpeechRecognition (Chrome/Edge/Android): instant, zero-download,
+ * live interim transcripts. Voice mode prefers this; Whisper is the fallback
+ * for browsers without it (Firefox) — where the current transformers.js v4
+ * runtime may not load whisper ONNX at all.
+ */
+export function nativeSpeechRecognitionSupported(): boolean {
+  if (typeof window === 'undefined') return false;
+  return 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
 }
 
 export function whisperSupported(): boolean {

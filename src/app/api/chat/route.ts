@@ -479,8 +479,14 @@ export async function POST(request: NextRequest) {
 
     // --- Streaming mode: emit tokens as the model produces them ---
     if (body.stream === true) {
-      // Teach role first (owner decision): gpt-oss-120b as the tutor voice
-      const streamResult = await LLM.chatStream({ messages: deduped, auth, role: 'teach' });
+      // Text chat: teach role (gpt-oss-120b) — owner decision, depth over speed.
+      // Voice mode: the learner is WAITING IN SILENCE for the tutor to speak,
+      // so latency wins. The 'voice' role (gpt-oss-20b) at reasoning=low starts
+      // speaking in ~1-2s vs ~8s for teach's 120b at default reasoning; replies
+      // are only 1-3 spoken sentences, so the smaller model is plenty.
+      const streamResult = voiceMode === true
+        ? await LLM.chatStream({ messages: deduped, auth, role: 'voice', reasoningEffort: 'low' })
+        : await LLM.chatStream({ messages: deduped, auth, role: 'teach' });
       if (!streamResult) {
         return NextResponse.json(
           { error: 'No response from AI. Please try again.' },

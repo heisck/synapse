@@ -49,6 +49,28 @@ export const KOKORO_VOICES: Array<{ id: string; label: string }> = [
 const VOICE_KEY = 'synapse-tts-voice';
 const DOWNLOADED_KEY = 'synapse-tts-downloaded';
 const CUSTOM_VOICE_KEY = 'synapse-custom-voice';
+// Opt-in escape hatch for iOS. Kokoro is disabled by default on iPhone/iPad
+// because the fp32 model can crash Safari's wasm tab, but the q8 build (~40 MB)
+// fits on modern devices — so let motivated users turn it on explicitly and
+// accept the risk, rather than being locked to the system voice forever.
+const IOS_KOKORO_KEY = 'synapse-ios-kokoro';
+
+/** True when the user has opted into running Kokoro on iOS (default off). */
+export function isIOSKokoroEnabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(IOS_KOKORO_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setIOSKokoroEnabled(on: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(IOS_KOKORO_KEY, on ? '1' : '0');
+  } catch { /* storage unavailable */ }
+}
 
 // ─── Custom voice via style-vector blending (Voice Lab) ─────────────────────
 // Kokoro voices are 510×256 float32 style vectors served as .bin files and
@@ -79,37 +101,103 @@ export function getCustomVoice(): CustomVoiceMeta | null {
 }
 
 /**
- * Blends two built-in voices into the custom slot. Fetches both style
- * vectors, mixes element-wise, and plants the result in the Cache API entry
- * kokoro-js reads for the slot id. Takes effect for sessions where the slot
- * hasn't been spoken yet (kokoro memoizes per session — a reload always picks
- * the new blend up).
+ * Fetches two style vectors, mixes them element-wise, and plants the result in
+ * the Cache API entry kokoro-js reads for `slot`. kokoro memoizes a slot's
+ * vector for the page's lifetime (see the module-level voice cache in
+ * kokoro-js) — so writing a slot only takes audible effect if that slot hasn't
+ * been spoken yet this session (a reload always picks the new blend up).
+ */
+async function writeBlendToSlot(slot: string, voiceA: string, voiceB: string, ratio: number): Promise<void> {
+  const [binA, binB] = await Promise.all(
+    [voiceA, voiceB].map(async (id) => {
+      const res = await fetch(VOICE_BIN_URL(id));
+      if (!res.ok) throw new Error(`voice ${id} fetch failed`);
+      return new Float32Array(await res.arrayBuffer());
+    }),
+  );
+  const blended = new Float32Array(binA.length);
+  for (let i = 0; i < blended.length; i++) {
+    blended[i] = binA[i] * ratio + (binB[i] ?? 0) * (1 - ratio);
+  }
+  const cache = await caches.open('kokoro-voices');
+  await cache.put(
+    VOICE_BIN_URL(slot),
+    new Response(blended.buffer as ArrayBuffer, { headers: { 'Content-Type': 'application/octet-stream' } }),
+  );
+}
+
+/**
+ * Blends two built-in voices into the custom slot and persists the recipe.
+ * The new blend applies fully after a reload (kokoro memoization, above).
  */
 export async function saveCustomVoiceBlend(meta: CustomVoiceMeta): Promise<boolean> {
   if (typeof window === 'undefined' || !('caches' in window)) return false;
   try {
     const ratio = Math.max(0, Math.min(1, meta.ratio));
-    const [binA, binB] = await Promise.all(
-      [meta.voiceA, meta.voiceB].map(async (id) => {
-        const res = await fetch(VOICE_BIN_URL(id));
-        if (!res.ok) throw new Error(`voice ${id} fetch failed`);
-        return new Float32Array(await res.arrayBuffer());
-      }),
-    );
-    const blended = new Float32Array(binA.length);
-    for (let i = 0; i < blended.length; i++) {
-      blended[i] = binA[i] * ratio + (binB[i] ?? 0) * (1 - ratio);
-    }
-    const cache = await caches.open('kokoro-voices');
-    await cache.put(
-      VOICE_BIN_URL(CUSTOM_VOICE_SLOT),
-      new Response(blended.buffer as ArrayBuffer, { headers: { 'Content-Type': 'application/octet-stream' } }),
-    );
+    await writeBlendToSlot(CUSTOM_VOICE_SLOT, meta.voiceA, meta.voiceB, ratio);
     localStorage.setItem(CUSTOM_VOICE_KEY, JSON.stringify({ ...meta, ratio }));
     return true;
   } catch (err) {
     console.warn('[tts] custom voice blend failed:', err);
     return false;
+  }
+}
+
+// ─── Live blend preview (hear a mix before saving) ──────────────────────────
+// kokoro memoizes a voice's style vector by id for the page's lifetime, so one
+// slot can only ever voice its FIRST blend this session. To preview arbitrary
+// blends we hand each DISTINCT blend its own donor slot from this pool — all
+// low-grade voices we don't offer in KOKORO_VOICES, and NOT am_santa (reserved
+// for the saved custom voice). A page refresh resets the pool.
+const PREVIEW_SLOTS = [
+  'af_alloy', 'af_aoede', 'af_jessica', 'af_kore', 'af_nova', 'af_river', 'af_sky',
+  'am_echo', 'am_eric', 'am_fenrir', 'am_liam', 'am_onyx', 'am_puck',
+  'bf_isabella', 'bm_lewis', 'bf_alice', 'bf_lily', 'bm_daniel', 'bm_fable',
+];
+const blendPreviewSlots = new Map<string, string>(); // blend key → slot already written this session
+let nextPreviewSlot = 0;
+
+function blendKey(voiceA: string, voiceB: string, ratio: number): string {
+  return `${voiceA}|${voiceB}|${Math.round(ratio * 100)}`;
+}
+
+export type BlendPreviewResult = 'ok' | 'unavailable' | 'exhausted';
+
+/**
+ * Speaks a short sample of a blend WITHOUT saving it, so the learner can hear
+ * a mix before committing. Re-previewing the same blend reuses its slot (and
+ * kokoro's cached audio path); each new blend consumes one pool slot.
+ * - 'unavailable': no natural-voice engine (e.g. iOS without opt-in) — nothing
+ *    meaningful to preview.
+ * - 'exhausted': more distinct blends previewed this session than pool slots;
+ *    a refresh frees them.
+ */
+export async function previewVoiceBlend(
+  meta: CustomVoiceMeta,
+  opts: { speed?: number; onEnd?: () => void } = {},
+): Promise<BlendPreviewResult> {
+  if (typeof window === 'undefined' || !('caches' in window)) return 'unavailable';
+  const kokoro = await loadKokoro();
+  if (!kokoro) return 'unavailable';
+  const ratio = Math.max(0, Math.min(1, meta.ratio));
+  const key = blendKey(meta.voiceA, meta.voiceB, ratio);
+  try {
+    let slot = blendPreviewSlots.get(key);
+    if (!slot) {
+      if (nextPreviewSlot >= PREVIEW_SLOTS.length) return 'exhausted';
+      slot = PREVIEW_SLOTS[nextPreviewSlot++];
+      await writeBlendToSlot(slot, meta.voiceA, meta.voiceB, ratio);
+      blendPreviewSlots.set(key, slot);
+    }
+    await speak('Hi! This is how your blended voice sounds when I read to you.', {
+      voice: slot,
+      speed: opts.speed,
+      onEnd: opts.onEnd,
+    });
+    return 'ok';
+  } catch (err) {
+    console.warn('[tts] blend preview failed:', err);
+    return 'unavailable';
   }
 }
 
@@ -187,10 +275,12 @@ function filterOrtNoise(): void {
 }
 
 async function loadKokoro(onProgress?: (pct: number) => void): Promise<KokoroTTSInstance | null> {
-  // iOS Safari's wasm memory ceiling can't hold Kokoro alongside the rest of
-  // the app (tab crashes with "a problem repeatedly occurred") — iPhones use
-  // their excellent built-in system voices via SpeechSynthesis instead.
-  if (isIOS()) {
+  // iOS Safari's wasm memory ceiling can't hold the fp32 Kokoro model (tab
+  // crashes with "a problem repeatedly occurred"), so iPhones default to the
+  // built-in system voices. Users who opt in (Settings) get the q8 build,
+  // which is small enough to fit on modern devices — force q8/wasm below.
+  const iosOptIn = isIOS();
+  if (iosOptIn && !isIOSKokoroEnabled()) {
     status = 'unavailable';
     return null;
   }
@@ -200,19 +290,44 @@ async function loadKokoro(onProgress?: (pct: number) => void): Promise<KokoroTTS
   kokoroPromise = (async () => {
     try {
       const { KokoroTTS } = await import('kokoro-js');
-      const hasWebGPU = typeof navigator !== 'undefined' && 'gpu' in navigator;
+      // On iOS force the small q8/wasm build even if WebGPU is exposed — the
+      // fp32 path is what blows Safari's memory ceiling.
+      const hasWebGPU = !iosOptIn && typeof navigator !== 'undefined' && 'gpu' in navigator;
       const tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
         dtype: hasWebGPU ? 'fp32' : 'q8',
         device: hasWebGPU ? 'webgpu' : 'wasm',
-        // transformers.js progress events: {status, progress?} per file
+        // transformers.js reports progress PER FILE — aggregate loaded/total
+        // across files so the bar never jumps backwards
         progress_callback: onProgress
-          ? (info: { status?: string; progress?: number }) => {
-              if (typeof info?.progress === 'number') onProgress(Math.round(info.progress));
-            }
+          ? (() => {
+              const files = new Map<string, { loaded: number; total: number }>();
+              let best = 0;
+              return (info: { file?: string; loaded?: number; total?: number }) => {
+                if (!info?.file || typeof info.loaded !== 'number' || typeof info.total !== 'number' || info.total <= 0) return;
+                files.set(info.file, { loaded: info.loaded, total: info.total });
+                let loaded = 0; let total = 0;
+                for (const f of files.values()) { loaded += f.loaded; total += f.total; }
+                // Cap at 99 until the model is actually ready (session init runs
+                // after the last byte) — keeps the bar from freezing at 100.
+                const pct = Math.min(99, Math.round((loaded / total) * 100));
+                if (pct > best) { best = pct; onProgress(pct); }
+              };
+            })()
           : undefined,
       } as Parameters<typeof KokoroTTS.from_pretrained>[1]);
       status = 'ready';
       try { localStorage.setItem(DOWNLOADED_KEY, '1'); } catch { /* storage unavailable */ }
+      // Synthesis warm-up: loading the weights isn't enough — the FIRST
+      // generate() still pays a one-off cost (ONNX kernel compile, voice
+      // embedding load, wasm heap growth) that stalls the first spoken
+      // sentence. Run one throwaway synthesis now, while the app is idle after
+      // load (StoreInitializer calls warmUpTTS on entry), so the learner's
+      // first real turn speaks immediately. Warm a stable built-in voice —
+      // the compile is voice-independent, and af_heart always exists even if a
+      // custom blend slot isn't populated yet. Discard the audio; never play.
+      try {
+        await (tts as unknown as KokoroTTSInstance).generate('Hello.', { voice: 'af_heart', speed: 1 });
+      } catch { /* warm-up is best-effort — a failure here never blocks real use */ }
       return tts as unknown as KokoroTTSInstance;
     } catch (err) {
       console.warn('[tts] Kokoro unavailable, falling back to SpeechSynthesis:', err);

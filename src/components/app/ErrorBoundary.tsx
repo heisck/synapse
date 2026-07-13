@@ -88,13 +88,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center justify-center gap-3 pt-1">
-            <Button onClick={this.handleReset} variant="outline" className="gap-2">
-              <RotateCcw className="h-4 w-4" />
+          <div className="grid grid-cols-2 gap-2 pt-1 sm:flex sm:items-center sm:justify-center sm:gap-3 [&_button]:w-full sm:[&_button]:w-auto [&_button]:min-w-0 [&_button]:text-xs sm:[&_button]:text-sm [&_button]:px-2 sm:[&_button]:px-4">
+            <Button onClick={this.handleReset} variant="outline" className="gap-1 sm:gap-2">
+              <RotateCcw className="h-3.5 w-3.5 shrink-0" />
               Try Again
             </Button>
-            <Button onClick={this.handleGoDashboard} className="gap-2">
-              <LayoutDashboard className="h-4 w-4" />
+            <Button onClick={this.handleGoDashboard} className="gap-1 sm:gap-2">
+              <LayoutDashboard className="h-3.5 w-3.5 shrink-0" />
               Go to Dashboard
             </Button>
           </div>

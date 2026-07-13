@@ -1272,13 +1272,13 @@ export function QuizView() {
           </>
         )}
 
-        <div className="flex justify-center gap-3">
+        <div className="flex flex-wrap justify-center gap-1.5 sm:gap-3 [&_button]:min-w-0 [&_button]:text-xs sm:[&_button]:text-sm [&_button]:px-2.5 sm:[&_button]:px-4 [&_button]:gap-0">
           <Button variant={courses.length > 0 ? 'outline' : 'default'} onClick={() => navigate('upload')}>
-            <BookOpen className="h-4 w-4 mr-2" />
+            <BookOpen className="h-3.5 w-3.5 mr-0.5 shrink-0" />
             Upload Slides
           </Button>
           <Button variant="outline" onClick={() => navigate('dashboard')}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
+            <ArrowLeft className="h-3.5 w-3.5 mr-0.5 shrink-0" />
             Back to Dashboard
           </Button>
         </div>
@@ -1605,13 +1605,13 @@ export function QuizView() {
             </div>
           )}
 
-          <div className="flex justify-center gap-3">
+          <div className="flex flex-wrap justify-center gap-1.5 sm:gap-3 [&_button]:min-w-0 [&_button]:text-xs sm:[&_button]:text-sm [&_button]:px-2.5 sm:[&_button]:px-4 [&_button]:gap-0">
             <Button onClick={handleFlashcardReset} variant="outline">
-              <RotateCcw className="h-4 w-4 mr-2" />
+              <RotateCcw className="h-3.5 w-3.5 mr-0.5 shrink-0" />
               Study Again
             </Button>
             <Button onClick={() => navigate('dashboard')}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
+              <ArrowLeft className="h-3.5 w-3.5 mr-0.5 shrink-0" />
               Back to Dashboard
             </Button>
           </div>

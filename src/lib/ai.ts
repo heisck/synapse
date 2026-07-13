@@ -61,11 +61,16 @@ const APP_URL =
  * down. Override per role with OPENROUTER_<ROLE>_MODELS env (comma-separated).
  *
  *  reason — orchestration decisions, verification, math/logic (DeepSeek-R1)
- *  teach  — the voice the learner hears (gpt-oss-120b)
+ *  teach  — the voice the learner hears in TEXT chat (gpt-oss-120b)
  *  fast   — routing, classification, quick answers (gpt-oss-20b class)
+ *  voice  — spoken voice-mode replies: latency beats depth. gpt-oss-20b at
+ *           reasoning=low starts speaking in ~1-2s vs ~8s for teach's 120b
+ *           at default reasoning (measured against OpenRouter free endpoints,
+ *           2026-07-13); replies are only 1-3 spoken sentences, so 20b is
+ *           plenty. See the chat route's voiceMode branch.
  *  vision — images/diagrams (see OPENROUTER_VISION_MODELS below)
  */
-export type ModelRole = 'reason' | 'teach' | 'fast';
+export type ModelRole = 'reason' | 'teach' | 'fast' | 'voice';
 
 const ROLE_MODELS: Record<ModelRole, string[]> = {
   // 2026-07-12: OpenRouter retired the free reasoning slugs (deepseek-r1*,
@@ -77,6 +82,8 @@ const ROLE_MODELS: Record<ModelRole, string[]> = {
   teach: (process.env.OPENROUTER_TEACH_MODELS || 'openai/gpt-oss-120b:free,nvidia/nemotron-3-super-120b-a12b:free')
     .split(',').map((m) => m.trim()).filter(Boolean),
   fast: (process.env.OPENROUTER_FAST_MODELS || 'openai/gpt-oss-20b:free,google/gemma-4-26b-a4b-it:free')
+    .split(',').map((m) => m.trim()).filter(Boolean),
+  voice: (process.env.OPENROUTER_VOICE_MODELS || 'openai/gpt-oss-20b:free,google/gemma-4-26b-a4b-it:free')
     .split(',').map((m) => m.trim()).filter(Boolean),
 };
 
@@ -237,6 +244,7 @@ async function chatStreamViaOpenRouterModel(
   apiKey: string,
   model: string,
   messages: ChatMessage[],
+  reasoningEffort?: 'low' | 'medium' | 'high',
 ): Promise<{ stream: ReadableStream<string>; model: string }> {
   const res = await fetch(OPENROUTER_URL, {
     method: 'POST',
@@ -248,6 +256,12 @@ async function chatStreamViaOpenRouterModel(
       max_tokens: 2048,
       stream: true,
       provider: { sort: 'throughput' },
+      // Reasoning is the dominant first-token latency on these models — a
+      // gpt-oss reply spends seconds reasoning (emitted on the separate
+      // `reasoning` field we drop) before any spoken `content` arrives.
+      // Voice mode passes 'low' to slash that wait. (Fully disabling is
+      // rejected by the free endpoints: "Reasoning is mandatory".)
+      ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
     }),
   });
 
@@ -539,7 +553,7 @@ export const LLM = {
    * as chat(); if no provider can stream, falls back to the non-streaming
    * path and emits its full text as a single chunk.
    */
-  async chatStream({ messages, auth, role }: { messages: ChatMessage[]; auth?: LLMAuth; role?: ModelRole }): Promise<{ stream: ReadableStream<string>; model: string } | null> {
+  async chatStream({ messages, auth, role, reasoningEffort }: { messages: ChatMessage[]; auth?: LLMAuth; role?: ModelRole; reasoningEffort?: 'low' | 'medium' | 'high' }): Promise<{ stream: ReadableStream<string>; model: string } | null> {
     if (HERMES_AGENT_URL) {
       try {
         return await chatStreamViaHermes(messages);
@@ -560,7 +574,7 @@ export const LLM = {
       );
       for (const model of available) {
         try {
-          return await chatStreamViaOpenRouterModel(apiKey, model, messages);
+          return await chatStreamViaOpenRouterModel(apiKey, model, messages, reasoningEffort);
         } catch (err) {
           modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + cooldownMsFor(err));
           console.warn(`[LLM.chatStream] OpenRouter model ${model} failed (cooling down 5 min):`, err);
