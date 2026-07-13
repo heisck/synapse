@@ -53,9 +53,9 @@ import { useTheme } from 'next-themes';
 import { exportProfileCode, importProfileCode, resetAllData } from '@/lib/transfer';
 import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
 import { getByoStorage, setByoStorage } from '@/lib/byoStorage';
-import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice, isIOSKokoroEnabled, setIOSKokoroEnabled, previewVoiceBlend } from '@/lib/voice/tts';
+import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, deleteVoiceDownload, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice, isIOSKokoroEnabled, setIOSKokoroEnabled, previewVoiceBlend } from '@/lib/voice/tts';
 import { hapticsSupported, hapticsEnabled, setHapticsEnabled, hapticSuccess } from '@/lib/haptics';
-import { isWhisperDownloaded, downloadWhisper, onWhisperStatus } from '@/lib/voice/stt';
+import { isWhisperDownloaded, downloadWhisper, deleteWhisperDownload, onWhisperStatus } from '@/lib/voice/stt';
 import { isIOS } from '@/lib/voice/device';
 import { Volume2 } from 'lucide-react';
 
@@ -239,6 +239,13 @@ function VoiceSettings() {
     }
   };
 
+  const handleSttDelete = async () => {
+    await deleteWhisperDownload();
+    setSttDownloaded(false);
+    setSttProgress(0);
+    toast('Speech recognition deleted — tap Download to re-install it fresh');
+  };
+
   // Feedback channels: quiz sounds + haptics
   const [sfxOn, setSfxOn] = useState(() => {
     try { return typeof window === 'undefined' || localStorage.getItem('synapse-sfx') !== '0'; } catch { return true; }
@@ -314,6 +321,13 @@ function VoiceSettings() {
     } else {
       toast.error('Voice download failed — the browser voice will be used instead');
     }
+  };
+
+  const handleVoiceDelete = async () => {
+    await deleteVoiceDownload();
+    setDownloaded(false);
+    setProgress(0);
+    toast('Voice model deleted — tap Download to re-install it fresh (fixes a corrupted download)');
   };
 
   const handleVoiceChange = (id: string) => {
@@ -400,6 +414,13 @@ function VoiceSettings() {
           />
         </div>
       )}
+      {downloaded && !downloading && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="ghost" onClick={handleVoiceDelete} className="text-xs text-muted-foreground hover:text-red-500">
+            <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete &amp; re-download (fixes a corrupt/won&apos;t-play voice)
+          </Button>
+        </div>
+      )}
       <Separator className="opacity-50" />
       <SettingRow
         label="Speech recognition (Whisper)"
@@ -436,6 +457,13 @@ function VoiceSettings() {
             animate={{ width: `${Math.max(sttProgress, 4)}%` }}
             transition={{ duration: 0.2 }}
           />
+        </div>
+      )}
+      {sttDownloaded && !sttDownloading && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="ghost" onClick={handleSttDelete} className="text-xs text-muted-foreground hover:text-red-500">
+            <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete &amp; re-download (fixes a corrupt download)
+          </Button>
         </div>
       )}
       <Separator className="opacity-50" />

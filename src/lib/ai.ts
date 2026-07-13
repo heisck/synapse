@@ -60,30 +60,45 @@ const APP_URL =
  * general OPENROUTER_MODELS rotation when its specialists are all cooling
  * down. Override per role with OPENROUTER_<ROLE>_MODELS env (comma-separated).
  *
- *  reason — orchestration decisions, verification, math/logic (DeepSeek-R1)
- *  teach  — the voice the learner hears in TEXT chat (gpt-oss-120b)
- *  fast   — routing, classification, quick answers (gpt-oss-20b class)
- *  voice  — spoken voice-mode replies: latency beats depth. gpt-oss-20b at
- *           reasoning=low starts speaking in ~1-2s vs ~8s for teach's 120b
- *           at default reasoning (measured against OpenRouter free endpoints,
- *           2026-07-13); replies are only 1-3 spoken sentences, so 20b is
- *           plenty. See the chat route's voiceMode branch.
+ * Model choices are benchmarked AND discipline-tested, not guessed (free
+ * endpoints, 2026-07-13). DISCIPLINE beats raw speed for the teaching roles:
+ * a model that leaks its reasoning into the reply ("bleeding thoughts"), drifts
+ * off the current slide, or lets the learner's message override the system
+ * prompt breaks the product. Tested each candidate over multiple runs on: no
+ * reasoning-leak, stays on-slide, refuses learner override-attempts, holds the
+ * identity firewall. Findings:
+ *   gpt-oss-120b — cleanest + most disciplined (correctly answers a derail
+ *     attempt with "let's finish this slide first", never leaks) → leads
+ *     teach + reason even though it's ~1s slower to first token.
+ *   nemotron-3-super-120b-a12b — fast (~1s) but BLEEDS reasoning into content
+ *     ("We need to follow policy...") → rejected for user-facing roles.
+ *   gemma-4-*-it — no reasoning phase at all (structurally can't bleed),
+ *     disciplined, fast → leads the latency-critical voice + fast roles, and
+ *     is the teach/reason fallback.
+ * Override per role with OPENROUTER_<ROLE>_MODELS env (comma-separated).
+ *
+ *  reason — orchestration decisions, verification, math/logic (trust > speed)
+ *  teach  — the voice the learner hears in TEXT chat (discipline + depth)
+ *  fast   — routing, classification, quick answers
+ *  voice  — spoken voice-mode replies: fast, and clean by construction (gemma
+ *           has no reasoning to leak). See the chat route's voiceMode branch.
  *  vision — images/diagrams (see OPENROUTER_VISION_MODELS below)
  */
 export type ModelRole = 'reason' | 'teach' | 'fast' | 'voice';
 
 const ROLE_MODELS: Record<ModelRole, string[]> = {
-  // 2026-07-12: OpenRouter retired the free reasoning slugs (deepseek-r1*,
-  // qwq-32b all 404). Reasoning now runs on the proven-alive general models —
-  // gpt-oss-120b handles it well. If a free reasoning specialist reappears,
-  // pin it via OPENROUTER_REASON_MODELS; 404s park a model for 24h (below).
-  reason: (process.env.OPENROUTER_REASON_MODELS || 'openai/gpt-oss-120b:free,meta-llama/llama-3.3-70b-instruct:free')
+  // Discipline-first (see block comment): gpt-oss-120b leads the teaching roles
+  // because it tested cleanest (no reasoning-leak, stays on-slide, refuses
+  // override); gemma-4 (no reasoning phase) leads the latency roles and is the
+  // clean fallback everywhere. nemotron-super is deliberately NOT here — it
+  // bled reasoning into replies. 404s park a model for 24h (below).
+  reason: (process.env.OPENROUTER_REASON_MODELS || 'openai/gpt-oss-120b:free,google/gemma-4-31b-it:free')
     .split(',').map((m) => m.trim()).filter(Boolean),
-  teach: (process.env.OPENROUTER_TEACH_MODELS || 'openai/gpt-oss-120b:free,nvidia/nemotron-3-super-120b-a12b:free')
+  teach: (process.env.OPENROUTER_TEACH_MODELS || 'openai/gpt-oss-120b:free,google/gemma-4-31b-it:free')
     .split(',').map((m) => m.trim()).filter(Boolean),
-  fast: (process.env.OPENROUTER_FAST_MODELS || 'openai/gpt-oss-20b:free,google/gemma-4-26b-a4b-it:free')
+  fast: (process.env.OPENROUTER_FAST_MODELS || 'google/gemma-4-26b-a4b-it:free,openai/gpt-oss-20b:free')
     .split(',').map((m) => m.trim()).filter(Boolean),
-  voice: (process.env.OPENROUTER_VOICE_MODELS || 'openai/gpt-oss-20b:free,google/gemma-4-26b-a4b-it:free')
+  voice: (process.env.OPENROUTER_VOICE_MODELS || 'google/gemma-4-26b-a4b-it:free,openai/gpt-oss-20b:free')
     .split(',').map((m) => m.trim()).filter(Boolean),
 };
 
@@ -99,16 +114,19 @@ export interface TaskEnvelope {
   confidence?: number;
 }
 
-// Free vision models for image understanding / OCR / diagram description
-// (UNIFIED-PLAN task 23, C7; pinned choices: Qwen-VL → LLaVA → InternVL).
-// Availability changes upstream, so this is a rotation like OPENROUTER_MODELS.
+// Free vision models for image understanding / OCR / diagram + formula reading.
+// 2026-07-13: the old pins (Qwen-VL, InternVL, LLaVA) ALL 404'd on OpenRouter —
+// image upload was silently dead. Verified live now: gemma-4 is multimodal AND
+// disciplined (leads text too), so it reads uploaded formulas/diagrams and
+// explains them in the same LaTeX the chat renders; nemotron's dedicated VL
+// model is the fallback. Availability drifts upstream — override with
+// OPENROUTER_VISION_MODELS. 404s park a model for 24h (below).
 const OPENROUTER_VISION_MODELS = (
   process.env.OPENROUTER_VISION_MODELS ||
   [
-    'qwen/qwen2.5-vl-72b-instruct:free',
-    'qwen/qwen-2.5-vl-7b-instruct:free',
-    'internvl/internvl3-14b:free',
-    'liuhaotian/llava-yi-34b:free',
+    'google/gemma-4-31b-it:free',
+    'google/gemma-4-26b-a4b-it:free',
+    'nvidia/nemotron-nano-12b-v2-vl:free',
   ].join(',')
 )
   .split(',')

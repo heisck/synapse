@@ -3,6 +3,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { Brain, Copy, Check, RefreshCw, RotateCcw, Volume2, VolumeX, Loader2, Star, BookMarked, XCircle } from 'lucide-react'
@@ -215,6 +218,10 @@ function MarkdownContent({ content }: { content: string }) {
   return (
     <div className="markdown-body">
       <ReactMarkdown
+        remarkPlugins={[remarkMath]}
+        // throwOnError:false — a malformed/half-streamed formula renders in red,
+        // it never throws and breaks the whole message.
+        rehypePlugins={[[rehypeKatex, { throwOnError: false, errorColor: '#ef4444' }]]}
         components={{
           h1: ({ children }) => (
             <h1 className="text-lg font-bold mt-4 mb-2 text-foreground first:mt-0">{children}</h1>

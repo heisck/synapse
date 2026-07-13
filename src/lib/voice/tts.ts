@@ -16,7 +16,7 @@
  * (old browser, blocked download, low memory) — speech always works.
  */
 
-import { isIOS } from '@/lib/voice/device';
+import { isIOS, isLowMemoryDevice } from '@/lib/voice/device';
 
 export interface SpeakOptions {
   /** 0.5–2.0 playback speed. */
@@ -325,9 +325,16 @@ async function loadKokoro(onProgress?: (pct: number) => void): Promise<KokoroTTS
       // first real turn speaks immediately. Warm a stable built-in voice —
       // the compile is voice-independent, and af_heart always exists even if a
       // custom blend slot isn't populated yet. Discard the audio; never play.
-      try {
-        await (tts as unknown as KokoroTTSInstance).generate('Hello.', { voice: 'af_heart', speed: 1 });
-      } catch { /* warm-up is best-effort — a failure here never blocks real use */ }
+      // SKIP on iOS/low-memory: there, that first generate() is the very step
+      // whose wasm heap-growth can blow Safari's per-tab ceiling ("a problem
+      // repeatedly occurred") — forcing it at load would crash the download
+      // flow instead of just risking the first real turn. Let those devices
+      // pay the cost lazily (or fall back to the native voice) rather than crash.
+      if (!iosOptIn && !isLowMemoryDevice()) {
+        try {
+          await (tts as unknown as KokoroTTSInstance).generate('Hello.', { voice: 'af_heart', speed: 1 });
+        } catch { /* warm-up is best-effort — a failure here never blocks real use */ }
+      }
       return tts as unknown as KokoroTTSInstance;
     } catch (err) {
       console.warn('[tts] Kokoro unavailable, falling back to SpeechSynthesis:', err);
@@ -361,6 +368,31 @@ export async function downloadVoices(onProgress?: (pct: number) => void): Promis
   return tts !== null;
 }
 
+/**
+ * Delete the downloaded Kokoro voice model + cached voice blends so it can be
+ * re-fetched fresh — the fix when a download is corrupted or half-written (the
+ * likely cause of an iOS voice that downloads but won't play). Forgets the
+ * in-memory instance and resets the "downloaded" flag; call downloadVoices()
+ * afterwards to refetch.
+ */
+export async function deleteVoiceDownload(): Promise<void> {
+  stopSpeaking();
+  kokoroPromise = null;
+  status = 'idle';
+  try { localStorage.removeItem(DOWNLOADED_KEY); } catch { /* storage unavailable */ }
+  if (typeof caches !== 'undefined') {
+    try { await caches.delete('kokoro-voices'); } catch { /* ignore */ }
+    try {
+      for (const name of await caches.keys()) {
+        const cache = await caches.open(name);
+        for (const req of await cache.keys()) {
+          if (/kokoro/i.test(req.url)) await cache.delete(req);
+        }
+      }
+    } catch { /* Cache API unavailable — the in-memory reset above still lets it re-load */ }
+  }
+}
+
 export function stopSpeaking(): void {
   if (currentAudio) {
     currentAudio.pause();
@@ -375,6 +407,37 @@ export function stopSpeaking(): void {
 
 export function isSpeaking(): boolean {
   return currentAudio !== null || currentUtteranceActive;
+}
+
+/**
+ * Best available native SpeechSynthesis voice — the reliable TTS path on iOS,
+ * where Kokoro's wasm can exceed Safari's per-tab memory ceiling and crash the
+ * page ("a problem repeatedly occurred"). The system default is often the
+ * robotic one; iOS/macOS ship far better "enhanced/premium" and named voices
+ * (Samantha, Siri), so prefer those. Cached; safe to call every utterance.
+ */
+let nativeVoiceCache: SpeechSynthesisVoice | null = null;
+export function pickBestNativeVoice(): SpeechSynthesisVoice | null {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return null;
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length === 0) return null; // not loaded yet — caller uses the default
+  if (nativeVoiceCache && voices.includes(nativeVoiceCache)) return nativeVoiceCache;
+  const en = voices.filter((v) => /^en[-_]?/i.test(v.lang));
+  const pool = en.length ? en : voices;
+  const score = (v: SpeechSynthesisVoice): number => {
+    let s = 0;
+    if (/enhanced|premium|neural|siri/i.test(v.name)) s += 10;   // hi-fi variants
+    if (/samantha|daniel|karen|moira|serena|aaron|nicky|allison|ava/i.test(v.name)) s += 4; // good iOS/macOS voices
+    if (v.localService) s += 2;                                  // on-device = no network hitch
+    if (/^en-US/i.test(v.lang)) s += 1;
+    return s;
+  };
+  nativeVoiceCache = pool.slice().sort((a, b) => score(b) - score(a))[0] ?? null;
+  return nativeVoiceCache;
+}
+// SpeechSynthesis loads voices asynchronously; refresh the cache when they arrive.
+if (typeof window !== 'undefined' && window.speechSynthesis) {
+  try { window.speechSynthesis.addEventListener('voiceschanged', () => { nativeVoiceCache = null; pickBestNativeVoice(); }); } catch { /* older browsers */ }
 }
 
 /**
@@ -410,9 +473,11 @@ export async function speak(text: string, options: SpeakOptions = {}): Promise<'
     }
   }
 
-  // Fallback: browser-native speech
+  // Fallback: browser-native speech (the always-works path on iOS)
   if (typeof window !== 'undefined' && window.speechSynthesis) {
     const utterance = new SpeechSynthesisUtterance(clean.slice(0, 3000));
+    const nv = pickBestNativeVoice();
+    if (nv) utterance.voice = nv;
     utterance.rate = options.speed ?? 1;
     utterance.onend = () => {
       currentUtteranceActive = false;

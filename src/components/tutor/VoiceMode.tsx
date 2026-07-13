@@ -23,17 +23,30 @@ import { X, Mic, MicOff, Loader2 } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
 import { aiFetch } from '@/lib/aiKey'
 import { transcribeAudio, warmUpWhisper, onWhisperStatus, getWhisperStatus, nativeSpeechRecognitionSupported, type WhisperStatus } from '@/lib/voice/stt'
-import { getKokoro, getSelectedVoice, resolveVoiceId } from '@/lib/voice/tts'
+import { getKokoro, getSelectedVoice, resolveVoiceId, pickBestNativeVoice } from '@/lib/voice/tts'
 
 type VoiceState = 'connecting' | 'listening' | 'transcribing' | 'thinking' | 'speaking' | 'error'
 
 const STATE_LABEL: Record<VoiceState, string> = {
   connecting: 'Getting ready…',
-  listening: 'Listening — just talk',
+  listening: 'Listening, just talk',
   transcribing: 'Heard you…',
   thinking: 'Thinking…',
   speaking: 'Speaking — interrupt any time',
   error: 'Voice mode unavailable',
+}
+
+/**
+ * Show only the tail of a long live transcript so new words roll in and old
+ * ones scroll out — one calm line that keeps up with a long utterance instead
+ * of growing into a wall of text.
+ */
+function latestTranscript(text: string, max = 140): string {
+  const t = text.trim()
+  if (t.length <= max) return t
+  const tail = t.slice(t.length - max)
+  const sp = tail.indexOf(' ')
+  return '…' + (sp > 0 ? tail.slice(sp + 1) : tail)
 }
 
 interface MicVADInstance {
@@ -62,8 +75,14 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
   const turnRef = useRef(0)
   const vadRef = useRef<MicVADInstance | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const audioQueueRef = useRef<string[]>([])
+  // Gapless playback: every sentence's PCM is scheduled on ONE AudioContext
+  // timeline, so consecutive sentences butt up with zero gap. (The old path —
+  // a fresh `new Audio(blobUrl)` per sentence — hitched audibly between
+  // sentences while each element decoded its blob and spun up.) Barge-in stops
+  // every scheduled source at once.
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set())
+  const nextStartRef = useRef(0)
   const playingRef = useRef(false)
   const stateRef = useRef<VoiceState>('connecting')
   const mutedRef = useRef(false)
@@ -75,15 +94,24 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
     setState(s)
   }, [])
 
+  const getAudioContext = useCallback(() => {
+    const w = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }
+    const Ctor = w.AudioContext ?? w.webkitAudioContext
+    if ((!audioCtxRef.current || audioCtxRef.current.state === 'closed') && Ctor) {
+      audioCtxRef.current = new Ctor()
+    }
+    // Voice mode opens on a tap, so resuming a suspended context is allowed.
+    if (audioCtxRef.current?.state === 'suspended') void audioCtxRef.current.resume()
+    return audioCtxRef.current
+  }, [])
+
   const stopPlayback = useCallback(() => {
     playingRef.current = false
-    for (const url of audioQueueRef.current) URL.revokeObjectURL(url)
-    audioQueueRef.current = []
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.src = ''
-      audioRef.current = null
+    nextStartRef.current = 0
+    for (const src of sourcesRef.current) {
+      try { src.onended = null; src.stop() } catch { /* already ended */ }
     }
+    sourcesRef.current.clear()
   }, [])
 
   /** Cuts everything belonging to the current turn (barge-in or close). */
@@ -94,27 +122,30 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
     stopPlayback()
   }, [stopPlayback])
 
-  /** Plays queued blob-urls one after another; returns when queue drains. */
-  const drainAudioQueue = useCallback(async (token: number) => {
-    if (playingRef.current) return
+  /** Schedules one synthesized sentence on the shared timeline, gaplessly. */
+  const enqueueAudioChunk = useCallback((raw: { audio: Float32Array | Float32Array[]; sampling_rate: number }, token: number) => {
+    if (token !== turnRef.current) return
+    const ctx = getAudioContext()
+    if (!ctx) return
+    const samples = Array.isArray(raw.audio) ? raw.audio[0] : raw.audio
+    if (!samples || samples.length === 0) return
+    const buf = ctx.createBuffer(1, samples.length, raw.sampling_rate)
+    buf.getChannelData(0).set(samples)
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    src.connect(ctx.destination)
+    // Start exactly where the previous sentence ends (or now +20ms so we never
+    // schedule in the past) — consecutive sentences play as one seamless breath.
+    const startAt = Math.max(ctx.currentTime + 0.02, nextStartRef.current)
+    src.start(startAt)
+    nextStartRef.current = startAt + buf.duration
     playingRef.current = true
-    while (audioQueueRef.current.length > 0 && token === turnRef.current) {
-      const url = audioQueueRef.current.shift()!
-      await new Promise<void>((resolve) => {
-        const el = new Audio(url)
-        audioRef.current = el
-        const done = () => {
-          URL.revokeObjectURL(url)
-          if (audioRef.current === el) audioRef.current = null
-          resolve()
-        }
-        el.onended = done
-        el.onerror = done
-        el.play().catch(done)
-      })
+    sourcesRef.current.add(src)
+    src.onended = () => {
+      sourcesRef.current.delete(src)
+      if (sourcesRef.current.size === 0) playingRef.current = false
     }
-    playingRef.current = false
-  }, [])
+  }, [getAudioContext])
 
   /** One full conversation turn: text in → streamed reply → spoken out. */
   const runTurn = useCallback(async (userText: string) => {
@@ -170,9 +201,8 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
         const synthesis = (async () => {
           for await (const chunk of kokoro.stream(splitter, { voice })) {
             if (token !== turnRef.current) break
-            audioQueueRef.current.push(URL.createObjectURL(chunk.audio.toBlob()))
+            enqueueAudioChunk(chunk.audio as unknown as { audio: Float32Array | Float32Array[]; sampling_rate: number }, token)
             if (stateRef.current !== 'speaking' && token === turnRef.current) setVoiceState('speaking')
-            void drainAudioQueue(token)
           }
         })()
         for (;;) {
@@ -185,9 +215,9 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
         }
         try { splitter.close() } catch { /* already closed */ }
         await synthesis
-        // Wait for the tail of the queue to finish playing
-        while ((playingRef.current || audioQueueRef.current.length > 0) && token === turnRef.current) {
-          await new Promise((r) => setTimeout(r, 120))
+        // Wait for the scheduled audio timeline to finish playing out
+        while (token === turnRef.current && audioCtxRef.current && audioCtxRef.current.currentTime < nextStartRef.current) {
+          await new Promise((r) => setTimeout(r, 80))
         }
       } else {
         // Kokoro unavailable — read the full text, then speak via the browser
@@ -201,6 +231,8 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
           setVoiceState('speaking')
           await new Promise<void>((resolve) => {
             const u = new SpeechSynthesisUtterance(fullText)
+            const nv = pickBestNativeVoice()
+            if (nv) u.voice = nv
             u.onend = () => resolve()
             u.onerror = () => resolve()
             window.speechSynthesis.speak(u)
@@ -218,7 +250,13 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
       useAppStore.getState().addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: fullText.trim(), createdAt: new Date().toISOString() })
     }
     if (token === turnRef.current) setVoiceState('listening')
-  }, [activeCourse, activeTopic, activeSlides, currentSlideIndex, drainAudioQueue, setVoiceState])
+  }, [activeCourse, activeTopic, activeSlides, currentSlideIndex, enqueueAudioChunk, setVoiceState])
+
+  // Release the AudioContext when voice mode closes
+  useEffect(() => () => {
+    try { void audioCtxRef.current?.close() } catch { /* already closed */ }
+    audioCtxRef.current = null
+  }, [])
 
   // Live Whisper download progress in the header chip
   useEffect(() => onWhisperStatus((status, progress) => setWhisper({ status, progress })), [])
@@ -323,7 +361,10 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
           positiveSpeechThreshold: 0.6,
           negativeSpeechThreshold: 0.35,
           minSpeechMs: 160,
-          redemptionMs: 380,
+          // End-of-turn silence before we treat you as done. 300ms responds
+          // noticeably quicker than the old 380 without clipping natural
+          // mid-sentence pauses (below ~250 starts cutting hesitant speakers).
+          redemptionMs: 300,
           // Live mic meter: per-frame speech probability drives the UI bar,
           // so "is it hearing me?" is answered at a glance
           onFrameProcessed: (probs: { isSpeech: number }) => {
@@ -369,11 +410,20 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
   }, [interrupt, runTurn, setVoiceState])
 
   const toggleMute = () => {
-    setMuted((m) => {
-      mutedRef.current = !m
-      if (!m) interrupt()
-      return !m
-    })
+    const next = !mutedRef.current
+    mutedRef.current = next
+    setMuted(next)
+    if (next) {
+      // Muting: cut any in-flight reply and actually stop listening — pause the
+      // VAD so the mic goes cold (the native-SpeechRecognition path is gated by
+      // mutedRef in its handler). Rest the orb.
+      interrupt()
+      vadRef.current?.pause()
+      setVadLevel(0)
+    } else {
+      // Unmuting: resume detection.
+      vadRef.current?.start()
+    }
   }
 
   // Orb scale: expands with your voice while listening, pulses while it
@@ -410,18 +460,13 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
       <div className="flex w-full flex-1 flex-col items-center justify-end gap-5 pb-2">
         {state === 'error' && <p className="max-w-sm text-center text-xs text-red-500">{errorMsg}</p>}
 
-        {/* Live captions: what it heard, and the reply as it streams */}
+        {/* Live captions. No "You:", no "Transcribing…/Thinking…" filler — the
+            orb itself shows you're heard and that it's working. While you talk,
+            only the LATEST words show (they roll forward); once the reply starts
+            streaming it takes over. */}
         <div className="min-h-24 max-w-xl space-y-3 text-center">
-          {state === 'transcribing' && !userCaption && (
-            <p className="text-sm text-muted-foreground italic">Transcribing what you said…</p>
-          )}
-          {userCaption && (
-            <p className="text-sm text-muted-foreground">
-              <span className="font-semibold">You:</span> {userCaption}
-            </p>
-          )}
-          {state === 'thinking' && !aiCaption && (
-            <p className="text-sm text-muted-foreground italic">Thinking about it…</p>
+          {userCaption && !aiCaption && (
+            <p className="text-sm text-muted-foreground">{latestTranscript(userCaption)}</p>
           )}
           {aiCaption && (
             <p className="text-[15px] leading-relaxed">{aiCaption}</p>
@@ -465,7 +510,8 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
             boxShadow: '0 0 60px 12px rgba(99, 102, 241, 0.35)',
           }}
         >
-          {/* Slow-rotating sheen, like ChatGPT's blob */}
+          {/* Rotating sheen. Idles slowly; while SPEAKING it sweeps fast so the
+              gradient visibly flows as the tutor talks (state #1). */}
           <motion.div
             className="absolute inset-0 rounded-full opacity-60"
             style={{
@@ -473,7 +519,7 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
                 'conic-gradient(from 0deg, transparent 0%, rgba(255,255,255,0.35) 12%, transparent 30%, rgba(167,139,250,0.4) 55%, transparent 75%, rgba(125,211,252,0.4) 90%, transparent 100%)',
             }}
             animate={{ rotate: 360 }}
-            transition={{ repeat: Infinity, duration: 9, ease: 'linear' }}
+            transition={{ repeat: Infinity, duration: state === 'speaking' ? 2.4 : 9, ease: 'linear' }}
           />
           {/* Outer glow breathes with activity */}
           <motion.div
@@ -482,30 +528,29 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
             animate={{ opacity: state === 'speaking' ? [0.4, 0.8, 0.4] : state === 'listening' ? 0.3 + vadLevel * 0.5 : [0.25, 0.4, 0.25] }}
             transition={state === 'listening' ? { duration: 0.1 } : { repeat: Infinity, duration: 1.6 }}
           />
+          {/* Thinking/transcribing: NO spinner (state #2). A distinct fast
+              counter-rotating gradient band reads as "working" without the
+              literal loader, and looks different from the speaking sweep. */}
           {(state === 'thinking' || state === 'transcribing' || state === 'connecting') && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Loader2 className="h-7 w-7 text-white/80 animate-spin" />
-            </div>
+            <motion.div
+              className="absolute inset-0 rounded-full"
+              style={{
+                background:
+                  'conic-gradient(from 90deg, rgba(96,165,250,0) 0%, rgba(167,139,250,0.65) 20%, rgba(96,165,250,0) 45%, rgba(129,140,248,0.65) 70%, rgba(96,165,250,0) 100%)',
+                mixBlendMode: 'screen',
+              }}
+              animate={{ rotate: -360 }}
+              transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
+            />
           )}
         </motion.div>
-        <p className="text-sm font-medium text-muted-foreground">{STATE_LABEL[state]}</p>
-
-        {/* Live mic meter — fills while the VAD hears speech */}
-        {state !== 'error' && state !== 'connecting' && (
-          <div className="flex w-56 items-center gap-2">
-            <Mic className={`h-3.5 w-3.5 shrink-0 ${vadLevel > 0.5 ? 'text-emerald-500' : 'text-muted-foreground/60'}`} />
-            <div className="relative h-1.5 flex-1 rounded-full bg-muted/50 overflow-hidden">
-              <div
-                className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-100 ${vadLevel > 0.5 ? 'bg-emerald-500' : 'bg-sky-400/70'}`}
-                style={{ width: `${Math.round(vadLevel * 100)}%` }}
-              />
-            </div>
-          </div>
-        )}
+        {/* Status is shown by the orb itself now — keep the label for screen
+            readers only (sr-only), so blind users still hear the state change. */}
+        <p className="sr-only" aria-live="polite">{STATE_LABEL[state]}</p>
       </div>
 
       {/* Controls */}
-      <div className="flex items-center gap-4 pb-4">
+      <div className="flex items-center gap-4 pb-4 mt-10">
         <button
           onClick={toggleMute}
           aria-label={muted ? 'Unmute microphone' : 'Mute microphone'}

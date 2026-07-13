@@ -155,6 +155,28 @@ export async function downloadWhisper(): Promise<boolean> {
 }
 
 /**
+ * Delete the cached Whisper model so it re-downloads fresh — the fix when a
+ * download is corrupted or half-written (e.g. an interrupted mobile download).
+ * Forgets the in-memory instance, resets the "downloaded" flag, and evicts the
+ * model files from the browser cache. Call downloadWhisper() afterwards to refetch.
+ */
+export async function deleteWhisperDownload(): Promise<void> {
+  whisperPromise = null;
+  emitStatus('idle', 0);
+  try { localStorage.removeItem(STT_DOWNLOADED_KEY); } catch { /* storage unavailable */ }
+  if (typeof caches !== 'undefined') {
+    try {
+      for (const name of await caches.keys()) {
+        const cache = await caches.open(name);
+        for (const req of await cache.keys()) {
+          if (/whisper/i.test(req.url)) await cache.delete(req);
+        }
+      }
+    } catch { /* Cache API unavailable — the in-memory reset above still lets it re-load */ }
+  }
+}
+
+/**
  * Transcribe a raw 16 kHz mono Float32 clip (what the VAD hands us in voice
  * mode). Returns '' when Whisper is unavailable or the clip is silent.
  */

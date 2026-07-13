@@ -309,6 +309,11 @@ export function TutorView() {
   const speechRef = useRef<SpeechRecognitionInstance | null>(null)
   const whisperRecRef = useRef<WhisperRecording | null>(null)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Live dictation: the input as it was when the mic opened + the finalized
+  // speech so far, so we can render interim words in real time (like voice
+  // mode) without clobbering what the learner had already typed.
+  const voiceBaseRef = useRef('')
+  const voiceFinalRef = useRef('')
   // Phones open straight into the chat: the side panel would otherwise cover
   // the thread and has to be closed by hand. Start collapsed on small screens,
   // open on desktop (matches the rightPanelWidth client-init pattern below).
@@ -958,31 +963,26 @@ export function TutorView() {
 
     recognition.onstart = () => {
       setVoiceState('listening')
+      // Snapshot whatever was already typed so dictation appends to it.
+      const cur = textareaRef.current?.value ?? ''
+      voiceBaseRef.current = cur ? (cur.endsWith(' ') ? cur : cur + ' ') : ''
+      voiceFinalRef.current = ''
       resetSilenceTimer()
     }
 
     recognition.onresult = (event: SpeechRecognitionEventType) => {
       resetSilenceTimer()
-      let finalTranscript = ''
+      // Show interim words LIVE (real-time, like voice mode): finalized speech
+      // accumulates; the current interim guess renders on top and is replaced
+      // as you keep talking — no waiting for each phrase to finalize.
+      let interim = ''
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i]
-        if (result.isFinal) {
-          finalTranscript += result[0].transcript + ' '
-        }
+        if (result.isFinal) voiceFinalRef.current += result[0].transcript + ' '
+        else interim += result[0].transcript
       }
-      if (finalTranscript) {
-        setVoiceState('processing')
-        setInput((prev) => {
-          const base = prev.endsWith(' ') ? prev : prev ? prev + ' ' : ''
-          const combined = base + finalTranscript.trim()
-          return combined.length > MAX_INPUT_CHARS ? combined.slice(0, MAX_INPUT_CHARS) : combined
-        })
-        setTimeout(() => {
-          if (voiceState === 'processing') {
-            setVoiceState('listening')
-          }
-        }, 300)
-      }
+      const combined = (voiceBaseRef.current + voiceFinalRef.current + interim).slice(0, MAX_INPUT_CHARS)
+      setInput(combined)
     }
 
     recognition.onerror = (event: { error: string }) => {
@@ -1007,6 +1007,9 @@ export function TutorView() {
         clearTimeout(silenceTimerRef.current)
         silenceTimerRef.current = null
       }
+      // Commit base + finalized speech, dropping any dangling interim guess.
+      const finalCombined = (voiceBaseRef.current + voiceFinalRef.current).trim().slice(0, MAX_INPUT_CHARS)
+      setInput(finalCombined)
       speechRef.current = null
       setVoiceState('idle')
     }

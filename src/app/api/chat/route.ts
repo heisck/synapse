@@ -447,9 +447,18 @@ export async function POST(request: NextRequest) {
     if (voiceMode === true) {
       systemPrompt = `${systemPrompt}\n\n[VOICE MODE — your reply will be spoken aloud]:
 - 1-3 short sentences per turn. Conversational, natural, warm.
-- ABSOLUTELY NO markdown, bullet points, headers, code blocks, tables, emoji, or quiz JSON — plain speakable sentences only.
-- Spell things the way they are said ("H T M L", "twenty five percent").
+- ABSOLUTELY NO markdown, bullet points, headers, code blocks, tables, emoji, quiz JSON, or LaTeX — plain speakable sentences only.
+- Say math in words the way a person would read it aloud ("x squared", "a over b", "twenty five percent"), never symbols or LaTeX.
+- The learner's words arrive from live speech-to-text, so expect mis-hearings, half-words, background chatter, or filler. Infer their GENERAL intent and answer THAT — don't get derailed by a stray or garbled word, and never repeat/quote the noisy transcript back at them. Only if a message is truly unintelligible, ask one short clarifying question.
 - End most turns with a short question or invitation so the conversation keeps flowing.`;
+    } else {
+      // Written chat renders KaTeX (MarkdownContent) — real notation reads far
+      // better than "2 times x / equals". Only outside voice mode: spoken math
+      // must stay words (handled above).
+      systemPrompt = `${systemPrompt}\n\n[MATH & FORMULAS — the chat renders LaTeX, so USE it]:
+- Put ALL math inside dollar signs so it renders as real notation: inline like $E = mc^2$, and standalone equations on their own line like $$a^2 + b^2 = c^2$$.
+- Use proper LaTeX: \\frac{a}{b} (fractions), x^{2} (powers), x_{1} (subscripts), \\sqrt{x}, \\times, \\cdot, \\pi, \\Delta, \\sum, \\int, \\rightarrow, Greek letters, etc.
+- NEVER write math as bare text like "a/b", "x^2", "2 times x", or "x = y" outside dollar signs, and never spell operators as words ("times", "equals") — it must be inside $...$ to render correctly.`;
     }
 
     // Standing behavior rules (brevity + interactive quiz protocol)
@@ -479,11 +488,11 @@ export async function POST(request: NextRequest) {
 
     // --- Streaming mode: emit tokens as the model produces them ---
     if (body.stream === true) {
-      // Text chat: teach role (gpt-oss-120b) — owner decision, depth over speed.
       // Voice mode: the learner is WAITING IN SILENCE for the tutor to speak,
-      // so latency wins. The 'voice' role (gpt-oss-20b) at reasoning=low starts
-      // speaking in ~1-2s vs ~8s for teach's 120b at default reasoning; replies
-      // are only 1-3 spoken sentences, so the smaller model is plenty.
+      // so latency wins. The 'voice' role leads with gemma-4-a4b (~0.9s to
+      // first token, no reasoning phase); reasoningEffort:'low' is a no-op for
+      // it but keeps the gpt-oss-20b fallback fast too. Text chat uses the
+      // 'teach' role (depth) — no reasoning cap, it can afford to think.
       const streamResult = voiceMode === true
         ? await LLM.chatStream({ messages: deduped, auth, role: 'voice', reasoningEffort: 'low' })
         : await LLM.chatStream({ messages: deduped, auth, role: 'teach' });
