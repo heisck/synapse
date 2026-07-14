@@ -60,3 +60,7 @@ server.log
 
 # generated a11y scan output (regenerate with scripts/a11y-scan.mjs)
 /a11y-report.json
+
+# Piper fallback voices — bundled at build time from a non-Xet mirror
+# (regenerate with scripts/fetch-piper-voices.mjs; too large to commit)
+/public/piper/
