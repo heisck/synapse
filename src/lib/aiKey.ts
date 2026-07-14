@@ -42,3 +42,31 @@ export function aiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promi
 /** Human message for a 401 NO_API_KEY response, shown as a toast. */
 export const NO_KEY_MESSAGE =
   'Add your free OpenRouter API key in Settings to use AI features. Create one at openrouter.ai — it stays in your browser only.';
+
+// The server sets `X-AI-Degraded: 1` (+ `X-AI-Degraded-Reason`) / a `degraded`
+// body field when a reply came from the keyless fallback instead of a full
+// model. We warn the learner, but throttle so it shows at most once every few
+// minutes per reason rather than on every message.
+const degradedShownAt: Record<string, number> = {};
+const DEGRADED_THROTTLE_MS = 8 * 60 * 1000;
+
+/**
+ * Returns the learner-facing "you're on the free fallback" message for the
+ * given reason, or null if one was shown too recently (so callers can just
+ * `const m = degradedNoticeMessage(reason); if (m) toast(m)`). Reason comes
+ * from the server and is a quality signal only — it never names a provider.
+ */
+export function degradedNoticeMessage(reason?: string | null): string | null {
+  const key = reason || 'generic';
+  const now = Date.now();
+  if (now - (degradedShownAt[key] || 0) < DEGRADED_THROTTLE_MS) return null;
+  degradedShownAt[key] = now;
+  switch (reason) {
+    case 'rate_limited':
+      return 'Your OpenRouter key hit its rate limit — using a free fallback model for now, so answers may be lower quality. Wait for the limit to reset, or add another key in Settings.';
+    case 'no_key':
+      return 'Using a free fallback model — answers may be lower quality. Add your free OpenRouter key in Settings for full quality (it stays in your browser).';
+    default:
+      return 'The main AI models are busy right now — using a free fallback, so answers may be lower quality. Try again shortly for full quality.';
+  }
+}

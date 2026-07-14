@@ -219,6 +219,9 @@ export async function POST(request: NextRequest) {
         messageCount: deduped.length,
         // Identity firewall (B13): provider/model details never leave the server
         corrected: result.corrected || false,
+        // Quality signal only — a boolean + reason enum, never a provider name.
+        degraded: result.degraded || false,
+        degradedReason: result.degradedReason,
       });
     }
 
@@ -518,6 +521,10 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'text/plain; charset=utf-8',
           'Cache-Control': 'no-cache',
           'X-Model': streamResult.model,
+          // Quality signal only (identity-firewall safe): tells the client the
+          // reply came from the keyless floor so it can nudge the learner.
+          'X-AI-Degraded': streamResult.degraded ? '1' : '0',
+          ...(streamResult.degradedReason ? { 'X-AI-Degraded-Reason': streamResult.degradedReason } : {}),
         },
       });
     }
@@ -536,6 +543,9 @@ export async function POST(request: NextRequest) {
       messageCount: deduped.length,
       // Identity firewall (B13): provider/model details never leave the server
       corrected: result.corrected || false,
+      // Quality signal only — a boolean + reason enum, never a provider name.
+      degraded: result.degraded || false,
+      degradedReason: result.degradedReason,
     });
   } catch (error) {
     const mapped = llmErrorResponse(error);

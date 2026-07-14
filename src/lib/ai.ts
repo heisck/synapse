@@ -1,8 +1,19 @@
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
+/**
+ * Why a response came from the keyless fallback instead of a full model — lets
+ * the UI show the right nudge (add a key / wait for the limit to reset) without
+ * ever naming a provider (identity firewall).
+ */
+export type DegradedReason = 'no_key' | 'rate_limited' | 'provider_down';
+
 interface ChatResult {
   choices: Array<{ message: { content: string } }>;
   model?: string;
+  // Set when the answer came from the keyless low-quality floor, so callers can
+  // warn the learner. `degradedReason` says WHY, to tailor the message.
+  degraded?: boolean;
+  degradedReason?: DegradedReason;
 }
 
 /**
@@ -35,15 +46,21 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // Free-tier models are frequently rate-limited upstream, so we keep a
 // rotation: try each in order, skipping any that recently failed.
 // Override with OPENROUTER_MODELS (comma-separated) or OPENROUTER_MODEL.
+// Slugs verified live against openrouter.ai/api/v1/models (2026-07-14): the old
+// `openai/gpt-oss-120b:free` was RETIRED from the free tier (it now 404s / is
+// paid-only), so it's gone from every ladder here. A broad reliable set,
+// strongest/most-disciplined first, with a fast MoE tail so a response always
+// lands even when the big models are all cooling down.
 const OPENROUTER_MODELS = (
   process.env.OPENROUTER_MODELS ||
   process.env.OPENROUTER_MODEL ||
   [
+    'google/gemma-4-31b-it:free',
+    'qwen/qwen3-next-80b-a3b-instruct:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'openai/gpt-oss-20b:free',
     'nvidia/nemotron-3-super-120b-a12b:free',
     'google/gemma-4-26b-a4b-it:free',
-    'tencent/hy3:free',
-    'openai/gpt-oss-120b:free',
-    'meta-llama/llama-3.3-70b-instruct:free',
   ].join(',')
 )
   .split(',')
@@ -67,14 +84,18 @@ const APP_URL =
  * prompt breaks the product. Tested each candidate over multiple runs on: no
  * reasoning-leak, stays on-slide, refuses learner override-attempts, holds the
  * identity firewall. Findings:
- *   gpt-oss-120b — cleanest + most disciplined (correctly answers a derail
- *     attempt with "let's finish this slide first", never leaks) → leads
- *     teach + reason even though it's ~1s slower to first token.
- *   nemotron-3-super-120b-a12b — fast (~1s) but BLEEDS reasoning into content
- *     ("We need to follow policy...") → rejected for user-facing roles.
+ *   gpt-oss-120b — was the cleanest + most disciplined leader, but OpenRouter
+ *     RETIRED it from the free tier (2026-07-14, now 404s). Its 20b sibling
+ *     (same family, same discipline, less depth) stays in the ladders as a
+ *     clean fallback.
  *   gemma-4-*-it — no reasoning phase at all (structurally can't bleed),
- *     disciplined, fast → leads the latency-critical voice + fast roles, and
- *     is the teach/reason fallback.
+ *     disciplined, multimodal, fast → now LEADS teach + reason (31b) and the
+ *     latency-critical voice + fast roles (26b-a4b).
+ *   qwen3-next-80b-a3b-instruct — strong instruct model (no reasoning phase to
+ *     leak), 262k ctx → depth backup for teach/reason.
+ *   llama-3.3-70b-instruct — solid, no reasoning leak → mid-ladder fallback.
+ *   nemotron-3-super-120b-a12b — fast but BLEEDS reasoning into content →
+ *     stays OUT of the user-facing role ladders (general rotation tail only).
  * Override per role with OPENROUTER_<ROLE>_MODELS env (comma-separated).
  *
  *  reason — orchestration decisions, verification, math/logic (trust > speed)
@@ -87,18 +108,18 @@ const APP_URL =
 export type ModelRole = 'reason' | 'teach' | 'fast' | 'voice';
 
 const ROLE_MODELS: Record<ModelRole, string[]> = {
-  // Discipline-first (see block comment): gpt-oss-120b leads the teaching roles
-  // because it tested cleanest (no reasoning-leak, stays on-slide, refuses
-  // override); gemma-4 (no reasoning phase) leads the latency roles and is the
-  // clean fallback everywhere. nemotron-super is deliberately NOT here — it
-  // bled reasoning into replies. 404s park a model for 24h (below).
-  reason: (process.env.OPENROUTER_REASON_MODELS || 'openai/gpt-oss-120b:free,google/gemma-4-31b-it:free')
+  // Discipline-first (see block comment): gemma-4-31b now leads the teaching
+  // roles (disciplined, no reasoning-leak), backed by qwen3-next-80b and
+  // llama-3.3-70b for depth and gpt-oss-20b as the clean tail. The latency
+  // roles lead with the fast gemma-4-26b MoE. nemotron-super is deliberately
+  // NOT here — it bleeds reasoning into replies. 404s park a model for 24h.
+  reason: (process.env.OPENROUTER_REASON_MODELS || 'google/gemma-4-31b-it:free,qwen/qwen3-next-80b-a3b-instruct:free,meta-llama/llama-3.3-70b-instruct:free,openai/gpt-oss-20b:free')
     .split(',').map((m) => m.trim()).filter(Boolean),
-  teach: (process.env.OPENROUTER_TEACH_MODELS || 'openai/gpt-oss-120b:free,google/gemma-4-31b-it:free')
+  teach: (process.env.OPENROUTER_TEACH_MODELS || 'google/gemma-4-31b-it:free,qwen/qwen3-next-80b-a3b-instruct:free,meta-llama/llama-3.3-70b-instruct:free,openai/gpt-oss-20b:free')
     .split(',').map((m) => m.trim()).filter(Boolean),
-  fast: (process.env.OPENROUTER_FAST_MODELS || 'google/gemma-4-26b-a4b-it:free,openai/gpt-oss-20b:free')
+  fast: (process.env.OPENROUTER_FAST_MODELS || 'google/gemma-4-26b-a4b-it:free,openai/gpt-oss-20b:free,meta-llama/llama-3.2-3b-instruct:free')
     .split(',').map((m) => m.trim()).filter(Boolean),
-  voice: (process.env.OPENROUTER_VOICE_MODELS || 'google/gemma-4-26b-a4b-it:free,openai/gpt-oss-20b:free')
+  voice: (process.env.OPENROUTER_VOICE_MODELS || 'google/gemma-4-26b-a4b-it:free,openai/gpt-oss-20b:free,meta-llama/llama-3.2-3b-instruct:free')
     .split(',').map((m) => m.trim()).filter(Boolean),
 };
 
@@ -161,6 +182,16 @@ const MODEL_GONE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 function cooldownMsFor(err: unknown): number {
   return err instanceof Error && /\(404\)/.test(err.message) ? MODEL_GONE_COOLDOWN_MS : MODEL_COOLDOWN_MS;
+}
+
+/**
+ * Compact error text for logs. Rate-limit/failover is an EXPECTED, handled path
+ * (we rotate models, then drop to the keyless floor) — logging the full Error
+ * dumps a stack trace + code frame per model and floods the console, which
+ * reads like a crash when nothing is actually wrong. Log just the message.
+ */
+function emsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function keyFingerprint(apiKey: string): string {
@@ -310,7 +341,7 @@ async function chatViaOpenRouter(apiKey: string, messages: ChatMessage[]): Promi
       return await chatViaOpenRouterModel(apiKey, model, messages);
     } catch (err) {
       modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + cooldownMsFor(err));
-      console.warn(`[LLM.chat] OpenRouter model ${model} failed (cooling down 5 min):`, err);
+      console.warn(`[LLM.chat] ${model} unavailable (${emsg(err)}) — trying next`);
       lastError = err;
     }
   }
@@ -370,27 +401,102 @@ async function chatStreamViaHermes(
   return { stream: sseTextStream(res.body), model: HERMES_AGENT_MODEL };
 }
 
+// The keyless floor. Pollinations is OpenAI-compatible and needs no API key, so
+// it's what keeps the app answering when the learner has no OpenRouter key at
+// all, or when their key AND every free OpenRouter model are rate-limited/down.
+// Quality is lower (anonymous tier ≈ gpt-oss-20b), so every result routed here
+// is flagged `degraded` for the UI.
+//
+// CONCURRENCY: the anonymous tier allows only ~1 in-flight request per IP and
+// 429s the rest ("Queue full for IP ... max: 1"). The app fires bursts (batch
+// question generation + chat at once), so we SERIALIZE keyless calls through a
+// one-at-a-time gate and RETRY 429s with backoff (the slot frees when the prior
+// request finishes). Without this, everything past the first burst-request fails
+// the moment OpenRouter is also rate-limited.
+const POLLINATIONS_ATTEMPTS = 4;
+
+// A promise chain that lets only one keyless request run at a time.
+let keylessGate: Promise<void> = Promise.resolve();
+async function acquireKeyless(): Promise<() => void> {
+  const prev = keylessGate;
+  let release!: () => void;
+  keylessGate = new Promise<void>((r) => { release = r; });
+  await prev; // wait for the previous keyless call to release
+  return release;
+}
+
+function isQueueFull(err: unknown): boolean {
+  return err instanceof Error && /\(429\)|Queue full/i.test(err.message);
+}
+
 async function chatViaPollinations(messages: ChatMessage[]): Promise<ChatResult> {
-  const res = await fetch(POLLINATIONS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: POLLINATIONS_MODEL,
-      messages,
-      temperature: 0.7,
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Pollinations request failed (${res.status}): ${text.slice(0, 300)}`);
+  const release = await acquireKeyless();
+  try {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= POLLINATIONS_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetch(POLLINATIONS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: POLLINATIONS_MODEL, messages, temperature: 0.7 }),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(`Pollinations request failed (${res.status}): ${text.slice(0, 300)}`);
+        }
+        const data = await res.json();
+        if (!data?.choices?.[0]?.message?.content) throw new Error('Pollinations returned no content');
+        return { choices: data.choices, model: data.model || POLLINATIONS_MODEL, degraded: true };
+      } catch (err) {
+        lastErr = err;
+        // Longer backoff for a full queue (wait for the slot to clear) than for
+        // a transient network blip.
+        if (attempt < POLLINATIONS_ATTEMPTS) {
+          await new Promise((r) => setTimeout(r, isQueueFull(err) ? 900 * attempt : 400));
+        }
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error('Pollinations failed');
+  } finally {
+    release();
   }
+}
 
-  const data = await res.json();
-  if (!data?.choices?.[0]?.message?.content) {
-    throw new Error('Pollinations returned no content');
+/**
+ * Streaming keyless floor: Pollinations speaks OpenAI SSE, so reuse the parser.
+ * Serialized + 429-retried like the non-stream path. The gate releases once the
+ * response headers arrive (the slot is about the request, not the open stream),
+ * so a slow read doesn't block the next keyless call indefinitely.
+ */
+async function chatStreamViaPollinations(
+  messages: ChatMessage[],
+): Promise<{ stream: ReadableStream<string>; model: string }> {
+  const release = await acquireKeyless();
+  try {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= POLLINATIONS_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetch(POLLINATIONS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: POLLINATIONS_MODEL, messages, temperature: 0.7, stream: true }),
+        });
+        if (!res.ok || !res.body) {
+          const text = await res.text().catch(() => '');
+          throw new Error(`Pollinations stream failed (${res.status}): ${text.slice(0, 300)}`);
+        }
+        return { stream: sseTextStream(res.body), model: POLLINATIONS_MODEL };
+      } catch (err) {
+        lastErr = err;
+        if (attempt < POLLINATIONS_ATTEMPTS) {
+          await new Promise((r) => setTimeout(r, isQueueFull(err) ? 900 * attempt : 400));
+        }
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error('Pollinations stream failed');
+  } finally {
+    release();
   }
-  return { choices: data.choices, model: data.model || POLLINATIONS_MODEL };
 }
 
 /**
@@ -497,7 +603,7 @@ export const LLM = {
           return await chatViaOpenRouterModel(apiKey, model, messages);
         } catch (err) {
           modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + cooldownMsFor(err));
-          console.warn(`[LLM.chatAs:${role}] model ${model} failed (cooling down):`, err);
+          console.warn(`[LLM.chatAs:${role}] ${model} unavailable (${emsg(err)}) — trying next`);
         }
       }
     }
@@ -522,18 +628,22 @@ export const LLM = {
         return await visionViaOpenRouterModel(apiKey, model, prompt, images);
       } catch (err) {
         modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + cooldownMsFor(err));
-        console.warn(`[LLM.vision] model ${model} failed (cooling down):`, err);
+        console.warn(`[LLM.vision] ${model} unavailable (${emsg(err)}) — trying next`);
       }
     }
     return null;
   },
 
   /**
-   * Provider order: Hermes agent (when configured for this deployment) →
-   * the learner's own OpenRouter key (rotating free models) → Pollinations
-   * (keyless) as a last resort AFTER a key was tried. With no Hermes and no
-   * user key this throws NoApiKeyError — routes surface it as a 401 telling
-   * the learner to add their key in Settings.
+   * Provider order (the learner's own key ALWAYS takes priority — we only go
+   * keyless once their full OpenRouter path is exhausted):
+   *   1. Hermes agent, when this deployment configures one.
+   *   2. The learner's OpenRouter key, rotating the free models with cooldowns.
+   *   3. The keyless Pollinations floor — used when there's NO key, or the key
+   *      is rate-limited / every free model is down. Flagged `degraded` so the
+   *      UI can nudge the learner to add a key or wait for the limit to reset.
+   * Only if the keyless floor ALSO fails do we surface an error (RateLimited if
+   * that's why we fell through, else null for the route to render generically).
    */
   async chat({ messages, auth }: { messages: ChatMessage[]; auth?: LLMAuth }): Promise<ChatResult | null> {
     if (HERMES_AGENT_URL) {
@@ -545,33 +655,36 @@ export const LLM = {
     }
 
     const apiKey = auth?.apiKey?.trim();
-    if (!apiKey) {
-      if (HERMES_AGENT_URL) return null; // Hermes deployment, agent down — no key to fall back to
-      throw new NoApiKeyError();
+    // Why we're about to use the keyless floor — drives the learner-facing nudge.
+    let reason: DegradedReason = apiKey ? 'provider_down' : 'no_key';
+    if (apiKey) {
+      try {
+        return await chatViaOpenRouter(apiKey, messages);
+      } catch (openRouterError) {
+        if (openRouterError instanceof RateLimitedError) reason = 'rate_limited';
+        console.info(`[LLM.chat] OpenRouter exhausted (${reason}) — using keyless fallback`);
+      }
     }
 
-    let rateLimited = false;
+    // Keyless floor — always attempted so the app keeps answering.
     try {
-      return await chatViaOpenRouter(apiKey, messages);
-    } catch (openRouterError) {
-      rateLimited = openRouterError instanceof RateLimitedError;
-      console.error('[LLM.chat] OpenRouter unavailable, falling back to Pollinations:', openRouterError);
-    }
-    try {
-      return await chatViaPollinations(messages);
+      const result = await chatViaPollinations(messages);
+      return { ...result, degraded: true, degradedReason: reason };
     } catch (pollinationsError) {
-      console.error('[LLM.chat] Pollinations fallback also failed:', pollinationsError);
-      if (rateLimited) throw new RateLimitedError();
+      console.error('[LLM.chat] Keyless floor also failed:', pollinationsError);
+      if (reason === 'rate_limited') throw new RateLimitedError();
+      if (reason === 'no_key' && !HERMES_AGENT_URL) throw new NoApiKeyError();
       return null;
     }
   },
 
   /**
-   * Streaming chat: resolves to a stream of text deltas. Same provider order
-   * as chat(); if no provider can stream, falls back to the non-streaming
-   * path and emits its full text as a single chunk.
+   * Streaming chat: resolves to a stream of text deltas. Same provider order /
+   * priority as chat() — the learner's key first (role specialists, then the
+   * general rotation), then the keyless Pollinations SSE floor (flagged
+   * `degraded`), then the non-streaming path emitted as a single chunk.
    */
-  async chatStream({ messages, auth, role, reasoningEffort }: { messages: ChatMessage[]; auth?: LLMAuth; role?: ModelRole; reasoningEffort?: 'low' | 'medium' | 'high' }): Promise<{ stream: ReadableStream<string>; model: string } | null> {
+  async chatStream({ messages, auth, role, reasoningEffort }: { messages: ChatMessage[]; auth?: LLMAuth; role?: ModelRole; reasoningEffort?: 'low' | 'medium' | 'high' }): Promise<{ stream: ReadableStream<string>; model: string; degraded?: boolean; degradedReason?: DegradedReason } | null> {
     if (HERMES_AGENT_URL) {
       try {
         return await chatStreamViaHermes(messages);
@@ -581,23 +694,33 @@ export const LLM = {
     }
 
     const apiKey = auth?.apiKey?.trim();
+    let reason: DegradedReason = apiKey ? 'provider_down' : 'no_key';
     if (apiKey) {
       const now = Date.now();
-      // Role specialists first (e.g. the teach role's gpt-oss-120b for tutor
-      // responses — stronger model, far less reasoning slop), then the
-      // general rotation.
+      // Role specialists first (e.g. the teach role's gemma-4-31b for tutor
+      // responses — stronger, disciplined), then the general rotation.
       const pool = role ? [...ROLE_MODELS[role], ...OPENROUTER_MODELS] : OPENROUTER_MODELS;
       const available = [...new Set(pool)].filter(
         (m) => now >= (modelDownUntil.get(cooldownKey(apiKey, m)) || 0),
       );
+      if (available.length === 0) reason = 'rate_limited';
       for (const model of available) {
         try {
           return await chatStreamViaOpenRouterModel(apiKey, model, messages, reasoningEffort);
         } catch (err) {
+          if (err instanceof RateLimitedError) reason = 'rate_limited';
           modelDownUntil.set(cooldownKey(apiKey, model), Date.now() + cooldownMsFor(err));
-          console.warn(`[LLM.chatStream] OpenRouter model ${model} failed (cooling down 5 min):`, err);
+          console.warn(`[LLM.chatStream] ${model} unavailable (${emsg(err)}) — trying next`);
         }
       }
+    }
+
+    // Keyless streaming floor.
+    try {
+      const ps = await chatStreamViaPollinations(messages);
+      return { ...ps, degraded: true, degradedReason: reason };
+    } catch (pollErr) {
+      console.warn('[LLM.chatStream] Keyless stream floor failed, trying non-stream:', pollErr);
     }
 
     const result = await this.chat({ messages, auth });
@@ -611,6 +734,8 @@ export const LLM = {
         },
       }),
       model: result?.model || 'fallback',
+      degraded: result?.degraded,
+      degradedReason: result?.degradedReason,
     };
   },
 

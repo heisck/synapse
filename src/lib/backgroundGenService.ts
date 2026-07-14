@@ -20,7 +20,7 @@
 
 import { useAppStore } from '@/stores/appStore';
 import { aiFetch, getOpenRouterKey } from '@/lib/aiKey';
-import { appendToQuestionCache, loadQuestionCache, getPreferredTypes, isBackgroundGenerationEnabled, getSlideBank } from '@/lib/questionCache';
+import { appendToQuestionCache, loadQuestionCache, getPreferredTypes, isBackgroundGenerationEnabled, getSlideBank, getBackgroundGenProvider, getBackgroundQuestionsPerSlide } from '@/lib/questionCache';
 import { isLocalCourse, getLocalCourseContent, getLocalSlides, getLocalDoc } from '@/lib/localLibrary';
 import type { Question } from '@/types';
 
@@ -80,11 +80,16 @@ async function waitWhileAnswering(): Promise<void> {
   while (aiAnswering()) await sleep(PAUSE_POLL_MS);
 }
 
-async function fetchQuestions(body: Record<string, unknown>): Promise<{ questions: Question[]; sectionsDone?: number; sectionsTotal?: number; hasMore?: boolean } | null> {
+async function fetchQuestions(body: Record<string, unknown>, keyless = false): Promise<{ questions: Question[]; sectionsDone?: number; sectionsTotal?: number; hasMore?: boolean } | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const res = await aiFetch('/api/questions', {
+    // keyless: send WITHOUT the OpenRouter key header (plain fetch) so the
+    // server routes to the keyless floor even if the learner has a key — used
+    // when background gen's provider is set to "free". Otherwise aiFetch
+    // attaches the key.
+    const doFetch = keyless ? fetch : aiFetch;
+    const res = await doFetch('/api/questions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -165,9 +170,10 @@ async function generateForCourse(courseId: string): Promise<boolean> {
         ? slides.filter((_, i) => ['learning', 'objectives', 'summary'].includes(kinds[i]?.kind ?? 'learning'))
         : slides;
       const units = teaching.length > 0 ? teaching : slides;
-      // 20-30 per unit for typical decks; very large decks spread the course
-      // cap across all units (coverage beats depth) — never below 5.
-      const unitTarget = Math.max(5, Math.min(UNIT_TARGET_MAX, Math.floor(COURSE_CAP / units.length)));
+      // Target per unit = the learner's configured "questions per slide"
+      // (bounded), so the Settings control actually governs how deep each slide
+      // is banked. COURSE_CAP still bounds the course total below.
+      const unitTarget = Math.max(1, Math.min(getBackgroundQuestionsPerSlide(), UNIT_TARGET_MAX));
       const nextUnit = units.find((s) => {
         const bank = getSlideBank(courseId, s.id);
         return bank.unused.length + bank.used.length < unitTarget;
@@ -181,7 +187,7 @@ async function generateForCourse(courseId: string): Promise<boolean> {
         content: `## ${nextUnit.title}\n${nextUnit.content}`,
         types: getPreferredTypes(),
         count: Math.max(need, 1),
-      });
+      }, getBackgroundGenProvider() === 'free');
       if (!data) {
         courseCooldown.set(courseId, Date.now() + 5 * 60_000);
         return false;
@@ -203,8 +209,9 @@ async function generateForCourse(courseId: string): Promise<boolean> {
     sectionOffset: cache?.sectionsDone ?? 0,
     maxSections: 1,
     types: getPreferredTypes(),
+    count: getBackgroundQuestionsPerSlide(),
     content: isLocalCourse(courseId) ? await getLocalCourseContent(courseId) : undefined,
-  });
+  }, getBackgroundGenProvider() === 'free');
   if (!data) {
     courseCooldown.set(courseId, Date.now() + 5 * 60_000);
     return false;
@@ -221,7 +228,12 @@ async function mainLoop(): Promise<void> {
     // the learner just asked the tutor for.
     while (priorityQueue.length > 0) await servePriority(priorityQueue.shift()!);
 
-    if (!getOpenRouterKey() || !isBackgroundGenerationEnabled()) {
+    // The 'free' provider runs keyless (Pollinations floor) — no key needed;
+    // 'openrouter' needs the learner's key. Either way, respect the on/off
+    // toggle. When off (or openrouter-without-key), the walker idles and banks
+    // are filled on demand instead (the tutor's priority lane still runs).
+    const needsKey = getBackgroundGenProvider() === 'openrouter';
+    if (!isBackgroundGenerationEnabled() || (needsKey && !getOpenRouterKey())) {
       await idleSleep(IDLE_RECHECK_MS);
       continue;
     }

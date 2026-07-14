@@ -177,3 +177,56 @@ export function setBackgroundGenerationEnabled(enabled: boolean): void {
     // ignore
   }
 }
+
+// Which engine background generation should use:
+//  'openrouter' — the learner's own key (better models, but rate-limited on the
+//                 free tier), and it does nothing when no key is set.
+//  'free'       — the keyless Pollinations floor: no key needed, but serialized
+//                 (1 request at a time) so it's slower. Good for filling banks
+//                 unattended without touching the learner's key/quota.
+export type BackgroundGenProvider = 'openrouter' | 'free';
+const PROVIDER_KEY = 'synapse-bg-provider';
+
+export function getBackgroundGenProvider(): BackgroundGenProvider {
+  if (typeof window === 'undefined') return 'openrouter';
+  try {
+    return localStorage.getItem(PROVIDER_KEY) === 'free' ? 'free' : 'openrouter';
+  } catch {
+    return 'openrouter';
+  }
+}
+
+export function setBackgroundGenProvider(provider: BackgroundGenProvider): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(PROVIDER_KEY, provider);
+  } catch {
+    // ignore
+  }
+}
+
+// How many questions to bank per slide/section on each background pass. A cap:
+// a pass may yield fewer, but never more.
+const PER_SLIDE_KEY = 'synapse-bg-per-slide';
+const DEFAULT_PER_SLIDE = 8;
+const MIN_PER_SLIDE = 1;
+const MAX_PER_SLIDE = 30;
+
+export function getBackgroundQuestionsPerSlide(): number {
+  if (typeof window === 'undefined') return DEFAULT_PER_SLIDE;
+  try {
+    const n = parseInt(localStorage.getItem(PER_SLIDE_KEY) || '', 10);
+    return Number.isFinite(n) && n >= MIN_PER_SLIDE && n <= MAX_PER_SLIDE ? n : DEFAULT_PER_SLIDE;
+  } catch {
+    return DEFAULT_PER_SLIDE;
+  }
+}
+
+export function setBackgroundQuestionsPerSlide(n: number): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(PER_SLIDE_KEY, String(Math.max(MIN_PER_SLIDE, Math.min(MAX_PER_SLIDE, Math.round(n)))));
+  } catch {
+    // ignore
+  }
+}

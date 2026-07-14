@@ -17,7 +17,8 @@
  */
 
 import { isIOS, isLowMemoryDevice } from '@/lib/voice/device';
-import { piperSynthesize, isPiperDownloaded, warmUpPiper, piperSupported } from '@/lib/voice/piper';
+import { piperSynthesize, isPiperDownloaded, piperSupported } from '@/lib/voice/piper';
+import { cloudSynthesize, isCloudVoiceEnabled } from '@/lib/voice/cloudTts';
 
 export interface SpeakOptions {
   /** 0.5–2.0 playback speed. */
@@ -599,17 +600,15 @@ if (typeof window !== 'undefined' && window.speechSynthesis) {
  * Speaks `text`. Resolves once playback STARTS (UI can flip its icon);
  * `onEnd` fires when playback finishes or is stopped. Returns the engine used.
  */
-export async function speak(text: string, options: SpeakOptions = {}): Promise<'kokoro' | 'piper' | 'browser' | 'none'> {
+export async function speak(text: string, options: SpeakOptions = {}): Promise<'kokoro' | 'piper' | 'cloud' | 'browser' | 'none'> {
   const clean = text.replace(/```[\s\S]*?```/g, ' (code block) ').replace(/[*_#>`]/g, '').trim();
   if (!clean) return 'none';
   stopSpeaking();
 
   // On iOS, once Kokoro's synth has crashed the tab we never try it again —
-  // route to Piper (lighter, stable ORT). Kick off its download in the
-  // background the first time so the fallback becomes available without a
-  // surprise stall inside this call.
+  // route to the cloud voice (Piper also crashes iOS memory, so it's not used
+  // there). Elsewhere Kokoro/Piper handle it on-device.
   const skipKokoro = isIOS() && isKokoroSynthKnownBad();
-  if (skipKokoro && piperSupported() && !isPiperDownloaded()) warmUpPiper();
 
   if (!skipKokoro) {
     const kokoro = await loadKokoro();
@@ -640,28 +639,44 @@ export async function speak(text: string, options: SpeakOptions = {}): Promise<'
     }
   }
 
-  // Piper fallback (on-device, stable ORT) — only when already downloaded, so a
-  // simple read-aloud never triggers a surprise ~60 MB fetch. On iOS this is the
-  // intended voice once Kokoro is known-bad; elsewhere it's an opt-in extra.
-  if (piperSupported() && isPiperDownloaded()) {
-    const blob = await piperSynthesize(clean.slice(0, 2000));
-    if (blob) {
-      const url = URL.createObjectURL(blob);
-      const el = new Audio(url);
-      currentAudio = el;
-      const finish = () => {
-        URL.revokeObjectURL(url);
-        if (currentAudio === el) currentAudio = null;
-        options.onEnd?.();
-      };
-      el.onended = finish;
-      el.onerror = finish;
-      await el.play();
-      return 'piper';
-    }
+  // Play an MP3/WAV blob through the shared audio element.
+  const playBlob = async (blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const el = new Audio(url);
+    currentAudio = el;
+    const finish = () => {
+      URL.revokeObjectURL(url);
+      if (currentAudio === el) currentAudio = null;
+      options.onEnd?.();
+    };
+    el.onended = finish;
+    el.onerror = finish;
+    await el.play();
+  };
+
+  // Cloud voice: on iOS it REPLACES Piper (both on-device engines crash there),
+  // so it's the primary fallback once Kokoro is out. Toggle-controlled.
+  if (isIOS() && isCloudVoiceEnabled()) {
+    const blob = await cloudSynthesize(clean.slice(0, 1200));
+    if (blob) { await playBlob(blob); return 'cloud'; }
   }
 
-  // Fallback: browser-native speech (the always-works path on iOS)
+  // Piper fallback (on-device, stable ORT) — NON-iOS only now (it crashes iOS
+  // memory). Only when already downloaded, so a read-aloud never triggers a
+  // surprise ~60 MB fetch.
+  if (!isIOS() && piperSupported() && isPiperDownloaded()) {
+    const blob = await piperSynthesize(clean.slice(0, 2000));
+    if (blob) { await playBlob(blob); return 'piper'; }
+  }
+
+  // Cloud voice as a further fallback on non-iOS (e.g. Kokoro failed and Piper
+  // isn't downloaded) — still better than the robotic native voice.
+  if (!isIOS() && isCloudVoiceEnabled()) {
+    const blob = await cloudSynthesize(clean.slice(0, 1200));
+    if (blob) { await playBlob(blob); return 'cloud'; }
+  }
+
+  // Fallback: browser-native speech (the always-works path)
   if (typeof window !== 'undefined' && window.speechSynthesis) {
     const utterance = new SpeechSynthesisUtterance(clean.slice(0, 3000));
     const nv = pickBestNativeVoice();

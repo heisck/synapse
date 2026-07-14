@@ -24,7 +24,9 @@ import { useAppStore } from '@/stores/appStore'
 import { aiFetch } from '@/lib/aiKey'
 import { transcribeAudio, warmUpWhisper, onWhisperStatus, getWhisperStatus, nativeSpeechRecognitionSupported, type WhisperStatus } from '@/lib/voice/stt'
 import { getKokoro, getSelectedVoice, resolveVoiceId, pickBestNativeVoice, isKokoroSynthKnownBad, markKokoroSynthStart, markKokoroSynthOk } from '@/lib/voice/tts'
-import { piperSynthesize, isPiperDownloaded, warmUpPiper } from '@/lib/voice/piper'
+import { piperSynthesize, isPiperDownloaded } from '@/lib/voice/piper'
+import { cloudSynthesize, isCloudVoiceEnabled } from '@/lib/voice/cloudTts'
+import { isIOS } from '@/lib/voice/device'
 
 type VoiceState = 'connecting' | 'listening' | 'transcribing' | 'thinking' | 'speaking' | 'error'
 
@@ -190,10 +192,9 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
       if (!res.ok || !res.body) throw new Error('chat request failed')
 
       // On iOS, once Kokoro's synth has crashed the tab we never try it again —
-      // fall to Piper (lighter, stable ORT). Warm it in the background so it's
-      // ready even before its Settings download if the learner hasn't fetched it.
+      // fall to the cloud voice (Piper also crashes iOS memory, so it's not used
+      // there). Elsewhere Kokoro/Piper run on-device.
       const skipKokoro = isKokoroSynthKnownBad()
-      if (skipKokoro && !isPiperDownloaded()) warmUpPiper()
       const kokoro = skipKokoro ? null : await getKokoro()
       const voice = resolveVoiceId(getSelectedVoice())
       const reader = res.body.getReader()
@@ -228,9 +229,53 @@ export function VoiceMode({ onClose }: { onClose: () => void }) {
         while (token === turnRef.current && audioCtxRef.current && audioCtxRef.current.currentTime < nextStartRef.current) {
           await new Promise((r) => setTimeout(r, 80))
         }
+      } else if ((isIOS() || !isPiperDownloaded()) && isCloudVoiceEnabled()) {
+        // Cloud voice fallback (replaces Piper on iOS): fetch per-sentence MP3
+        // from the TTS route, decode, and schedule on the same gapless timeline.
+        const ctx = getAudioContext()
+        let pending = ''
+        let chain = Promise.resolve()
+        const synthSentence = (s: string) => {
+          chain = chain.then(async () => {
+            if (token !== turnRef.current || !ctx) return
+            const blob = await cloudSynthesize(s, controller.signal)
+            if (!blob || token !== turnRef.current) return
+            try {
+              const decoded = await ctx.decodeAudioData(await blob.arrayBuffer())
+              enqueueAudioChunk({ audio: decoded.getChannelData(0), sampling_rate: decoded.sampleRate }, token)
+              if (stateRef.current !== 'speaking' && token === turnRef.current) setVoiceState('speaking')
+            } catch { /* decode failed — skip this sentence */ }
+          })
+        }
+        const drain = (final: boolean) => {
+          const re = /[^.!?]*[.!?]+/g
+          let m: RegExpExecArray | null
+          let lastIdx = 0
+          while ((m = re.exec(pending))) {
+            const s = m[0].trim()
+            if (s) synthSentence(s)
+            lastIdx = re.lastIndex
+          }
+          pending = pending.slice(lastIdx)
+          if (final && pending.trim()) { synthSentence(pending.trim()); pending = '' }
+        }
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done || token !== turnRef.current) break
+          const text = decoder.decode(value, { stream: true })
+          fullText += text
+          setAiCaption(fullText)
+          pending += text
+          drain(false)
+        }
+        drain(true)
+        await chain
+        while (token === turnRef.current && audioCtxRef.current && audioCtxRef.current.currentTime < nextStartRef.current) {
+          await new Promise((r) => setTimeout(r, 80))
+        }
       } else if (isPiperDownloaded()) {
-        // Piper fallback: synthesize sentence-by-sentence as the reply streams,
-        // decode each WAV to PCM, and schedule it on the same gapless timeline.
+        // Piper fallback (NON-iOS): synthesize sentence-by-sentence as the reply
+        // streams, decode each WAV to PCM, and schedule on the gapless timeline.
         const ctx = getAudioContext()
         let pending = ''
         let chain = Promise.resolve()

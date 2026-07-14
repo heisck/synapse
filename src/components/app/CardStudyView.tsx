@@ -35,6 +35,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/stores/appStore';
+import { beginQuizProgress, finishQuizProgress, failQuizProgress } from '@/lib/quizProgress';
 import { useSpacedRepetition } from '@/hooks/useSpacedRepetition';
 import { checkAnswer } from '@/lib/answerCheck';
 import type { Question } from '@/types';
@@ -50,7 +51,7 @@ const difficultyStyles: Record<string, string> = {
 };
 
 export function CardStudyView() {
-  const { activeCourse, navigate, updateMastery } = useAppStore();
+  const { activeCourse, navigate, updateMastery, quizGenProgress } = useAppStore();
   const { reviewItem } = useSpacedRepetition();
 
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -94,7 +95,10 @@ export function CardStudyView() {
 
       if (list.length === 0) {
         // No persisted questions yet — generate a fresh set via the LLM.
+        // Drive the shared 0→100 ramp (quizGenProgress) so the learner sees a
+        // moving counter instead of a dead spinner.
         setGenerating(true);
+        beginQuizProgress();
         const genRes = await aiFetch('/api/questions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -108,12 +112,14 @@ export function CardStudyView() {
           throw new Error(genData.error || 'Failed to generate questions.');
         }
         list = genData.questions;
+        finishQuizProgress();
         setGenerating(false);
       }
 
       setQuestions(list);
       setCurrentIndex(0);
     } catch (e) {
+      failQuizProgress();
       setGenerating(false);
       setError(e instanceof Error ? e.message : 'Failed to load cards.');
       toast.error('Could not load study cards. Please try again.');
@@ -284,15 +290,42 @@ export function CardStudyView() {
   // ---------- Render ----------
 
   if (loading || generating) {
+    const pct = generating ? Math.max(0, Math.min(100, Math.round(quizGenProgress ?? 0))) : 0;
+    const R = 20;
+    const C = 2 * Math.PI * R;
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="glass rounded-2xl p-8 flex flex-col items-center gap-4 max-w-sm text-center">
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-          >
-            <Loader2 className="h-10 w-10 text-primary" />
-          </motion.div>
+          {generating ? (
+            // Circular 0→100 counter so the learner knows how long to wait
+            <div className="relative h-16 w-16">
+              <svg viewBox="0 0 48 48" className="h-16 w-16 -rotate-90">
+                <circle cx="24" cy="24" r={R} fill="none" strokeWidth="4" className="stroke-muted/40" />
+                <circle
+                  cx="24"
+                  cy="24"
+                  r={R}
+                  fill="none"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  className="stroke-primary"
+                  strokeDasharray={C}
+                  strokeDashoffset={C * (1 - pct / 100)}
+                  style={{ transition: 'stroke-dashoffset 0.2s ease-out' }}
+                />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-sm font-bold tabular-nums">
+                {pct}%
+              </span>
+            </div>
+          ) : (
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+            >
+              <Loader2 className="h-10 w-10 text-primary" />
+            </motion.div>
+          )}
           <p className="gradient-text-animated text-lg font-semibold">
             {generating ? 'Generating study cards…' : 'Loading cards…'}
           </p>

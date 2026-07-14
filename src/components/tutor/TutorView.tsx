@@ -1,6 +1,6 @@
 'use client'
 
-import { aiFetch } from '@/lib/aiKey';
+import { aiFetch, degradedNoticeMessage } from '@/lib/aiKey';
 import { readStreamWithWatchdog, StreamStalledError } from '@/lib/streamWatchdog';
 import { cleanResponse } from '@/lib/textQuality';
 import { loadQuestionCache, appendToQuestionCache, getSlideBank } from '@/lib/questionCache';
@@ -1091,6 +1091,14 @@ export function TutorView() {
     // Request state machine (B9): one in-flight request, no duplicate sends
     if (!useAppStore.getState().canSendChat()) return
 
+    // Clears the "thinking" indicator + request lock — used by the early-return
+    // branches below (navigate/quiz/advance) that show the indicator during the
+    // orchestrator round-trip but never reach the streaming chat path.
+    const resetSendState = () => {
+      setLoading(false)
+      useAppStore.getState().setChatRequestStatus('idle')
+    }
+
     // Tutor navigation (task 66): "next" / "next slide" / "continue" advances
     // to the next atomic teaching unit without calling the AI, updates the
     // tutor context, and begins explaining the new unit immediately.
@@ -1249,6 +1257,12 @@ export function TutorView() {
     // shapes the tutor's reply (remediate/motivate/break/assess/review) —
     // it never generates learner-facing content itself. A 4s timeout keeps
     // it off the critical path: any failure falls through to plain chat.
+    // Show the thinking indicator NOW — the orchestrator round-trip below (up
+    // to 4s) must not delay it, or the chat feels frozen for seconds after the
+    // user hits send. Early-return branches call resetSendState() to clear it.
+    setLoading(true)
+    useAppStore.getState().setChatRequestStatus('sending')
+
     let orchestratorHint: string | null = null
     try {
       // Maintain the continuity blob's inputs client-side (D28): struggle
@@ -1304,10 +1318,12 @@ export function TutorView() {
               useAppStore.getState().setTutorQuizContext(null)
               addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: result.reason || 'The quiz could not be prepared — try again in a moment.', createdAt: new Date().toISOString() })
             }
+            resetSendState()
             return
           }
           addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `Taking you to ${target.replace('-', ' ')} —`, createdAt: new Date().toISOString() })
           navigate(target)
+          resetSendState()
           return
         }
 
@@ -1316,6 +1332,7 @@ export function TutorView() {
         if (data.decision === 'quiz' && activeCourse) {
           pendingQuizAskRef.current = { slideNumber: null }
           addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: 'Happy to test you on this slide! How many questions do you want? (e.g. 5, 10, 20)', createdAt: new Date().toISOString() })
+          resetSendState()
           return
         }
 
@@ -1330,6 +1347,7 @@ export function TutorView() {
             setCurrentSlideIndex(nxt)
             toast(`Slide ${nxt + 1}/${activeSlides.length}: ${activeSlides[nxt]?.title ?? ''}`)
             useAppStore.getState().setPendingSlideExplain(nxt)
+            resetSendState()
             return
           }
           // Last slide — fall through to chat with a review hint instead
@@ -1431,6 +1449,13 @@ export function TutorView() {
 
       if (!res.ok) throw new Error('Failed to get response')
 
+      // Keyless-fallback nudge: if the reply came from the free floor (no key /
+      // rate-limited / models down), tell the learner how to get full quality.
+      if (res.headers.get('X-AI-Degraded') === '1') {
+        const msg = degradedNoticeMessage(res.headers.get('X-AI-Degraded-Reason'))
+        if (msg) toast(msg, { icon: '⚠️', duration: 9000 })
+      }
+
       const contentType = res.headers.get('Content-Type') || ''
       if (res.body && contentType.includes('text/plain')) {
         // Streaming path: grow the assistant message token by token
@@ -1480,6 +1505,10 @@ export function TutorView() {
         maybeStartExam(finalText)
       } else {
         const data = await res.json()
+        if (data.degraded) {
+          const msg = degradedNoticeMessage(data.degradedReason)
+          if (msg) toast(msg, { icon: '⚠️', duration: 9000 })
+        }
         const rawText = data.response || data.message || data.content || ''
         const report = cleanResponse(rawText)
         const responseText = report.discard || !report.text.trim()
@@ -2537,7 +2566,12 @@ export function TutorView() {
                       transition={{ duration: 0.3 }}
                     />
                   )}
-                  <div className="flex items-end gap-1.5 glass-blur-strong rounded-xl border border-border/60 p-1.5 transition-shadow duration-300">
+                  {/* Relative wrapper: the textarea spans the FULL width and the
+                      action cluster is pinned to the bottom-right corner, so text
+                      uses the whole input instead of leaving a dead right column.
+                      The textarea's bottom padding reserves the small strip the
+                      buttons occupy so typed text never runs under them. */}
+                  <div className="relative glass-blur-strong rounded-xl border border-border/60 p-1.5 transition-shadow duration-300">
                     <Textarea
                       ref={textareaRef}
                       placeholder="Ask me anything..."
@@ -2550,13 +2584,13 @@ export function TutorView() {
                         setTimeout(() => e.target.scrollIntoView({ block: 'end', behavior: 'smooth' }), 300)
                       }}
                       onBlur={() => setInputFocused(false)}
-                      className="resize-none flex-1 min-w-0 border-0 shadow-none focus-visible:ring-0 p-2 text-sm bg-transparent placeholder:text-muted-foreground placeholder:text-xs sm:placeholder:text-sm placeholder:truncate"
+                      className="resize-none w-full border-0 shadow-none focus-visible:ring-0 p-2 pb-9 text-sm bg-transparent placeholder:text-muted-foreground placeholder:text-xs sm:placeholder:text-sm placeholder:truncate"
                       style={{ minHeight: INPUT_SIZES[inputSize].minH, maxHeight: INPUT_SIZES[inputSize].maxH }}
                       rows={INPUT_SIZES[inputSize].rows}
                     />
 
-                    {/* Character count */}
-                    <div className="flex items-center gap-1 pb-1.5 pr-1">
+                    {/* Character count + actions — pinned to the bottom-right corner */}
+                    <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1">
                       {charCount > 0 && (
                         <motion.span
                           initial={{ opacity: 0, x: 4 }}

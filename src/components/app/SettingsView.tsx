@@ -8,6 +8,7 @@ import {
   BookOpen,
   Bell,
   Database,
+  Layers,
   Info,
   Download,
   Trash2,
@@ -52,9 +53,19 @@ import { useAppStore } from '@/stores/appStore';
 import { useTheme } from 'next-themes';
 import { exportProfileCode, importProfileCode, resetAllData } from '@/lib/transfer';
 import { getOpenRouterKey, setOpenRouterKey } from '@/lib/aiKey';
+import {
+  isBackgroundGenerationEnabled,
+  setBackgroundGenerationEnabled,
+  getBackgroundGenProvider,
+  setBackgroundGenProvider,
+  getBackgroundQuestionsPerSlide,
+  setBackgroundQuestionsPerSlide,
+  type BackgroundGenProvider,
+} from '@/lib/questionCache';
 import { getByoStorage, setByoStorage } from '@/lib/byoStorage';
 import { KOKORO_VOICES, getSelectedVoice, setSelectedVoice, isVoiceDownloaded, downloadVoices, deleteVoiceDownload, speak, getCustomVoice, saveCustomVoiceBlend, deleteCustomVoice, isIOSKokoroEnabled, setIOSKokoroEnabled, previewVoiceBlend, listNativeVoices, getSelectedNativeVoiceURI, setSelectedNativeVoice, getKokoroBackend, resetKokoroSynthHealth, isKokoroSynthKnownBad } from '@/lib/voice/tts';
 import { PIPER_VOICES, getSelectedPiperVoice, setSelectedPiperVoice, isPiperDownloaded, downloadPiper, deletePiperDownload, onPiperStatus, piperSynthesize } from '@/lib/voice/piper';
+import { CLOUD_VOICES, isCloudVoiceEnabled, setCloudVoiceEnabled, getSelectedCloudVoice, setSelectedCloudVoice, cloudSynthesize } from '@/lib/voice/cloudTts';
 import { hapticsSupported, hapticsEnabled, setHapticsEnabled, hapticSuccess } from '@/lib/haptics';
 import { isWhisperDownloaded, downloadWhisper, deleteWhisperDownload, onWhisperStatus } from '@/lib/voice/stt';
 import { isIOS } from '@/lib/voice/device';
@@ -289,6 +300,38 @@ function VoiceSettings() {
   const [piperProgress, setPiperProgress] = useState(0);
   const [piperVoice, setPiperVoice] = useState(() => getSelectedPiperVoice());
   const [kokoroCrashed, setKokoroCrashed] = useState(() => isKokoroSynthKnownBad());
+
+  // Cloud voice — the network TTS (Edge Neural / Google) that replaces Piper on
+  // iOS, where both on-device engines crash. No download, streams from a server.
+  const [cloudEnabled, setCloudEnabled] = useState(() => isCloudVoiceEnabled());
+  const [cloudVoice, setCloudVoice] = useState(() => getSelectedCloudVoice());
+  const [cloudPreviewing, setCloudPreviewing] = useState(false);
+  const handleCloudToggle = (on: boolean) => {
+    setCloudEnabled(on);
+    setCloudVoiceEnabled(on);
+    toast(on ? 'Cloud voice on' : 'Cloud voice off');
+  };
+  const handleCloudVoiceChange = (id: string) => {
+    setCloudVoice(id);
+    setSelectedCloudVoice(id);
+  };
+  const handleCloudPreview = async () => {
+    if (cloudPreviewing) return;
+    setCloudPreviewing(true);
+    try {
+      const blob = await cloudSynthesize('Hi! This is the cloud voice reading your lesson aloud.');
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const el = new Audio(url);
+        el.onended = () => URL.revokeObjectURL(url);
+        await el.play();
+      } else {
+        toast.error('Voice preview failed — check your connection');
+      }
+    } finally {
+      setCloudPreviewing(false);
+    }
+  };
   useEffect(() => onPiperStatus((s, p) => {
     if (s === 'downloading') { setPiperDownloading(true); setPiperProgress(p); }
     if (s === 'ready') { setPiperDownloading(false); setPiperDownloaded(true); }
@@ -594,6 +637,37 @@ function VoiceSettings() {
       )}
       <Separator className="opacity-50" />
 
+      {/* Cloud voice — the network TTS that replaces Piper on iOS (where the
+          on-device engines crash). Streams a human-ish voice from the server,
+          no download. Toggle + voice picker + preview. */}
+      <SettingRow
+        label="Cloud voice"
+        description={
+          cloudEnabled
+            ? 'On — when the natural voice can’t run (notably iPhone), the tutor speaks using a streamed cloud voice. No download needed; needs a connection.'
+            : 'Off — falls back to your device’s built-in voice when the natural voice can’t run.'
+        }
+        stackOnMobile
+      >
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <AnimatedSwitch checked={cloudEnabled} onCheckedChange={handleCloudToggle} ariaLabel="Cloud voice" />
+          {cloudEnabled && (
+            <>
+              <SelectWithGlow value={cloudVoice} onValueChange={handleCloudVoiceChange} className="flex-1 min-w-0 sm:flex-none" triggerClassName="w-full sm:w-44">
+                {CLOUD_VOICES.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+                ))}
+              </SelectWithGlow>
+              <Button variant="outline" size="sm" onClick={handleCloudPreview} disabled={cloudPreviewing} aria-label="Preview cloud voice" className="shrink-0">
+                {cloudPreviewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+              </Button>
+            </>
+          )}
+        </div>
+      </SettingRow>
+
+      <Separator className="opacity-50" />
+
       {/* Piper — on-device fallback voice, used automatically when Kokoro can't
           run (e.g. after it crashes an iPhone tab). Lighter model than Kokoro. */}
       <SettingRow
@@ -768,6 +842,25 @@ export function SettingsView() {
     setOrKeySaved(!!trimmed);
     toast.success(trimmed ? 'API key saved to this browser' : 'API key removed');
   };
+  // Background question generation — engine, on/off, and depth per slide
+  const [bgEnabled, setBgEnabled] = useState(() => isBackgroundGenerationEnabled());
+  const [bgProvider, setBgProvider] = useState<BackgroundGenProvider>(() => getBackgroundGenProvider());
+  const [bgPerSlide, setBgPerSlide] = useState(() => getBackgroundQuestionsPerSlide());
+  const handleBgToggle = (on: boolean) => {
+    setBgEnabled(on);
+    setBackgroundGenerationEnabled(on);
+    toast(on ? 'Background question generation on' : 'Background generation off — questions generate on demand');
+  };
+  const handleBgProvider = (p: BackgroundGenProvider) => {
+    setBgProvider(p);
+    setBackgroundGenProvider(p);
+  };
+  const handleBgPerSlide = (n: number) => {
+    const clamped = Math.max(1, Math.min(30, n));
+    setBgPerSlide(clamped);
+    setBackgroundQuestionsPerSlide(clamped);
+  };
+
   // Bring-your-own storage (Cloudinary + database) — browser-only, like the key
   const [byo, setByo] = useState(() => getByoStorage());
   const handleSaveByo = () => {
@@ -1102,6 +1195,70 @@ export function SettingsView() {
             If AI replies stop with a rate-limit message, your key has hit its free limit — wait
             for it to reset or paste a different key.
           </p>
+        </div>
+      </SectionCard>
+
+      {/* Background question generation — engine, on/off, depth per slide */}
+      <SectionCard icon={Layers} title="Background Question Generation">
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">Generate quizzes in the background</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Bank questions for your courses ahead of time so quizzes and flashcards open
+                instantly. Turn this off to generate on demand instead (a short wait each time
+                there are none ready).
+              </p>
+            </div>
+            <AnimatedSwitch checked={bgEnabled} onCheckedChange={handleBgToggle} ariaLabel="Background question generation" />
+          </div>
+
+          {bgEnabled && (
+            <>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Engine</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleBgProvider('openrouter')}
+                    className={`rounded-lg border p-2.5 text-left text-xs transition-colors ${bgProvider === 'openrouter' ? 'border-primary bg-primary/5' : 'border-border/60 hover:border-primary/40'}`}
+                  >
+                    <span className="block font-medium">Your OpenRouter key</span>
+                    <span className="block text-muted-foreground mt-0.5">Best models. Uses your key &amp; its free-tier limits.</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBgProvider('free')}
+                    className={`rounded-lg border p-2.5 text-left text-xs transition-colors ${bgProvider === 'free' ? 'border-primary bg-primary/5' : 'border-border/60 hover:border-primary/40'}`}
+                  >
+                    <span className="block font-medium">Free (no key)</span>
+                    <span className="block text-muted-foreground mt-0.5">Keyless &amp; unlimited-ish, but slower and lower quality.</span>
+                  </button>
+                </div>
+                {bgProvider === 'openrouter' && !orKeySaved && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" /> No key set — background generation is paused. Add a key above or switch to Free.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Questions per slide</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">How many to bank for each slide (1–30).</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => handleBgPerSlide(bgPerSlide - 1)} disabled={bgPerSlide <= 1} aria-label="Fewer questions per slide">
+                    −
+                  </Button>
+                  <span className="w-8 text-center text-sm font-mono tabular-nums">{bgPerSlide}</span>
+                  <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => handleBgPerSlide(bgPerSlide + 1)} disabled={bgPerSlide >= 30} aria-label="More questions per slide">
+                    +
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </SectionCard>
 
