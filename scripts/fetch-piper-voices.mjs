@@ -55,42 +55,50 @@ function isPresent(voice) {
 async function extractOnce(voice, url) {
   const onnxPath = join(OUT_DIR, `${voice}.onnx`);
   const jsonPath = join(OUT_DIR, `${voice}.onnx.json`);
-  const onnxTmp = `${onnxPath}.part`;
-  const jsonTmp = `${jsonPath}.part`;
-  await rm(onnxTmp, { force: true });
-  await rm(jsonTmp, { force: true });
+  // Temp names are unique per process + attempt: if two runs (e.g. a stray
+  // background run and `npm run dev`'s predev) fetch the same voice at once,
+  // they must NOT share a .part file — interleaved writes produce a corrupt,
+  // oversized model. The final rename is atomic, so last-writer-wins is fine
+  // (each writes a complete, valid file).
+  const uniq = `${process.pid}.${Date.now()}`;
+  const onnxTmp = `${onnxPath}.${uniq}.part`;
+  const jsonTmp = `${jsonPath}.${uniq}.part`;
 
-  const res = await fetch(url);
-  if (!res.ok || !res.body) throw new Error(`download failed (HTTP ${res.status})`);
+  try {
+    const res = await fetch(url);
+    if (!res.ok || !res.body) throw new Error(`download failed (HTTP ${res.status})`);
 
-  const extract = tarStream.extract();
-  extract.on('entry', (header, stream, next) => {
-    const base = header.name.split('/').pop();
-    const dest = base === `${voice}.onnx` ? onnxTmp : base === `${voice}.onnx.json` ? jsonTmp : null;
-    // Every entry stream needs an error handler — a mid-stream network reset
-    // emits 'error' on the current entry, and an unhandled one crashes Node
-    // before the outer pipeline's rejection can be caught.
-    if (dest) {
-      pipeline(stream, createWriteStream(dest)).then(() => next(), next);
-    } else {
-      // Not a file we want (MODEL_CARD, tokens.txt, espeak-ng-data/…) — drain it.
-      stream.on('error', next);
-      stream.on('end', () => next());
-      stream.resume();
+    const extract = tarStream.extract();
+    extract.on('entry', (header, stream, next) => {
+      const base = header.name.split('/').pop();
+      const dest = base === `${voice}.onnx` ? onnxTmp : base === `${voice}.onnx.json` ? jsonTmp : null;
+      // Every entry stream needs an error handler — a mid-stream network reset
+      // emits 'error' on the current entry, and an unhandled one crashes Node
+      // before the outer pipeline's rejection can be caught.
+      if (dest) {
+        pipeline(stream, createWriteStream(dest)).then(() => next(), next);
+      } else {
+        // Not a file we want (MODEL_CARD, tokens.txt, espeak-ng-data/…) — drain it.
+        stream.on('error', next);
+        stream.on('end', () => next());
+        stream.resume();
+      }
+    });
+
+    await pipeline(Readable.fromWeb(res.body), unbzip2(), extract);
+
+    // The whole archive was read cleanly — promote the temps into place.
+    if (!existsSync(onnxTmp) || !existsSync(jsonTmp) || statSync(onnxTmp).size < MIN_ONNX_BYTES) {
+      throw new Error('expected .onnx/.onnx.json not found (or too small) in archive');
     }
-  });
-
-  await pipeline(Readable.fromWeb(res.body), unbzip2(), extract);
-
-  // The whole archive was read cleanly — promote the temps into place. A reset
-  // would have rejected the pipeline above, leaving the real files untouched.
-  if (!existsSync(onnxTmp) || !existsSync(jsonTmp) || statSync(onnxTmp).size < MIN_ONNX_BYTES) {
+    await rename(onnxTmp, onnxPath);
+    await rename(jsonTmp, jsonPath);
+  } catch (err) {
+    // Never leave a partial temp behind (a reset rejects the pipeline above).
     await rm(onnxTmp, { force: true });
     await rm(jsonTmp, { force: true });
-    throw new Error('expected .onnx/.onnx.json not found (or too small) in archive');
+    throw err;
   }
-  await rename(onnxTmp, onnxPath);
-  await rename(jsonTmp, jsonPath);
 }
 
 async function fetchVoice(voice) {

@@ -79,7 +79,17 @@ async function isValidOpfsFile(
   }
 }
 
-/** Download one bundled voice asset, validate it, and write it into OPFS. */
+const DOWNLOAD_ATTEMPTS = 4;
+
+/**
+ * Download one bundled voice asset, validate it, and write it into OPFS.
+ *
+ * The model is ~60 MB, and users can be on flaky/international connections where
+ * a single stream gets reset mid-download (seen on the deployed CDN). So we
+ * retry, and RESUME via HTTP Range from the bytes already received (Vercel's
+ * static assets support range requests) rather than restarting from zero — one
+ * reset shouldn't force a fall back to the system voice.
+ */
 async function seedOpfsFile(
   dir: FileSystemDirectoryHandle,
   name: string,
@@ -87,23 +97,53 @@ async function seedOpfsFile(
   isModel: boolean,
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<void> {
-  const res = await fetch(url);
-  if (!res.ok || !res.body) throw new Error(`voice asset ${res.status} for ${name}`);
-  const ct = (res.headers.get('content-type') ?? '').toLowerCase();
-  if (isModel && (ct.includes('xml') || ct.includes('html'))) {
-    throw new Error(`voice asset returned non-model content-type "${ct}"`);
-  }
-  const total = Number(res.headers.get('content-length') ?? 0);
-  const reader = res.body.getReader();
   const chunks: BlobPart[] = [];
-  let loaded = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value as BlobPart);
-    loaded += value.length;
-    onProgress?.(loaded, total);
+  let received = 0;
+  let total = 0;
+  let lastErr: unknown;
+
+  for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++) {
+    try {
+      const headers: Record<string, string> = {};
+      if (received > 0) headers.Range = `bytes=${received}-`;
+      const res = await fetch(url, { headers, cache: 'no-store' });
+      if (!res.ok || !res.body) throw new Error(`voice asset ${res.status} for ${name}`);
+      const ct = (res.headers.get('content-type') ?? '').toLowerCase();
+      if (isModel && (ct.includes('xml') || ct.includes('html'))) {
+        throw new Error(`voice asset returned non-model content-type "${ct}"`);
+      }
+      // If we asked to resume but the server ignored the Range (200 not 206),
+      // start clean so we don't concatenate a full body onto a partial one.
+      if (received > 0 && res.status !== 206) {
+        chunks.length = 0;
+        received = 0;
+      }
+      if (!total) {
+        // 206 reports the whole size in Content-Range ("bytes 100-999/12345").
+        const range = res.headers.get('content-range');
+        const slash = range?.lastIndexOf('/') ?? -1;
+        total = slash >= 0 ? Number(range!.slice(slash + 1)) || 0 : Number(res.headers.get('content-length') ?? 0);
+      }
+      const reader = res.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value as BlobPart);
+        received += value.length;
+        onProgress?.(received, total);
+      }
+      // A clean 'done' before the known total means the connection dropped
+      // silently — treat as a failed attempt so the resume logic kicks in.
+      if (total && received < total) throw new Error(`short read ${received}/${total} for ${name}`);
+      lastErr = undefined;
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < DOWNLOAD_ATTEMPTS) await new Promise((r) => setTimeout(r, 400 * attempt));
+    }
   }
+  if (lastErr) throw lastErr;
+
   const blob = new Blob(chunks);
   // Final guard: a truncated or error body must never reach ORT.
   if (isModel && blob.size < 1_000_000) throw new Error(`voice model too small (${blob.size} bytes)`);
